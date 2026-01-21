@@ -1,0 +1,460 @@
+Screen {
+    layout: grid;
+    grid-size: 1;
+    grid-rows: 30% 70%;
+}
+
+.panel {
+    height: 1fr;
+    padding: 1;
+}
+
+/* Summary panel - auto height */
+.panel:first-child {
+    height: auto;
+}
+
+/* Summary widget styles */
+Summary {
+}
+
+Summary .summary-section {
+    height: auto;
+    padding-bottom: 1;
+}
+
+Summary .section-label {
+    width: 16;
+    padding-top: 1;
+}
+
+Summary .stat {
+    width: 1fr;
+    height: auto;
+}
+
+Summary .stat-label {
+    color: $text-muted;
+}
+
+Summary Digits {
+    height: auto;
+}
+
+/* Trajectory status colors */
+Summary .stat-running {
+    color: $primary;
+}
+
+Summary .stat-suspended {
+    color: $warning;
+}
+
+Summary .stat-completed {
+    color: $success;
+}
+
+Summary .stat-pending {
+    color: $text-muted;
+}
+
+Summary .stat-failed {
+    color: $error;
+}
+
+/* Policy colors */
+Summary .stat-violations {
+    color: $error;
+}
+
+Summary .stat-approved {
+    color: $success;
+}
+
+
+.step {
+    border: solid $primary;
+    padding: 1;
+}
+
+.step-hovered {
+    border: solid $primary;
+}
+
+.step-highlight {
+    border: solid $primary;
+}
+
+.card {
+    width: 1fr;
+    height: 100%;
+    border: solid $primary;
+    padding: 1;
+    background: $surface;
+}
+
+/* Main tabs */
+#main-tabs {
+    height: 100%;
+}
+
+#main-tabs ContentSwitcher {
+    height: 1fr;
+}
+
+#main-tabs TabPane {
+    height: 100%;
+    padding: 0;
+}
+
+RecentTrajectories {
+    height: 100%;
+}
+
+RecentTrajectories DataTable {
+    height: 100%;
+}
+
+RecentAdjudications {
+    height: 100%;
+}
+
+RecentAdjudications DataTable {
+    height: 100%;
+}
+
+AgentList {
+    height: 100%;
+    border: solid $primary;
+    background: $surface;
+}
+
+AgentList .header {
+    height: 3;
+}
+
+AgentList .header-column {
+    width: 1fr;
+}
+
+AgentItem {
+    border: solid $primary;
+    height: 10;
+}
+
+AgentItem .column {
+    width: 1fr;
+}
+
+Sparkline {
+    width: 100%;
+    margin: 2;
+}
+
+ListView {
+    & > ListItem {
+        &.-highlight {
+            background: $block-hover-background;
+        }
+    }
+}
+
+TrajectoryScreen {
+    layout: horizontal
+}
+
+#sidebar {
+    width: 0.33fr;
+    height: 100%;
+}
+
+/* AgentScreen styles */
+AgentScreen {
+    layout:horizontal ;
+}
+
+#agent-screen-content {
+    height: 1fr;
+    padding: 1;
+}
+
+#agent-card {
+    width: 0.4fr;
+    height: 100%;
+    border: solid $primary;
+    padding: 1;
+}
+
+#agent-card-container {
+    height: 100%;
+}
+
+#agent-details-grid {
+    grid-size: 2;
+    grid-columns: auto 1fr;
+    grid-rows: auto;
+    height: auto;
+    padding: 1;
+}
+
+#agent-details-grid .label {
+    padding-right: 2;
+    color: $text-muted;
+}
+
+#agent-details-grid .value {
+    padding-bottom: 1;
+}
+
+#agent-details-grid .description,
+#agent-details-grid .instruction {
+    max-height: 4;
+}
+
+.section-header {
+    padding: 1 0;
+    border-bottom: solid $primary;
+    margin-bottom: 1;
+}
+
+#tools-list {
+    height: 1fr;
+    border: solid $secondary;
+}
+
+#agent-tabs {
+    width: 0.6fr;
+    height: 100%;
+    border: solid $primary;
+}
+
+#agent-trajectories-table {
+    height: 100%;
+}
+
+/* ToolCard styles */
+ToolCard {
+    border: solid $secondary;
+    height: auto;
+    padding: 1;
+    margin-bottom: 1;
+}
+
+.tool-card-content {
+    height: auto;
+}
+
+.tool-description {
+    padding-bottom: 1;
+}
+
+.tool-parameters {
+    color: $text-muted;
+}
+
+.tool-response {
+    color: $text-muted;
+}
+
+/* AdjudicationScreen styles */
+AdjudicationScreen {
+    layout: vertical;
+}
+
+.adjudication-content {
+    height: 1fr;
+    padding: 1;
+}
+
+#adjudication-left-panel {
+    width: 0.6fr;
+    height: 100%;
+}
+
+#violations-summary {
+    height: 0.45fr;
+    border: solid $primary;
+    padding: 1;
+}
+
+#violations-list {
+    height: 0.55fr;
+    border: solid $primary;
+    padding: 1;
+}
+
+#violation-panel {
+    width: 0.4fr;
+    height: 100%;
+    border: solid $primary;
+    padding: 1;
+}
+
+/* ViolationsSummary styles */
+ViolationsSummary .section-header {
+    padding: 1 0;
+    border-bottom: solid $primary;
+    margin-bottom: 1;
+}
+
+ViolationsSummary .summary-row {
+    height: auto;
+    padding: 1 0;
+}
+
+ViolationsSummary .summary-item {
+    width: 1fr;
+    height: auto;
+    padding: 0 1;
+}
+
+ViolationsSummary .summary-digit {
+    width: 100%;
+}
+
+ViolationsSummary .stat-violations {
+    color: $error;
+}
+
+ViolationsSummary .stat-escalated {
+    color: $warning;
+}
+
+ViolationsSummary .stat-allowed {
+    color: $success;
+}
+
+ViolationsSummary .digit-violations {
+    color: $error;
+}
+
+ViolationsSummary .digit-escalated {
+    color: $warning;
+}
+
+ViolationsSummary .digit-allowed {
+    color: $success;
+}
+
+ViolationsSummary .agent-label,
+ViolationsSummary .policy-label {
+    color: $text-muted;
+}
+
+ViolationsSummary .empty-message {
+    color: $text-muted;
+    padding: 1;
+}
+
+/* ViolationPanel styles */
+ViolationPanel .section-header {
+    padding: 1 0;
+    border-bottom: solid $primary;
+    margin-bottom: 1;
+}
+
+ViolationPanel .empty-message {
+    color: $text-muted;
+    padding: 2;
+    text-align: center;
+}
+
+ViolationPanel .decision-badge {
+    padding: 1;
+    text-align: center;
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+ViolationPanel .decision-deny {
+    background: $error 30%;
+    color: $error;
+}
+
+ViolationPanel .decision-escalate {
+    background: $warning 30%;
+    color: $warning;
+}
+
+ViolationPanel .decision-allow {
+    background: $success 30%;
+    color: $success;
+}
+
+#violation-details-grid {
+    grid-size: 2;
+    grid-columns: auto 1fr;
+    grid-rows: auto;
+    height: auto;
+    padding: 1;
+}
+
+#violation-details-grid .label {
+    padding-right: 2;
+    color: $text-muted;
+}
+
+#violation-details-grid .value {
+    padding-bottom: 1;
+}
+
+ViolationPanel .reason-container {
+    height: auto;
+    padding: 1;
+    border: solid $secondary;
+}
+
+ViolationPanel .reason-text {
+    height: auto;
+}
+
+/* Annotation styles */
+ViolationPanel .annotations-container {
+    height: auto;
+    max-height: 20;
+}
+
+ViolationPanel .annotation-card {
+    height: auto;
+    padding: 1;
+    margin-bottom: 1;
+    border: solid $secondary;
+    background: $surface-darken-1;
+}
+
+ViolationPanel .annotation-id {
+    color: $primary;
+    padding-bottom: 1;
+}
+
+ViolationPanel .annotation-description {
+    color: $text;
+    padding-bottom: 1;
+}
+
+ViolationPanel .annotation-custom-grid {
+    grid-size: 2;
+    grid-columns: auto 1fr;
+    grid-rows: auto;
+    height: auto;
+    padding-top: 1;
+    border-top: dashed $secondary;
+}
+
+ViolationPanel .annotation-custom-grid .label {
+    padding-right: 2;
+    color: $text-muted;
+}
+
+ViolationPanel .annotation-custom-grid .value {
+    color: $text;
+}
+
+/* RecentViolations styles */
+RecentViolations {
+    height: 100%;
+}
+
+RecentViolations DataTable {
+    height: 100%;
+}
