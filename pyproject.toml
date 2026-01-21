@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sondera-harness"
-version = "0.6.0"
+version = "0.6.1"
 description = "Sondera Harness SDK for Python - Agent governance and policy enforcement"
 readme = "README.md"
 requires-python = ">=3.12,<3.15"
@@ -48,7 +48,7 @@ Changelog = "https://github.com/sondera-ai/harness-sdk-python/blob/main/CHANGELO
 sondera = "sondera.cli:cli"
 
 [tool.setuptools.package-data]
-sondera = ["py.typed"]
+sondera = ["py.typed", "tui/*.tcss"]
 
 [project.optional-dependencies]
 adk = ["google-adk>=1.22.0"]
