@@ -1,0 +1,173 @@
+namespace Coding_Agent {
+  entity Agent = {
+    name: __cedar::String,
+    provider_id: __cedar::String,
+    tools: Set<Tool>
+  };
+
+  entity Message in [Trajectory] = {
+    content: __cedar::String,
+    role: Role
+  };
+
+  entity Role enum ["user", "model", "system", "tool"];
+
+  entity Tool = {
+    description: __cedar::String,
+    name: __cedar::String
+  };
+
+  entity Trajectory = {
+    step_count: __cedar::Long
+  };
+
+  action "Bash" appliesTo {
+    principal: [Agent],
+    resource: [Trajectory],
+    context: {
+      parameters?: {
+        command: __cedar::String,
+        timeout?: __cedar::Long
+      },
+      parameters_json?: __cedar::String,
+      response?: {
+        exit_code?: __cedar::Long,
+        stderr?: __cedar::String,
+        stdout?: __cedar::String
+      },
+      response_json?: __cedar::String
+    }
+  };
+
+  action "Edit" appliesTo {
+    principal: [Agent],
+    resource: [Trajectory],
+    context: {
+      parameters?: {
+        file_path: __cedar::String,
+        new_string: __cedar::String,
+        old_string: __cedar::String,
+        replace_all?: __cedar::Bool
+      },
+      parameters_json?: __cedar::String,
+      response?: {
+        replacements?: __cedar::Long,
+        success?: __cedar::Bool
+      },
+      response_json?: __cedar::String
+    }
+  };
+
+  action "Glob" appliesTo {
+    principal: [Agent],
+    resource: [Trajectory],
+    context: {
+      parameters?: {
+        path?: __cedar::String,
+        pattern: __cedar::String
+      },
+      parameters_json?: __cedar::String,
+      response?: {
+        files?: Set<__cedar::String>
+      },
+      response_json?: __cedar::String
+    }
+  };
+
+  action "Grep" appliesTo {
+    principal: [Agent],
+    resource: [Trajectory],
+    context: {
+      parameters?: {
+        case_insensitive?: __cedar::Bool,
+        glob?: __cedar::String,
+        output_mode?: __cedar::String,
+        path?: __cedar::String,
+        pattern: __cedar::String
+      },
+      parameters_json?: __cedar::String,
+      response?: {
+        count?: __cedar::Long,
+        matches?: Set<__cedar::String>
+      },
+      response_json?: __cedar::String
+    }
+  };
+
+  action "Prompt" appliesTo {
+    principal: [Agent],
+    resource: [Message],
+    context: {}
+  };
+
+  action "Read" appliesTo {
+    principal: [Agent],
+    resource: [Trajectory],
+    context: {
+      parameters?: {
+        file_path: __cedar::String,
+        limit?: __cedar::Long,
+        offset?: __cedar::Long
+      },
+      parameters_json?: __cedar::String,
+      response?: {
+        content?: __cedar::String,
+        success?: __cedar::Bool
+      },
+      response_json?: __cedar::String
+    }
+  };
+
+  action "WebFetch" appliesTo {
+    principal: [Agent],
+    resource: [Trajectory],
+    context: {
+      parameters?: {
+        prompt: __cedar::String,
+        url: __cedar::String
+      },
+      parameters_json?: __cedar::String,
+      response?: {
+        content?: __cedar::String
+      },
+      response_json?: __cedar::String
+    }
+  };
+
+  action "WebSearch" appliesTo {
+    principal: [Agent],
+    resource: [Trajectory],
+    context: {
+      parameters?: {
+        allowed_domains?: Set<__cedar::String>,
+        blocked_domains?: Set<__cedar::String>,
+        query: __cedar::String
+      },
+      parameters_json?: __cedar::String,
+      response?: {
+        results?: Set<{
+          snippet?: __cedar::String,
+          title?: __cedar::String,
+          url?: __cedar::String
+        }>
+      },
+      response_json?: __cedar::String
+    }
+  };
+
+  action "Write" appliesTo {
+    principal: [Agent],
+    resource: [Trajectory],
+    context: {
+      parameters?: {
+        content: __cedar::String,
+        file_path: __cedar::String
+      },
+      parameters_json?: __cedar::String,
+      response?: {
+        success?: __cedar::Bool
+      },
+      response_json?: __cedar::String
+    }
+  };
+}
