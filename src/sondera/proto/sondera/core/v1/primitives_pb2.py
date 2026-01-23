@@ -26,7 +26,7 @@ from google.protobuf import struct_pb2 as google_dot_protobuf_dot_struct__pb2
 from google.protobuf import timestamp_pb2 as google_dot_protobuf_dot_timestamp__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n sondera/core/v1/primitives.proto\x12\x0fsondera.core.v1\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\",\n\nSourceCode\x12\x10\n\x08language\x18\x01 \x01(\t\x12\x0c\n\x04\x63ode\x18\x02 \x01(\t\"<\n\tParameter\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x13\n\x0b\x64\x65scription\x18\x02 \x01(\t\x12\x0c\n\x04type\x18\x03 \x01(\t\"\xba\x01\n\x04Tool\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x13\n\x0b\x64\x65scription\x18\x02 \x01(\t\x12.\n\nparameters\x18\x03 \x03(\x0b\x32\x1a.sondera.core.v1.Parameter\x12\x15\n\x08response\x18\x04 \x01(\tH\x00\x88\x01\x01\x12\x30\n\x06source\x18\x05 \x01(\x0b\x32\x1b.sondera.core.v1.SourceCodeH\x01\x88\x01\x01\x42\x0b\n\t_responseB\t\n\x07_source\"\x86\x01\n\x05\x41gent\x12\n\n\x02id\x18\x01 \x01(\t\x12\x13\n\x0bprovider_id\x18\x02 \x01(\t\x12\x0c\n\x04name\x18\x03 \x01(\t\x12\x13\n\x0b\x64\x65scription\x18\x04 \x01(\t\x12\x13\n\x0binstruction\x18\x05 \x01(\t\x12$\n\x05tools\x18\x06 \x03(\x0b\x32\x15.sondera.core.v1.Tool\"\x16\n\x06Prompt\x12\x0c\n\x04text\x18\x01 \x01(\t\"D\n\x0bToolRequest\x12\x0f\n\x07tool_id\x18\x01 \x01(\t\x12$\n\x04\x61rgs\x18\x02 \x01(\x0b\x32\x16.google.protobuf.Value\"I\n\x0cToolResponse\x12\x0f\n\x07tool_id\x18\x01 \x01(\t\x12(\n\x08response\x18\x02 \x01(\x0b\x32\x16.google.protobuf.Value\"\xb2\x01\n\x07\x43ontent\x12)\n\x06prompt\x18\x01 \x01(\x0b\x32\x17.sondera.core.v1.PromptH\x00\x12\x34\n\x0ctool_request\x18\x02 \x01(\x0b\x32\x1c.sondera.core.v1.ToolRequestH\x00\x12\x36\n\rtool_response\x18\x03 \x01(\x0b\x32\x1d.sondera.core.v1.ToolResponseH\x00\x42\x0e\n\x0c\x63ontent_type\"\xb7\x01\n\x0eTrajectoryStep\x12%\n\x05stage\x18\x01 \x01(\x0e\x32\x16.sondera.core.v1.Stage\x12#\n\x04role\x18\x02 \x01(\x0e\x32\x15.sondera.core.v1.Role\x12.\n\ncreated_at\x18\x03 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12)\n\x07\x63ontent\x18\x04 \x01(\x0b\x32\x18.sondera.core.v1.Content\"\xf7\x03\n\nTrajectory\x12\n\n\x02id\x18\x01 \x01(\t\x12\x10\n\x08\x61gent_id\x18\x02 \x01(\t\x12\x31\n\x06status\x18\x03 \x01(\x0e\x32!.sondera.core.v1.TrajectoryStatus\x12;\n\x08metadata\x18\x04 \x03(\x0b\x32).sondera.core.v1.Trajectory.MetadataEntry\x12.\n\ncreated_at\x18\x05 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12.\n\nupdated_at\x18\x06 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12\x33\n\nstarted_at\x18\x07 \x01(\x0b\x32\x1a.google.protobuf.TimestampH\x00\x88\x01\x01\x12\x31\n\x08\x65nded_at\x18\x08 \x01(\x0b\x32\x1a.google.protobuf.TimestampH\x01\x88\x01\x01\x12.\n\x05steps\x18\t \x03(\x0b\x32\x1f.sondera.core.v1.TrajectoryStep\x1aG\n\rMetadataEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12%\n\x05value\x18\x02 \x01(\x0b\x32\x16.google.protobuf.Value:\x02\x38\x01\x42\r\n\x0b_started_atB\x0b\n\t_ended_at\"H\n\x05\x43heck\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x0f\n\x07\x66lagged\x18\x02 \x01(\x08\x12\x14\n\x07message\x18\x03 \x01(\tH\x00\x88\x01\x01\x42\n\n\x08_message\"\x98\x01\n\x10GuardrailContext\x12=\n\x06\x63hecks\x18\x01 \x03(\x0b\x32-.sondera.core.v1.GuardrailContext.ChecksEntry\x1a\x45\n\x0b\x43hecksEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12%\n\x05value\x18\x02 \x01(\x0b\x32\x16.sondera.core.v1.Check:\x02\x38\x01\"\xc4\x01\n\x11PolicyAnnotations\x12\x0f\n\x02id\x18\x01 \x01(\tH\x00\x88\x01\x01\x12\x18\n\x0b\x64\x65scription\x18\x02 \x01(\tH\x01\x88\x01\x01\x12>\n\x06\x63ustom\x18\x03 \x03(\x0b\x32..sondera.core.v1.PolicyAnnotations.CustomEntry\x1a-\n\x0b\x43ustomEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\x42\x05\n\x03_idB\x0e\n\x0c_description\"\x98\x01\n\x0c\x41\x64judication\x12+\n\x08\x64\x65\x63ision\x18\x01 \x01(\x0e\x32\x19.sondera.core.v1.Decision\x12\x0e\n\x06reason\x18\x02 \x01(\t\x12\x12\n\npolicy_ids\x18\x03 \x03(\t\x12\x37\n\x0b\x61nnotations\x18\x04 \x03(\x0b\x32\".sondera.core.v1.PolicyAnnotations\"\xac\x01\n\x0f\x41\x64judicatedStep\x12-\n\x04step\x18\x01 \x01(\x0b\x32\x1f.sondera.core.v1.TrajectoryStep\x12\x35\n\nguardrails\x18\x02 \x01(\x0b\x32!.sondera.core.v1.GuardrailContext\x12\x33\n\x0c\x61\x64judication\x18\x03 \x01(\x0b\x32\x1d.sondera.core.v1.Adjudication\"y\n\x15\x41\x64judicatedTrajectory\x12/\n\ntrajectory\x18\x01 \x01(\x0b\x32\x1b.sondera.core.v1.Trajectory\x12/\n\x05steps\x18\x02 \x03(\x0b\x32 .sondera.core.v1.AdjudicatedStep*\xd3\x01\n\x10TrajectoryStatus\x12!\n\x1dTRAJECTORY_STATUS_UNSPECIFIED\x10\x00\x12\x1d\n\x19TRAJECTORY_STATUS_PENDING\x10\x01\x12\x1d\n\x19TRAJECTORY_STATUS_RUNNING\x10\x02\x12\x1f\n\x1bTRAJECTORY_STATUS_COMPLETED\x10\x03\x12\x1f\n\x1bTRAJECTORY_STATUS_SUSPENDED\x10\x04\x12\x1c\n\x18TRAJECTORY_STATUS_FAILED\x10\x05*\x99\x01\n\x05Stage\x12\x15\n\x11STAGE_UNSPECIFIED\x10\x00\x12\x11\n\rSTAGE_PRE_RUN\x10\x01\x12\x13\n\x0fSTAGE_PRE_MODEL\x10\x02\x12\x14\n\x10STAGE_POST_MODEL\x10\x03\x12\x12\n\x0eSTAGE_PRE_TOOL\x10\x04\x12\x13\n\x0fSTAGE_POST_TOOL\x10\x05\x12\x12\n\x0eSTAGE_POST_RUN\x10\x06*[\n\x04Role\x12\x14\n\x10ROLE_UNSPECIFIED\x10\x00\x12\r\n\tROLE_USER\x10\x01\x12\x0e\n\nROLE_MODEL\x10\x02\x12\r\n\tROLE_TOOL\x10\x03\x12\x0f\n\x0bROLE_SYSTEM\x10\x04*b\n\x08\x44\x65\x63ision\x12\x18\n\x14\x44\x45\x43ISION_UNSPECIFIED\x10\x00\x12\x12\n\x0e\x44\x45\x43ISION_ALLOW\x10\x01\x12\x11\n\rDECISION_DENY\x10\x02\x12\x15\n\x11\x44\x45\x43ISION_ESCALATE\x10\x03\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n sondera/core/v1/primitives.proto\x12\x0fsondera.core.v1\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\",\n\nSourceCode\x12\x10\n\x08language\x18\x01 \x01(\t\x12\x0c\n\x04\x63ode\x18\x02 \x01(\t\"<\n\tParameter\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x13\n\x0b\x64\x65scription\x18\x02 \x01(\t\x12\x0c\n\x04type\x18\x03 \x01(\t\"\xce\x02\n\x04Tool\x12\x0f\n\x02id\x18\x06 \x01(\tH\x00\x88\x01\x01\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x13\n\x0b\x64\x65scription\x18\x02 \x01(\t\x12.\n\nparameters\x18\x03 \x03(\x0b\x32\x1a.sondera.core.v1.Parameter\x12#\n\x16parameters_json_schema\x18\x07 \x01(\tH\x01\x88\x01\x01\x12\x15\n\x08response\x18\x04 \x01(\tH\x02\x88\x01\x01\x12!\n\x14response_json_schema\x18\x08 \x01(\tH\x03\x88\x01\x01\x12\x30\n\x06source\x18\x05 \x01(\x0b\x32\x1b.sondera.core.v1.SourceCodeH\x04\x88\x01\x01\x42\x05\n\x03_idB\x19\n\x17_parameters_json_schemaB\x0b\n\t_responseB\x17\n\x15_response_json_schemaB\t\n\x07_source\"\x86\x01\n\x05\x41gent\x12\n\n\x02id\x18\x01 \x01(\t\x12\x13\n\x0bprovider_id\x18\x02 \x01(\t\x12\x0c\n\x04name\x18\x03 \x01(\t\x12\x13\n\x0b\x64\x65scription\x18\x04 \x01(\t\x12\x13\n\x0binstruction\x18\x05 \x01(\t\x12$\n\x05tools\x18\x06 \x03(\x0b\x32\x15.sondera.core.v1.Tool\"\x16\n\x06Prompt\x12\x0c\n\x04text\x18\x01 \x01(\t\"D\n\x0bToolRequest\x12\x0f\n\x07tool_id\x18\x01 \x01(\t\x12$\n\x04\x61rgs\x18\x02 \x01(\x0b\x32\x16.google.protobuf.Value\"I\n\x0cToolResponse\x12\x0f\n\x07tool_id\x18\x01 \x01(\t\x12(\n\x08response\x18\x02 \x01(\x0b\x32\x16.google.protobuf.Value\"\xb2\x01\n\x07\x43ontent\x12)\n\x06prompt\x18\x01 \x01(\x0b\x32\x17.sondera.core.v1.PromptH\x00\x12\x34\n\x0ctool_request\x18\x02 \x01(\x0b\x32\x1c.sondera.core.v1.ToolRequestH\x00\x12\x36\n\rtool_response\x18\x03 \x01(\x0b\x32\x1d.sondera.core.v1.ToolResponseH\x00\x42\x0e\n\x0c\x63ontent_type\"\xb7\x01\n\x0eTrajectoryStep\x12%\n\x05stage\x18\x01 \x01(\x0e\x32\x16.sondera.core.v1.Stage\x12#\n\x04role\x18\x02 \x01(\x0e\x32\x15.sondera.core.v1.Role\x12.\n\ncreated_at\x18\x03 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12)\n\x07\x63ontent\x18\x04 \x01(\x0b\x32\x18.sondera.core.v1.Content\"\xf7\x03\n\nTrajectory\x12\n\n\x02id\x18\x01 \x01(\t\x12\x10\n\x08\x61gent_id\x18\x02 \x01(\t\x12\x31\n\x06status\x18\x03 \x01(\x0e\x32!.sondera.core.v1.TrajectoryStatus\x12;\n\x08metadata\x18\x04 \x03(\x0b\x32).sondera.core.v1.Trajectory.MetadataEntry\x12.\n\ncreated_at\x18\x05 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12.\n\nupdated_at\x18\x06 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12\x33\n\nstarted_at\x18\x07 \x01(\x0b\x32\x1a.google.protobuf.TimestampH\x00\x88\x01\x01\x12\x31\n\x08\x65nded_at\x18\x08 \x01(\x0b\x32\x1a.google.protobuf.TimestampH\x01\x88\x01\x01\x12.\n\x05steps\x18\t \x03(\x0b\x32\x1f.sondera.core.v1.TrajectoryStep\x1aG\n\rMetadataEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12%\n\x05value\x18\x02 \x01(\x0b\x32\x16.google.protobuf.Value:\x02\x38\x01\x42\r\n\x0b_started_atB\x0b\n\t_ended_at\"H\n\x05\x43heck\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x0f\n\x07\x66lagged\x18\x02 \x01(\x08\x12\x14\n\x07message\x18\x03 \x01(\tH\x00\x88\x01\x01\x42\n\n\x08_message\"\x98\x01\n\x10GuardrailContext\x12=\n\x06\x63hecks\x18\x01 \x03(\x0b\x32-.sondera.core.v1.GuardrailContext.ChecksEntry\x1a\x45\n\x0b\x43hecksEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12%\n\x05value\x18\x02 \x01(\x0b\x32\x16.sondera.core.v1.Check:\x02\x38\x01\"\xc4\x01\n\x11PolicyAnnotations\x12\x0f\n\x02id\x18\x01 \x01(\tH\x00\x88\x01\x01\x12\x18\n\x0b\x64\x65scription\x18\x02 \x01(\tH\x01\x88\x01\x01\x12>\n\x06\x63ustom\x18\x03 \x03(\x0b\x32..sondera.core.v1.PolicyAnnotations.CustomEntry\x1a-\n\x0b\x43ustomEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\x42\x05\n\x03_idB\x0e\n\x0c_description\"\x98\x01\n\x0c\x41\x64judication\x12+\n\x08\x64\x65\x63ision\x18\x01 \x01(\x0e\x32\x19.sondera.core.v1.Decision\x12\x0e\n\x06reason\x18\x02 \x01(\t\x12\x12\n\npolicy_ids\x18\x03 \x03(\t\x12\x37\n\x0b\x61nnotations\x18\x04 \x03(\x0b\x32\".sondera.core.v1.PolicyAnnotations\"\xac\x01\n\x0f\x41\x64judicatedStep\x12-\n\x04step\x18\x01 \x01(\x0b\x32\x1f.sondera.core.v1.TrajectoryStep\x12\x35\n\nguardrails\x18\x02 \x01(\x0b\x32!.sondera.core.v1.GuardrailContext\x12\x33\n\x0c\x61\x64judication\x18\x03 \x01(\x0b\x32\x1d.sondera.core.v1.Adjudication\"y\n\x15\x41\x64judicatedTrajectory\x12/\n\ntrajectory\x18\x01 \x01(\x0b\x32\x1b.sondera.core.v1.Trajectory\x12/\n\x05steps\x18\x02 \x03(\x0b\x32 .sondera.core.v1.AdjudicatedStep*\xd3\x01\n\x10TrajectoryStatus\x12!\n\x1dTRAJECTORY_STATUS_UNSPECIFIED\x10\x00\x12\x1d\n\x19TRAJECTORY_STATUS_PENDING\x10\x01\x12\x1d\n\x19TRAJECTORY_STATUS_RUNNING\x10\x02\x12\x1f\n\x1bTRAJECTORY_STATUS_COMPLETED\x10\x03\x12\x1f\n\x1bTRAJECTORY_STATUS_SUSPENDED\x10\x04\x12\x1c\n\x18TRAJECTORY_STATUS_FAILED\x10\x05*\x99\x01\n\x05Stage\x12\x15\n\x11STAGE_UNSPECIFIED\x10\x00\x12\x11\n\rSTAGE_PRE_RUN\x10\x01\x12\x13\n\x0fSTAGE_PRE_MODEL\x10\x02\x12\x14\n\x10STAGE_POST_MODEL\x10\x03\x12\x12\n\x0eSTAGE_PRE_TOOL\x10\x04\x12\x13\n\x0fSTAGE_POST_TOOL\x10\x05\x12\x12\n\x0eSTAGE_POST_RUN\x10\x06*[\n\x04Role\x12\x14\n\x10ROLE_UNSPECIFIED\x10\x00\x12\r\n\tROLE_USER\x10\x01\x12\x0e\n\nROLE_MODEL\x10\x02\x12\r\n\tROLE_TOOL\x10\x03\x12\x0f\n\x0bROLE_SYSTEM\x10\x04*b\n\x08\x44\x65\x63ision\x12\x18\n\x14\x44\x45\x43ISION_UNSPECIFIED\x10\x00\x12\x12\n\x0e\x44\x45\x43ISION_ALLOW\x10\x01\x12\x11\n\rDECISION_DENY\x10\x02\x12\x15\n\x11\x44\x45\x43ISION_ESCALATE\x10\x03\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -39,50 +39,50 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_GUARDRAILCONTEXT_CHECKSENTRY']._serialized_options = b'8\001'
   _globals['_POLICYANNOTATIONS_CUSTOMENTRY']._loaded_options = None
   _globals['_POLICYANNOTATIONS_CUSTOMENTRY']._serialized_options = b'8\001'
-  _globals['_TRAJECTORYSTATUS']._serialized_start=2474
-  _globals['_TRAJECTORYSTATUS']._serialized_end=2685
-  _globals['_STAGE']._serialized_start=2688
-  _globals['_STAGE']._serialized_end=2841
-  _globals['_ROLE']._serialized_start=2843
-  _globals['_ROLE']._serialized_end=2934
-  _globals['_DECISION']._serialized_start=2936
-  _globals['_DECISION']._serialized_end=3034
+  _globals['_TRAJECTORYSTATUS']._serialized_start=2622
+  _globals['_TRAJECTORYSTATUS']._serialized_end=2833
+  _globals['_STAGE']._serialized_start=2836
+  _globals['_STAGE']._serialized_end=2989
+  _globals['_ROLE']._serialized_start=2991
+  _globals['_ROLE']._serialized_end=3082
+  _globals['_DECISION']._serialized_start=3084
+  _globals['_DECISION']._serialized_end=3182
   _globals['_SOURCECODE']._serialized_start=116
   _globals['_SOURCECODE']._serialized_end=160
   _globals['_PARAMETER']._serialized_start=162
   _globals['_PARAMETER']._serialized_end=222
   _globals['_TOOL']._serialized_start=225
-  _globals['_TOOL']._serialized_end=411
-  _globals['_AGENT']._serialized_start=414
-  _globals['_AGENT']._serialized_end=548
-  _globals['_PROMPT']._serialized_start=550
-  _globals['_PROMPT']._serialized_end=572
-  _globals['_TOOLREQUEST']._serialized_start=574
-  _globals['_TOOLREQUEST']._serialized_end=642
-  _globals['_TOOLRESPONSE']._serialized_start=644
-  _globals['_TOOLRESPONSE']._serialized_end=717
-  _globals['_CONTENT']._serialized_start=720
-  _globals['_CONTENT']._serialized_end=898
-  _globals['_TRAJECTORYSTEP']._serialized_start=901
-  _globals['_TRAJECTORYSTEP']._serialized_end=1084
-  _globals['_TRAJECTORY']._serialized_start=1087
-  _globals['_TRAJECTORY']._serialized_end=1590
-  _globals['_TRAJECTORY_METADATAENTRY']._serialized_start=1491
-  _globals['_TRAJECTORY_METADATAENTRY']._serialized_end=1562
-  _globals['_CHECK']._serialized_start=1592
-  _globals['_CHECK']._serialized_end=1664
-  _globals['_GUARDRAILCONTEXT']._serialized_start=1667
-  _globals['_GUARDRAILCONTEXT']._serialized_end=1819
-  _globals['_GUARDRAILCONTEXT_CHECKSENTRY']._serialized_start=1750
-  _globals['_GUARDRAILCONTEXT_CHECKSENTRY']._serialized_end=1819
-  _globals['_POLICYANNOTATIONS']._serialized_start=1822
-  _globals['_POLICYANNOTATIONS']._serialized_end=2018
-  _globals['_POLICYANNOTATIONS_CUSTOMENTRY']._serialized_start=1950
-  _globals['_POLICYANNOTATIONS_CUSTOMENTRY']._serialized_end=1995
-  _globals['_ADJUDICATION']._serialized_start=2021
-  _globals['_ADJUDICATION']._serialized_end=2173
-  _globals['_ADJUDICATEDSTEP']._serialized_start=2176
-  _globals['_ADJUDICATEDSTEP']._serialized_end=2348
-  _globals['_ADJUDICATEDTRAJECTORY']._serialized_start=2350
-  _globals['_ADJUDICATEDTRAJECTORY']._serialized_end=2471
+  _globals['_TOOL']._serialized_end=559
+  _globals['_AGENT']._serialized_start=562
+  _globals['_AGENT']._serialized_end=696
+  _globals['_PROMPT']._serialized_start=698
+  _globals['_PROMPT']._serialized_end=720
+  _globals['_TOOLREQUEST']._serialized_start=722
+  _globals['_TOOLREQUEST']._serialized_end=790
+  _globals['_TOOLRESPONSE']._serialized_start=792
+  _globals['_TOOLRESPONSE']._serialized_end=865
+  _globals['_CONTENT']._serialized_start=868
+  _globals['_CONTENT']._serialized_end=1046
+  _globals['_TRAJECTORYSTEP']._serialized_start=1049
+  _globals['_TRAJECTORYSTEP']._serialized_end=1232
+  _globals['_TRAJECTORY']._serialized_start=1235
+  _globals['_TRAJECTORY']._serialized_end=1738
+  _globals['_TRAJECTORY_METADATAENTRY']._serialized_start=1639
+  _globals['_TRAJECTORY_METADATAENTRY']._serialized_end=1710
+  _globals['_CHECK']._serialized_start=1740
+  _globals['_CHECK']._serialized_end=1812
+  _globals['_GUARDRAILCONTEXT']._serialized_start=1815
+  _globals['_GUARDRAILCONTEXT']._serialized_end=1967
+  _globals['_GUARDRAILCONTEXT_CHECKSENTRY']._serialized_start=1898
+  _globals['_GUARDRAILCONTEXT_CHECKSENTRY']._serialized_end=1967
+  _globals['_POLICYANNOTATIONS']._serialized_start=1970
+  _globals['_POLICYANNOTATIONS']._serialized_end=2166
+  _globals['_POLICYANNOTATIONS_CUSTOMENTRY']._serialized_start=2098
+  _globals['_POLICYANNOTATIONS_CUSTOMENTRY']._serialized_end=2143
+  _globals['_ADJUDICATION']._serialized_start=2169
+  _globals['_ADJUDICATION']._serialized_end=2321
+  _globals['_ADJUDICATEDSTEP']._serialized_start=2324
+  _globals['_ADJUDICATEDSTEP']._serialized_end=2496
+  _globals['_ADJUDICATEDTRAJECTORY']._serialized_start=2498
+  _globals['_ADJUDICATEDTRAJECTORY']._serialized_end=2619
 # @@protoc_insertion_point(module_scope)
