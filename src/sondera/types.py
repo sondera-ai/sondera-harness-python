@@ -213,6 +213,24 @@ class Decision(Enum):
     ESCALATE = "escalate"
 
 
+class Check(Model):
+    """Single guardrail check result."""
+
+    name: str
+    """Name of the guardrail check."""
+    flagged: bool
+    """Whether the check was flagged."""
+    message: str | None = None
+    """Optional message describing the check result."""
+
+
+class GuardrailContext(Model):
+    """Aggregated guardrail check results."""
+
+    checks: dict[str, Check] = Field(default_factory=dict)
+    """Map of check name to check result."""
+
+
 class PolicyAnnotation(Model):
     """Annotation from a policy evaluation."""
 
@@ -231,6 +249,8 @@ class Adjudication(Model):
     """Whether the input is allowed."""
     reason: str
     """Reason for the adjudication decision."""
+    policy_ids: list[str] = Field(default_factory=list)
+    """IDs of policies that contributed to this decision."""
     annotations: list[PolicyAnnotation] = Field(default_factory=list)
     """Annotations from policy evaluations."""
 
@@ -259,6 +279,8 @@ class AdjudicatedStep(Model):
     """Adjudication of the input."""
     step: TrajectoryStep
     """Step of the adjudication."""
+    guardrails: GuardrailContext | None = None
+    """Guardrail check results for this step."""
 
     @property
     def is_denied(self) -> bool:

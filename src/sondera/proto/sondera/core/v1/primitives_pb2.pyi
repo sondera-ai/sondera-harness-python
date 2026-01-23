@@ -86,18 +86,24 @@ class Parameter(_message.Message):
     def __init__(self, name: _Optional[str] = ..., description: _Optional[str] = ..., type: _Optional[str] = ...) -> None: ...
 
 class Tool(_message.Message):
-    __slots__ = ("name", "description", "parameters", "response", "source")
+    __slots__ = ("id", "name", "description", "parameters", "parameters_json_schema", "response", "response_json_schema", "source")
+    ID_FIELD_NUMBER: _ClassVar[int]
     NAME_FIELD_NUMBER: _ClassVar[int]
     DESCRIPTION_FIELD_NUMBER: _ClassVar[int]
     PARAMETERS_FIELD_NUMBER: _ClassVar[int]
+    PARAMETERS_JSON_SCHEMA_FIELD_NUMBER: _ClassVar[int]
     RESPONSE_FIELD_NUMBER: _ClassVar[int]
+    RESPONSE_JSON_SCHEMA_FIELD_NUMBER: _ClassVar[int]
     SOURCE_FIELD_NUMBER: _ClassVar[int]
+    id: str
     name: str
     description: str
     parameters: _containers.RepeatedCompositeFieldContainer[Parameter]
+    parameters_json_schema: str
     response: str
+    response_json_schema: str
     source: SourceCode
-    def __init__(self, name: _Optional[str] = ..., description: _Optional[str] = ..., parameters: _Optional[_Iterable[_Union[Parameter, _Mapping]]] = ..., response: _Optional[str] = ..., source: _Optional[_Union[SourceCode, _Mapping]] = ...) -> None: ...
+    def __init__(self, id: _Optional[str] = ..., name: _Optional[str] = ..., description: _Optional[str] = ..., parameters: _Optional[_Iterable[_Union[Parameter, _Mapping]]] = ..., parameters_json_schema: _Optional[str] = ..., response: _Optional[str] = ..., response_json_schema: _Optional[str] = ..., source: _Optional[_Union[SourceCode, _Mapping]] = ...) -> None: ...
 
 class Agent(_message.Message):
     __slots__ = ("id", "provider_id", "name", "description", "instruction", "tools")

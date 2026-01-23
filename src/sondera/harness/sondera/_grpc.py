@@ -11,13 +11,16 @@ from sondera.types import (
     Adjudication,
     AdjudicationRecord,
     Agent,
+    Check,
     Content,
     Decision,
+    GuardrailContext,
     Parameter,
     PolicyAnnotation,
     PolicyEngineMode,
     PromptContent,
     Role,
+    SourceCode,
     Stage,
     Tool,
     ToolRequestContent,
@@ -81,6 +84,38 @@ def _convert_sdk_content_to_pb(content: Content) -> primitives_pb2.Content:
         raise ValueError(f"Unsupported content type: {type(content)}")
 
 
+def _convert_sdk_tool_to_pb(tool: Tool) -> primitives_pb2.Tool:
+    """Convert SDK Tool to protobuf Tool."""
+    pb_params = [
+        primitives_pb2.Parameter(
+            name=param.name,
+            description=param.description,
+            type=param.type,
+        )
+        for param in tool.parameters
+    ]
+
+    pb_source = (
+        primitives_pb2.SourceCode(
+            language=tool.source.language,
+            code=tool.source.code,
+        )
+        if tool.source
+        else None
+    )
+
+    return primitives_pb2.Tool(
+        id=tool.id,
+        name=tool.name,
+        description=tool.description,
+        parameters=pb_params,
+        parameters_json_schema=tool.parameters_json_schema,
+        response=tool.response,
+        response_json_schema=tool.response_json_schema,
+        source=pb_source,
+    )
+
+
 def _convert_pb_adjudication_to_sdk(
     adjudication: primitives_pb2.Adjudication,
 ) -> Adjudication:
@@ -95,8 +130,8 @@ def _convert_pb_adjudication_to_sdk(
     # Convert annotations
     annotations = [
         PolicyAnnotation(
-            id=ann.id,
-            description=ann.description,
+            id=ann.id if ann.HasField("id") else "",
+            description=ann.description if ann.HasField("description") else "",
             custom=dict(ann.custom),
         )
         for ann in adjudication.annotations
@@ -105,6 +140,7 @@ def _convert_pb_adjudication_to_sdk(
     return Adjudication(
         decision=decision_map[adjudication.decision],
         reason=adjudication.reason,
+        policy_ids=list(adjudication.policy_ids),
         annotations=annotations,
     )
 
@@ -117,13 +153,33 @@ def _convert_pb_agent_to_sdk(pb_agent: primitives_pb2.Agent) -> Agent:
             Parameter(name=p.name, description=p.description, type=p.type)
             for p in pb_tool.parameters
         ]
+
+        # Handle optional source field
+        source = None
+        if pb_tool.HasField("source"):
+            source = SourceCode(
+                language=pb_tool.source.language,
+                code=pb_tool.source.code,
+            )
+
         tools.append(
             Tool(
-                id=None,  # Protobuf Tool message doesn't have an id field
+                id=pb_tool.id if pb_tool.HasField("id") else None,
                 name=pb_tool.name,
                 description=pb_tool.description,
                 parameters=params,
-                response=pb_tool.response if pb_tool.response else None,
+                parameters_json_schema=(
+                    pb_tool.parameters_json_schema
+                    if pb_tool.HasField("parameters_json_schema")
+                    else None
+                ),
+                response=pb_tool.response if pb_tool.HasField("response") else None,
+                response_json_schema=(
+                    pb_tool.response_json_schema
+                    if pb_tool.HasField("response_json_schema")
+                    else None
+                ),
+                source=source,
             )
         )
 
@@ -266,11 +322,28 @@ def _convert_pb_adjudicated_step_to_sdk(
         raise ValueError("AdjudicatedStep must have an adjudication field")
     adjudication = _convert_pb_adjudication_to_sdk(pb_adjudication)
 
+    # Convert guardrails
+    guardrails = None
+    if pb_adjudicated_step.HasField("guardrails"):
+        checks = {}
+        for name, pb_check in pb_adjudicated_step.guardrails.checks.items():
+            checks[name] = Check(
+                name=pb_check.name,
+                flagged=pb_check.flagged,
+                message=pb_check.message if pb_check.HasField("message") else None,
+            )
+        guardrails = GuardrailContext(checks=checks)
+
     # Default mode to GOVERN since protobuf doesn't have this field
     # In practice, this should be set based on the policy engine configuration
     mode = PolicyEngineMode.GOVERN
 
-    return AdjudicatedStep(mode=mode, adjudication=adjudication, step=trajectory_step)
+    return AdjudicatedStep(
+        mode=mode,
+        adjudication=adjudication,
+        step=trajectory_step,
+        guardrails=guardrails,
+    )
 
 
 def _convert_pb_trajectory_to_sdk(

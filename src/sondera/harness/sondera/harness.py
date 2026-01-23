@@ -24,6 +24,7 @@ from sondera.harness.sondera._grpc import (
     _convert_sdk_content_to_pb,
     _convert_sdk_role_to_pb,
     _convert_sdk_stage_to_pb,
+    _convert_sdk_tool_to_pb,
     _convert_sdk_trajectory_status_to_pb,
 )
 from sondera.proto.sondera.core.v1 import primitives_pb2
@@ -337,24 +338,8 @@ class SonderaRemoteHarness(AbstractHarness):
             AuthenticationError: If authentication fails
             grpc.RpcError: If other gRPC error occurs
         """
-        # Convert SDK agent to protobuf tools
-        pb_tools = []
-        for tool in agent.tools:
-            pb_params = []
-            for param in tool.parameters:
-                pb_params.append(
-                    primitives_pb2.Parameter(
-                        name=param.name, description=param.description, type=param.type
-                    )
-                )
-
-            pb_tool = primitives_pb2.Tool(
-                name=tool.name,
-                description=tool.description,
-                parameters=pb_params,
-                response=tool.response,
-            )
-            pb_tools.append(pb_tool)
+        # Convert SDK agent tools to protobuf
+        pb_tools = [_convert_sdk_tool_to_pb(tool) for tool in agent.tools]
 
         request = harness_pb2.RegisterAgentRequest(
             provider_id=agent.provider_id,
