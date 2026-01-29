@@ -1,0 +1,137 @@
+site_name: Sondera Harness
+site_description: Runtime governance for agents. Policies, not prompts.
+site_url: https://docs.sondera.ai/
+repo_url: https://github.com/sondera-ai/sondera-harness-python
+repo_name: sondera-ai/sondera-harness-python
+
+docs_dir: src
+
+theme:
+  name: material
+  palette:
+    # Auto mode - follows system preference
+    - media: "(prefers-color-scheme)"
+      toggle:
+        icon: material/brightness-auto
+        name: Switch to light mode
+    # Light mode - brand colors
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    # Dark mode - terminal gradient feel
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-4
+        name: Switch to system preference
+  font:
+    text: Object Sans
+    code: Inconsolata
+  features:
+    - navigation.instant
+    - navigation.instant.prefetch
+    - navigation.tracking
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - navigation.footer
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+  icon:
+    repo: fontawesome/brands/github
+    admonition:
+      note: octicons/tag-16
+      abstract: octicons/checklist-16
+      info: octicons/info-16
+      tip: octicons/light-bulb-16
+      success: octicons/check-16
+      question: octicons/question-16
+      warning: octicons/alert-16
+      failure: octicons/x-circle-16
+      danger: octicons/zap-16
+      bug: octicons/bug-16
+      example: octicons/beaker-16
+      quote: octicons/quote-16
+
+plugins:
+  - search
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/sondera-ai/sondera-harness-python
+    - icon: fontawesome/brands/discord
+      link: https://discord.gg/8zMbcnDnZs
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/sondera-harness/
+  generator: false
+
+extra_css:
+  - stylesheets/extra.css
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+      combine_header_slug: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.mark
+  - pymdownx.critic
+  - pymdownx.caret
+  - pymdownx.keys
+  - pymdownx.tilde
+  - admonition
+  - pymdownx.details
+  - attr_list
+  - md_in_html
+  - tables
+  - def_list
+  - footnotes
+  - abbr
+  - toc:
+      permalink: true
+      toc_depth: 3
+
+# Left sidebar navigation with collapsible sections
+nav:
+  - Home: index.md
+  - Quickstart: quickstart.md
+  - Installation: installation.md
+  - Integrations:
+    - Overview: integrations/index.md
+    - LangChain / LangGraph: integrations/langgraph.md
+    - Google ADK: integrations/adk.md
+    - Strands: integrations/strands.md
+    - Custom Agent: integrations/custom.md
+  - Writing Policies: writing-policies.md
+  - Core Concepts:
+    - Overview: concepts/index.md
+    - Decisions: concepts/decisions.md
+    - Policies: concepts/policies.md
+    - Stages: concepts/stages.md
+    - Trajectories: concepts/trajectories.md
+  - Deployment: deployment.md
+  - Troubleshooting: troubleshooting.md

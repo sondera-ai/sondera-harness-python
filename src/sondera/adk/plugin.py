@@ -64,7 +64,7 @@ class SonderaHarnessPlugin(BasePlugin):
         plugin = SonderaHarnessPlugin(harness=harness)
 
         # Create agent and runner with the plugin
-        agent = Agent(name="my-agent", model="gemini-2.0-flash", ...)
+        agent = Agent(name="my-agent", model="gemini-2.5-flash", ...)
         runner = Runner(
             agent=agent,
             app_name="my-app",

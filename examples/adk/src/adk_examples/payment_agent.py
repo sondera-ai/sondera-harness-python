@@ -147,7 +147,7 @@ Guidelines:
 def create_agent() -> Agent:
     """Create an ADK agent with payment processing tools from archetypes."""
     return Agent(
-        model="gemini-2.0-flash-exp",
+        model="gemini-2.5-flash",
         name="payment_agent",
         description="Payment Processor Customer Service Agent that handles refunds, customer inquiries, and sensitive payment data with guardrails.",
         instruction=INSTRUCTION,

@@ -1,28 +1,44 @@
-"""Sondera SDK for Python - Agent governance and policy enforcement.
+"""Sondera Harness - Steer agents with rules, not prompts.
 
-This SDK provides tools for integrating AI agents with the Sondera Platform
-for policy enforcement, guardrails, and governance.
+Wrap your agent, write Cedar policies, ship with confidence. When a policy
+denies an action, the agent gets the reason why and adjusts. Agents self-correct
+instead of failing. This is steering, not just blocking.
 
-Main Components:
-    - Harness: Abstract base class for harness implementations
-    - RemoteHarness: Production harness connecting to Sondera Platform
-    - CedarPolicyEngine: Local policy-as-code engine using Cedar
+Same input, same verdict. Rules are deterministic, not probabilistic. Stop
+debugging prompts and start writing policies.
+
+Why Sondera Harness:
+    - Steer, don't just block: Denied actions include explanations
+    - Drop-in integration: Native middleware for LangGraph, ADK, Strands
+    - Full observability: Trajectories capture every action and decision
+    - Deterministic rules: Same input, same verdict, every time
+    - Ship faster: Reliability, safety, security, and compliance built in
+
+Harness Implementations:
+    - CedarPolicyHarness: Local evaluation, no network calls, no dependencies
+    - SonderaRemoteHarness: Team policies, dashboards, centralized audit logs
 
 Framework Integrations:
-    - sondera.langgraph: LangGraph/LangChain middleware
+    - sondera.langgraph: LangGraph middleware
     - sondera.adk: Google ADK plugin
-    - sondera.strands: Strands Agent SDK hook
+    - sondera.strands: Strands lifecycle hooks
 
 Example:
-    >>> from sondera import SonderaRemoteHarness, Agent
-    >>> harness = SonderaRemoteHarness(sondera_api_key="<YOUR_SONDERA_API_KEY>")
+    >>> from sondera import CedarPolicyHarness, Agent, Tool
+    >>> from sondera.harness.cedar.schema import agent_to_cedar_schema
+    >>>
     >>> agent = Agent(
     ...     id="my-agent",
-    ...     provider_id="langchain",
-    ...     name="My Agent",
+    ...     provider_id="local",
+    ...     name="My_Agent",
     ...     description="A helpful assistant",
-    ...     instruction="Be helpful and concise",
-    ...     tools=[],
+    ...     instruction="Help users with tasks",
+    ...     tools=[Tool(name="Bash", description="Run commands", parameters=[])],
+    ... )
+    >>> policy = "permit(principal, action, resource);"
+    >>> harness = CedarPolicyHarness(
+    ...     policy_set=policy,
+    ...     schema=agent_to_cedar_schema(agent),
     ... )
     >>> await harness.initialize(agent=agent)
 """
@@ -47,10 +63,12 @@ from sondera.types import (
     AdjudicatedStep,
     AdjudicatedTrajectory,
     Adjudication,
+    AdjudicationRecord,
     Agent,
     Content,
     Decision,
     Parameter,
+    PolicyAnnotation,
     PolicyEngineMode,
     PromptContent,
     Role,
@@ -93,6 +111,8 @@ __all__ = [
     "Adjudication",
     "AdjudicatedStep",
     "AdjudicatedTrajectory",
+    "AdjudicationRecord",
+    "PolicyAnnotation",
     "Decision",
     # Exceptions
     "SonderaError",

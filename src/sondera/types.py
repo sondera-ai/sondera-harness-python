@@ -238,6 +238,10 @@ class PolicyAnnotation(Model):
     """Unique identifier of the policy that produced this annotation."""
     description: str
     """Human-readable description of why this annotation was added."""
+    escalate: bool = False
+    """Whether this policy requires escalation to a human or other oracle to decide the final verdict."""
+    escalate_arg: str = ""
+    """The argument passed to @escalate, if any."""
     custom: dict[str, str] = Field(default_factory=dict)
     """Custom key-value metadata from the policy."""
 

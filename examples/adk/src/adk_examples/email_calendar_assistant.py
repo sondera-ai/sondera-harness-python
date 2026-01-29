@@ -154,7 +154,7 @@ Keep responses concise and actionable.
 def create_agent() -> Agent:
     """Create an ADK agent with communications tools from archetypes."""
     return Agent(
-        model="gemini-2.0-flash-exp",
+        model="gemini-2.5-flash",
         name="email_calendar_assistant",
         description="Email and Calendar Assistant that manages communications and scheduling.",
         instruction=INSTRUCTION,

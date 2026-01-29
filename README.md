@@ -1,67 +1,58 @@
-# Sondera Harness SDK for Python
+<div align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/sondera-ai/harness-sdk-python/main/assets/sondera-logo-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/sondera-ai/harness-sdk-python/main/assets/sondera-logo-light.svg">
+    <img alt="Sondera" src="https://raw.githubusercontent.com/sondera-ai/harness-sdk-python/main/assets/sondera-logo-light.svg" height="60">
+  </picture>
 
-[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+  <h1>Sondera Harness</h1>
 
->
-> One step at a time. One action at a time. One trajectory at a time.
-> 
+  <p><strong>Deterministic guardrails for AI agents.</strong></p>
 
-AI agents systems operate beyond traditional security boundaries, making autonomous decisions, calling tools, and accessing resources based on context that changes with every execution. Sondera SDK provides runtime governance for these agentic systems, answering not just "can this agent do X?" but "should it do X here, now, with this data?" Built for developers deploying agents through LangGraph, Google ADK, and Strands, Sondera enables real-time trajectory tracking, policy-as-code enforcement via Cedar, and behavioral adjudication so you can ship agents with confidence.
+  <p>Open-source. Works with LangGraph, ADK, Strands, or any custom agent.</p>
 
-## Features
+  <p>
+    <a href="https://docs.sondera.ai/">Docs</a>
+    ·
+    <a href="https://docs.sondera.ai/quickstart/">Quickstart</a>
+    ·
+    <a href="https://github.com/sondera-ai/sondera-harness-python/tree/main/examples">Examples</a>
+    ·
+    <a href="https://discord.gg/8zMbcnDnZs">Discord</a>
+  </p>
 
-- **Managed harness-as-a-service** with the Sondera Harness for enterprise policy governance and guardrails
-- **Local policy-as-code** using Cedar policy language in the Cedar Policy Harness
-- **Real-time trajectory** observability, adjudication, and steering
-- **Scaffold integrations** for LangGraph, Google ADK, and Strands
-- **CLI and TUI** for monitoring agent behavior
+  <p>
+    <a href="https://pypi.org/project/sondera-harness/"><img src="https://img.shields.io/pypi/v/sondera-harness.svg" alt="PyPI version"></a>
+    <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.12+-blue.svg" alt="Python 3.12+"></a>
+    <a href="LICENSE"><img src="https://img.shields.io/github/license/sondera-ai/sondera-harness-python.svg" alt="License: MIT"></a>
+  </p>
 
-## Installation
+</div>
+
+---
+
+## What is Sondera Harness?
+
+Sondera Harness evaluates [Cedar](https://www.cedarpolicy.com/) policies before your agent's actions execute. When a policy denies an action, the agent gets a reason why and can try a different approach. Same input, same verdict. Deterministic, not probabilistic.
+
+**Example policy:**
+
+```cedar
+forbid(principal, action, resource)
+when { context has parameters_json && context.parameters_json like "*rm -rf*" };
+```
+
+This policy stops your agent from running `rm -rf`, every time.
+
+## Quickstart
+
+### 1. Install
 
 ```bash
-uv add sondera-harness
+uv add "sondera-harness[langgraph]"   # or: pip install "sondera-harness[langgraph]"
 ```
 
-### Optional Dependencies
-
-Install extras for specific framework integrations:
-
-```bash
-# Google ADK support
-uv add sondera-harness --extra adk
-
-# LangGraph support
-uv add sondera-harness --extra langgraph
-
-# Strands support
-uv add sondera-harness --extra strands
-
-# All integrations
-uv add sondera-harness --all-extras
-```
-
-## Quick Start
-
-### Configuration
-
-Set your API credentials via environment variables:
-
-```bash
-export SONDERA_HARNESS_ENDPOINT="your-harness.sondera.ai:443"
-export SONDERA_API_TOKEN="<YOUR_SONDERA_API_KEY>"
-```
-
-Or create a `.env` file or `~/.sondera/env`:
-
-```env
-SONDERA_HARNESS_ENDPOINT=your-harness.sondera.ai:443
-SONDERA_API_TOKEN=<YOUR_SONDERA_API_KEY>
-```
-
-## Scaffold Integrations
-
-### LangGraph / LangChain
+### 2. Add to Your Agent (LangGraph)
 
 ```python
 from langchain.agents import create_agent
@@ -93,183 +84,41 @@ agent = create_agent(
 )
 ```
 
-### Google ADK
+Also supports [Google ADK](https://docs.sondera.ai/integrations/adk/), [Strands](https://docs.sondera.ai/integrations/strands/), and [custom integrations](https://docs.sondera.ai/integrations/custom/).
 
-```python
-from google.adk.agents import Agent
-from google.adk.runners import Runner
-from sondera.harness import SonderaRemoteHarness
-from sondera.adk import SonderaHarnessPlugin
+> [!NOTE]
+> This example uses Sondera Platform ([free account](https://sondera.ai)), which also enables the TUI below. For local-only development, see [CedarPolicyHarness](https://docs.sondera.ai/integrations/custom/).
 
-# Create harness
-harness = SonderaRemoteHarness(
-    sondera_api_key="<YOUR_SONDERA_API_KEY>",
-)
+### 3. See It in Action
 
-# Create plugin
-plugin = SonderaHarnessPlugin(harness=harness)
-
-# Create agent
-agent = Agent(
-    name="my-adk-agent",
-    model="gemini-2.0-flash",
-    instruction="Be helpful and safe",
-    tools=[...],
-)
-
-# Create runner with plugin
-runner = Runner(
-    agent=agent,
-    app_name="my-app",
-    plugins=[plugin],
-)
-```
-
-### Strands Agents
-
-```python
-from strands import Agent
-from sondera.harness import SonderaRemoteHarness
-from sondera.strands import SonderaHarnessHook
-
-# Create harness
-harness = SonderaRemoteHarness(
-    sondera_api_key="<YOUR_SONDERA_API_KEY>",
-)
-
-# Create hook
-hook = SonderaHarnessHook(harness=harness)
-
-# Create agent with hook
-agent = Agent(
-    system_prompt="You are a helpful assistant",
-    model="anthropic.claude-3-5-sonnet-20241022-v2:0",
-    hooks=[hook],
-)
-
-# Run agent (hooks fire automatically)
-response = agent("What is 5 + 3?")
-```
-
-### Custom Scaffold 
-
-```python
-from sondera import SonderaRemoteHarness, Agent, PromptContent, Role, Stage
-
-# Create a harness instance
-harness = SonderaRemoteHarness(
-    sondera_harness_endpoint="localhost:50051",
-    sondera_api_key="<YOUR_SONDERA_API_KEY>",
-    sondera_harness_client_secure=True,  # Enable TLS for production
-)
-
-# Define your agent
-agent = Agent(
-    id="my-agent",
-    provider_id="custom",
-    name="My Assistant",
-    description="A helpful AI assistant",
-    instruction="Be helpful, accurate, and safe",
-    tools=[],
-)
-
-# Initialize a trajectory
-await harness.initialize(agent=agent)
-
-# Adjudicate user input
-adjudication = await harness.adjudicate(
-    Stage.PRE_MODEL,
-    Role.USER,
-    PromptContent(text="Hello, can you help me?"),
-)
-
-if adjudication.is_allowed:
-    # Proceed with agent logic
-    pass
-elif adjudication.is_denied:
-    print(f"Request blocked: {adjudication.reason}")
-
-# Finalize the trajectory
-await harness.finalize()
-```
-
-## Remote and Local Harnesses
-
-### Cedar Policy Harness (Local Only)
-
-For a local harness deployment, you can use the `CedarPolicyHarness` to evaluate Cedar policies:
-
-```python
-from sondera.harness import CedarPolicyHarness
-from sondera import Agent
-
-# Define Cedar policies
-policies = '''
-@id("forbid-dangerous-bash")
-forbid(
-  principal,
-  action == Coding_Agent::Action::"Bash",
-  resource
-)
-when {
-  context has parameters &&
-  (context.parameters.command like "*rm -rf /*" ||
-   context.parameters.command like "*mkfs*" ||
-   context.parameters.command like "*dd if=/dev/zero*" ||
-   context.parameters.command like "*> /dev/sda*")
-};
-'''
-
-# Create local policy engine
-harness = CedarPolicyHarness(
-    policy_set=policies,
-    agent=my_agent,
-)
-
-await harness.initialize()
-# Use same adjudication API as RemoteHarness
-```
-
-## CLI & TUI
-
-Launch the Sondera TUI for monitoring (note, requires a Sondera account and API key):
+<div align="center">
+  <img src="docs/src/assets/sondera-tui.gif" alt="Sondera TUI" width="700" />
+</div>
 
 ```bash
-sondera
+uv run sondera   # or: sondera (if installed via pip)
 ```
 
-The TUI provides:
-- Real-time agent and trajectory overview
-- Adjudication history and policy violations
-- Agent details and tool inspection
+## Why Sondera Harness?
 
-## Examples
+- **Steer, don't block:** Denied actions include a reason. Return it to the model, and it tries something else.
+- **Deterministic:** Stop debugging prompts. Rules are predictable.
+- **Drop-in integration:** Native middleware for LangGraph, Google ADK, and Strands.
+- **Full observability:** Every action, every decision, every reason. Audit-ready.
 
-See the [examples/](examples/) directory for complete demos:
+## Documentation
 
-- **LangGraph**: Investment chatbot with policy enforcement
-- **ADK**: Payment and healthcare agents
-- **Strands**: Various agent implementations
+- [Quickstart](https://docs.sondera.ai/quickstart/)
+- [Writing Policies](https://docs.sondera.ai/writing-policies/)
+- [Integrations](https://docs.sondera.ai/integrations/)
+- [Reference](https://docs.sondera.ai/reference/)
 
-## Environment Variables
+## Community
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `SONDERA_HARNESS_ENDPOINT` | Harness service endpoint | `localhost:50051` |
-| `SONDERA_API_TOKEN` | JWT authentication token | Required for remote |
-
-## Requirements
-
-- Python 3.12 or higher (up to 3.14)
-
-## Security
-
-See [SECURITY.md](SECURITY.md) for security best practices and vulnerability reporting.
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines.
+- [Discord](https://discord.gg/8zMbcnDnZs) for questions and feedback
+- [GitHub Issues](https://github.com/sondera-ai/sondera-harness-python/issues) for bugs
+- [Contributing](CONTRIBUTING.md) for development setup
 
 ## License
 
-MIT - see [LICENSE](LICENSE) for details.
+[MIT](LICENSE)

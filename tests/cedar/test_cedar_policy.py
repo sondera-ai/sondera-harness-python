@@ -8,6 +8,7 @@ from sondera.types import (
     Agent,
     Decision,
     Parameter,
+    PolicyAnnotation,
     Role,
     Stage,
     Tool,
@@ -526,3 +527,195 @@ class TestCedarPolicyHarnessWithoutAgent:
                 Role.MODEL,
                 ToolRequestContent(tool_id="read_file", args={"path": "/test"}),
             )
+
+
+class TestCedarPolicyHarnessInternalErrors:
+    """Tests for internal error handling."""
+
+    @pytest.mark.asyncio
+    async def test_raises_runtime_error_when_policy_not_found(self, coding_agent):
+        """Test that RuntimeError is raised when a determining policy is not found."""
+        from unittest.mock import MagicMock
+
+        schema = agent_to_cedar_schema(coding_agent)
+        harness = CedarPolicyHarness(
+            policy_set="forbid(principal, action, resource);",
+            schema=schema,
+        )
+        await harness.initialize(agent=coding_agent)
+
+        # Mock the authorizer to return a deny response with a non-existent policy ID
+        mock_response = MagicMock()
+        mock_response.decision = "Deny"
+        mock_response.reason = ["non_existent_policy_id"]
+
+        mock_authorizer = MagicMock()
+        mock_authorizer.is_authorized.return_value = mock_response
+        mock_authorizer.upsert_entity = MagicMock()
+        harness._authorizer = mock_authorizer
+
+        with pytest.raises(
+            RuntimeError,
+            match="Policy 'non_existent_policy_id' not found in policy set",
+        ):
+            await harness.adjudicate(
+                Stage.PRE_TOOL,
+                Role.MODEL,
+                ToolRequestContent(tool_id="read_file", args={"path": "/test"}),
+            )
+
+
+class TestCedarPolicyHarnessEscalate:
+    """Tests for @escalate annotation support."""
+
+    def test_escalate_on_permit_raises_error(self, coding_agent):
+        """Test that @escalate on permit policy raises ValueError."""
+        schema = agent_to_cedar_schema(coding_agent)
+        policy = """
+        @id("bad-policy")
+        @escalate
+        permit(principal, action, resource);
+        """
+        with pytest.raises(
+            ValueError,
+            match="@escalate is only valid on forbid policies",
+        ):
+            CedarPolicyHarness(policy_set=policy, schema=schema)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "escalate_annotation,expected_escalate_arg",
+        [
+            ("@escalate", ""),  # naked
+            ('@escalate("security-team")', "security-team"),  # with value
+        ],
+        ids=["naked", "with-value"],
+    )
+    async def test_escalate_on_forbid_returns_escalate_decision(
+        self, coding_agent, escalate_annotation, expected_escalate_arg
+    ):
+        """Test that @escalate on forbid policy returns ESCALATE decision."""
+        schema = agent_to_cedar_schema(coding_agent)
+        policy = f"""
+        permit(principal, action, resource);
+
+        @id("escalate-execute")
+        {escalate_annotation}
+        @reason("Commands require approval")
+        forbid(principal, action == CodingAgent::Action::"execute_command", resource);
+        """
+        harness = CedarPolicyHarness(policy_set=policy, schema=schema)
+        await harness.initialize(agent=coding_agent)
+
+        result = await harness.adjudicate(
+            Stage.PRE_TOOL,
+            Role.MODEL,
+            ToolRequestContent(tool_id="execute_command", args={"command": "ls"}),
+        )
+
+        assert result.decision == Decision.ESCALATE
+        assert result.annotations == [
+            PolicyAnnotation(
+                id="escalate-execute",
+                description="Commands require approval",
+                escalate=True,
+                escalate_arg=expected_escalate_arg,
+            )
+        ]
+
+    @pytest.mark.asyncio
+    async def test_mixed_escalate_and_hard_deny_returns_deny(self, coding_agent):
+        """Test that hard deny wins over escalate when both match."""
+        schema = agent_to_cedar_schema(coding_agent)
+        policy = """
+        permit(principal, action, resource);
+
+        @id("escalate-execute")
+        @escalate
+        forbid(principal, action == CodingAgent::Action::"execute_command", resource);
+
+        @id("hard-deny-execute")
+        forbid(principal, action == CodingAgent::Action::"execute_command", resource);
+        """
+        harness = CedarPolicyHarness(policy_set=policy, schema=schema)
+        await harness.initialize(agent=coding_agent)
+
+        result = await harness.adjudicate(
+            Stage.PRE_TOOL,
+            Role.MODEL,
+            ToolRequestContent(tool_id="execute_command", args={"command": "ls"}),
+        )
+
+        assert result.decision == Decision.DENY
+        # Reason should only contain the hard deny policy, not the escalate one
+        # Cedar internal IDs: policy0=permit, policy1=escalate, policy2=hard-deny
+        assert "policy2" in result.reason
+        assert "policy1" not in result.reason
+
+    @pytest.mark.asyncio
+    async def test_multiple_escalate_policies_returns_all_annotations(
+        self, coding_agent
+    ):
+        """Test that multiple @escalate policies return all annotations."""
+        schema = agent_to_cedar_schema(coding_agent)
+        policy = """
+        permit(principal, action, resource);
+
+        @id("escalate-1")
+        @escalate("team-a")
+        @reason("Reason A")
+        forbid(principal, action == CodingAgent::Action::"execute_command", resource);
+
+        @id("escalate-2")
+        @escalate("team-b")
+        @reason("Reason B")
+        forbid(principal, action == CodingAgent::Action::"execute_command", resource);
+        """
+        harness = CedarPolicyHarness(policy_set=policy, schema=schema)
+        await harness.initialize(agent=coding_agent)
+
+        result = await harness.adjudicate(
+            Stage.PRE_TOOL,
+            Role.MODEL,
+            ToolRequestContent(tool_id="execute_command", args={"command": "ls"}),
+        )
+
+        assert result.decision == Decision.ESCALATE
+        # Sort in case policy evaluation order can vary
+        assert sorted(result.annotations, key=lambda a: a.id) == [
+            PolicyAnnotation(
+                id="escalate-1",
+                description="Reason A",
+                escalate=True,
+                escalate_arg="team-a",
+            ),
+            PolicyAnnotation(
+                id="escalate-2",
+                description="Reason B",
+                escalate=True,
+                escalate_arg="team-b",
+            ),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_escalate_does_not_affect_allow(self, coding_agent):
+        """Test that allowed actions are not affected by escalate policies."""
+        schema = agent_to_cedar_schema(coding_agent)
+        policy = """
+        permit(principal, action, resource);
+
+        @id("escalate-execute")
+        @escalate
+        forbid(principal, action == CodingAgent::Action::"execute_command", resource);
+        """
+        harness = CedarPolicyHarness(policy_set=policy, schema=schema)
+        await harness.initialize(agent=coding_agent)
+
+        # read_file should still be allowed (not affected by execute_command escalate)
+        result = await harness.adjudicate(
+            Stage.PRE_TOOL,
+            Role.MODEL,
+            ToolRequestContent(tool_id="read_file", args={"path": "/tmp/test"}),
+        )
+
+        assert result.decision == Decision.ALLOW

@@ -23,6 +23,7 @@ from sondera.types import (
     Agent,
     Content,
     Decision,
+    PolicyAnnotation,
     PromptContent,
     Role,
     Stage,
@@ -69,6 +70,7 @@ class CedarPolicyHarness(AbstractHarness):
         *,
         policy_set: PolicySet | str,
         schema: CedarSchema,
+        agent: Agent | None = None,
         logger: logging.Logger | None = None,
     ):
         """Initialize the Cedar policy engine.
@@ -77,12 +79,13 @@ class CedarPolicyHarness(AbstractHarness):
             policy_set: Cedar policies to evaluate. Can be a PolicySet instance
                 or Cedar policy text. Required.
             schema: Cedar schema generated from agent_to_cedar_schema(). Required.
+            agent: The agent to govern. Required for adjudication.
             logger: Logger instance.
 
         Raises:
             ValueError: If policy_set or schema is not provided.
         """
-        self._agent: Agent | None = None
+        self._agent: Agent | None = agent
         self._trajectory_id: str | None = None
         self._trajectory_step_count: int = 0
         self._logger = logger or _LOGGER
@@ -101,6 +104,16 @@ class CedarPolicyHarness(AbstractHarness):
             self._policy_set = PolicySet(policy_set)
         else:
             self._policy_set = policy_set
+
+        for policy in self._policy_set.policies():
+            annotations = policy.annotations()
+            if "escalate" in annotations and str(policy.effect()) != "Forbid":
+                policy_id = annotations.get("id", policy.id())
+                raise ValueError(
+                    f"Policy '{policy_id}' has @escalate but is not a forbid policy. "
+                    "@escalate is only valid on forbid policies."
+                )
+
         # Extract namespace name from schema
         namespaces = list(schema.root.keys())
         if namespaces:
@@ -110,6 +123,8 @@ class CedarPolicyHarness(AbstractHarness):
             raise ValueError("Schema must have at least one namespace")
         # Authorizer will be initialized with entities when agent is set
         self._authorizer: Authorizer | None = None
+        # Cache for pre-parsed tool response schemas (tool_name -> parsed schema dict)
+        self._tool_response_schemas: dict[str, dict[str, object]] = {}
 
     def _build_authorizer(self) -> Authorizer:
         """Build the Cedar authorizer with current entities."""
@@ -128,8 +143,9 @@ class CedarPolicyHarness(AbstractHarness):
         if self._agent:
             agent_uid = EntityUid(f"{self._namespace}::Agent", self._agent.id)
 
-            # Add tool entities from agent's tools
+            # Add tool entities from agent's tools and pre-parse response schemas
             tool_entities: list[EntityUid] = []
+            self._tool_response_schemas = {}
             for tool in self._agent.tools:
                 tool_id = tool.id or tool.name
                 tool_uid = EntityUid(f"{self._namespace}::Tool", tool_id)
@@ -142,6 +158,11 @@ class CedarPolicyHarness(AbstractHarness):
                 )
                 tool_entities.append(tool_uid)
                 entities.append(tool_entity)
+                # Pre-parse response JSON schema for use in _tool_response
+                if tool.response_json_schema:
+                    self._tool_response_schemas[tool.name] = json.loads(
+                        tool.response_json_schema
+                    )
 
             agent_entity = Entity(
                 agent_uid,
@@ -252,11 +273,47 @@ class CedarPolicyHarness(AbstractHarness):
         assert request is not None, "Unexpected none request"
         response = self._authorizer.is_authorized(request, self._policy_set)
         if str(response.decision) == "Allow":
-            reason = f"Allowed by policies: {response.reason}"
-            return Adjudication(decision=Decision.ALLOW, reason=reason)
+            return Adjudication(
+                decision=Decision.ALLOW,
+                reason=f"Allowed by policies: {response.reason}",
+            )
+
+        annotations: list[PolicyAnnotation] = []
+        hard_deny_ids = []
+        for internal_id in response.reason:
+            policy = self._policy_set.policy(internal_id)
+            if policy is None:
+                raise RuntimeError(f"Policy '{internal_id}' not found in policy set")
+            policy_annotations = policy.annotations()
+            if "escalate" not in policy_annotations:
+                hard_deny_ids.append(internal_id)
+            else:
+                custom = {
+                    k: v
+                    for k, v in policy_annotations.items()
+                    if k not in ("id", "reason", "escalate")
+                }
+                annotations.append(
+                    PolicyAnnotation(
+                        id=policy_annotations.get("id", internal_id),
+                        description=policy_annotations.get("reason", ""),
+                        escalate=True,
+                        escalate_arg=policy_annotations["escalate"],
+                        custom=custom,
+                    )
+                )
+
+        if not hard_deny_ids and annotations:
+            return Adjudication(
+                decision=Decision.ESCALATE,
+                reason=f"Escalated by policies: {response.reason}",
+                annotations=annotations,
+            )
         else:
-            reason = f"Denied by policies: {response.reason}"
-            return Adjudication(decision=Decision.DENY, reason=reason)
+            return Adjudication(
+                decision=Decision.DENY,
+                reason=f"Denied by policies: {hard_deny_ids}",
+            )
 
     def _message_request(
         self,
@@ -311,11 +368,17 @@ class CedarPolicyHarness(AbstractHarness):
         action_name = tool_id.replace(" ", "_").replace("-", "_")
         action_uid = EntityUid(f"{self._namespace}::Action", action_name)
 
-        context = Context(
-            {"parameters_json": json.dumps(content.args), "parameters": content.args},
-            schema=self._schema,
-            action=action_uid,
-        )
+        # Build context - only include typed parameters if schema defines them
+        context_data: dict[str, object] = {
+            "parameters_json": json.dumps(content.args),
+        }
+        # Check if tool has typed parameters schema
+        if self._agent:
+            tool = next((t for t in self._agent.tools if t.name == tool_id), None)
+            if tool and tool.parameters_json_schema:
+                context_data["parameters"] = content.args
+
+        context = Context(context_data, schema=self._schema, action=action_uid)
 
         return Request(
             principal=agent_uid,
@@ -345,14 +408,22 @@ class CedarPolicyHarness(AbstractHarness):
         action_name = tool_id.replace(" ", "_").replace("-", "_")
         action_uid = EntityUid(f"{self._namespace}::Action", action_name)
 
-        context = Context(
-            {
-                "response_json": json.dumps(content.response, default=str),
-                "response": content.response,
-            },
-            schema=self._schema,
-            action=action_uid,
-        )
+        # Build context - only include typed response if schema defines it
+        context_data: dict[str, object] = {
+            "response_json": json.dumps(content.response, default=str),
+        }
+        # Check if tool has typed response schema (pre-parsed in _build_authorizer)
+        if tool_id in self._tool_response_schemas:
+            response_schema = self._tool_response_schemas[tool_id]
+            # Check if the response schema is a simple type (not object/Record)
+            # Simple types get wrapped in {"value": ...} by the schema generator
+            if response_schema.get("type") not in ["object", "OBJECT"]:
+                # Simple type was wrapped in {"value": ...} by schema generator
+                context_data["response"] = {"value": content.response}
+            else:
+                context_data["response"] = content.response
+
+        context = Context(context_data, schema=self._schema, action=action_uid)
 
         return Request(
             principal=agent_uid,

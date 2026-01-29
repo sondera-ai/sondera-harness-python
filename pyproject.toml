@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sondera-harness"
-version = "0.6.2"
+version = "0.6.3"
 description = "Sondera Harness SDK for Python - Agent governance and policy enforcement"
 readme = "README.md"
 requires-python = ">=3.12,<3.15"
@@ -46,6 +46,8 @@ Changelog = "https://github.com/sondera-ai/harness-sdk-python/blob/main/CHANGELO
 
 [project.scripts]
 sondera = "sondera.cli:cli"
+sondera-harness = "sondera.cli:cli"
+
 
 [tool.setuptools.package-data]
 sondera = ["py.typed", "tui/*.tcss"]
@@ -150,7 +152,14 @@ testpaths = ["tests"]
 addopts = "-v"
 
 [tool.uv.workspace]
-members = ["examples/adk", "examples/langgraph", "examples/strands", "examples/archetypes", "examples/cedar"]
+members = [
+    "examples/adk",
+ "examples/langgraph",
+ "examples/strands",
+ "examples/archetypes",
+ "examples/cedar",
+ "docs",
+]
 
 [tool.uv.sources]
 sondera-archetypes = { workspace = true }

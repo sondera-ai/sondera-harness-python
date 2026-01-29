@@ -1,0 +1,968 @@
+/* Sondera Brand Colors */
+:root {
+  /* Primary Colors */
+  --sondera-tactile-green: #569378;
+  --sondera-electric-green: #81DDB4;
+  --sondera-dusk: #06110B;
+
+  /* Terminal Gradient */
+  --sondera-terminal-start: #06110B;
+  --sondera-terminal-end: #054C53;
+
+  /* Neutrals */
+  --sondera-light-grey: #EAEAEA;
+  --sondera-grey: #E0E0E0;
+  --sondera-dark-grey: #D6D6D6;
+  --sondera-darker-grey: #C0C0C0;
+  --sondera-darkest-grey: #424242;
+
+  /* Tints */
+  --sondera-tactile-10: #dde9e4;
+  --sondera-tactile-20: #c7dbd2;
+  --sondera-electric-10: #e6f8f0;
+  --sondera-electric-20: #d5f4e6;
+
+  /* Shades (for dark mode) */
+  --sondera-tactile-90: #1D3128;
+  --sondera-tactile-100: #111D18;
+
+  /* Electric Green Shades (cleaner teal tone for dark mode) */
+  --sondera-electric-90: #2B4A3C;
+  --sondera-electric-100: #1A2C24;
+}
+
+/* Light mode overrides */
+[data-md-color-scheme="default"] {
+  --md-primary-fg-color: var(--sondera-tactile-green);
+  --md-primary-fg-color--light: var(--sondera-electric-green);
+  --md-primary-fg-color--dark: #396250;
+  --md-accent-fg-color: var(--sondera-tactile-green);
+  --md-typeset-a-color: var(--sondera-tactile-green);
+  /* Brand-compliant light grey background */
+  --md-default-bg-color: var(--sondera-light-grey);
+  --md-default-bg-color--light: #f5f5f5;
+  /* Code blocks use Tactile 10% tint */
+  --md-code-bg-color: var(--sondera-tactile-10);
+}
+
+/* Dark mode overrides */
+[data-md-color-scheme="slate"] {
+  /* Header uses dark terminal colors, not bright green */
+  --md-primary-fg-color: var(--sondera-dusk);
+  --md-primary-fg-color--light: #0d2119;
+  --md-primary-fg-color--dark: #030906;
+  /* Accent/links use electric green for visibility */
+  --md-accent-fg-color: var(--sondera-electric-green);
+  --md-typeset-a-color: var(--sondera-electric-green);
+  /* Dark backgrounds */
+  --md-default-bg-color: #0a1a14;
+  --md-default-bg-color--light: #0d2119;
+}
+
+/* Dark mode header styling - solid dark for clear visual hierarchy */
+[data-md-color-scheme="slate"] .md-header {
+  background: var(--sondera-terminal-start);
+}
+
+/* Dark mode tabs bar - continues the gradient */
+[data-md-color-scheme="slate"] .md-tabs {
+  background: linear-gradient(180deg, var(--sondera-terminal-start) 0%, #081812 100%);
+}
+
+/* Dark mode content area - Terminal Gradient (horizontal per brand guidelines) */
+[data-md-color-scheme="slate"] .md-main {
+  background: linear-gradient(to right, var(--sondera-terminal-start) 0%, #0a3535 100%);
+}
+
+/* Dark mode sidebars - transparent to show gradient through */
+[data-md-color-scheme="slate"] .md-sidebar {
+  background: transparent;
+}
+
+[data-md-color-scheme="slate"] .md-sidebar__scrollwrap {
+  background: transparent;
+}
+
+[data-md-color-scheme="slate"] .md-nav {
+  background: transparent;
+}
+
+[data-md-color-scheme="slate"] .md-nav__title {
+  background: transparent;
+  box-shadow: none;
+}
+
+/* Primary sidebar nav title */
+[data-md-color-scheme="slate"] .md-sidebar--primary .md-nav__title {
+  background: transparent;
+  box-shadow: none;
+}
+
+[data-md-color-scheme="slate"] .md-nav--primary > .md-nav__title {
+  background: transparent;
+  box-shadow: none;
+}
+
+/* TOC (table of contents) specifically */
+[data-md-color-scheme="slate"] .md-nav--secondary {
+  background: transparent;
+}
+
+[data-md-color-scheme="slate"] .md-sidebar--secondary {
+  background: transparent;
+}
+
+/* TOC title label - "Table of contents" */
+[data-md-color-scheme="slate"] .md-nav__title[for="__toc"] {
+  background: transparent;
+}
+
+[data-md-color-scheme="slate"] .md-nav--secondary .md-nav__title {
+  background: transparent;
+  box-shadow: none;
+}
+
+[data-md-color-scheme="slate"] .md-nav--secondary .md-nav__title::after {
+  background: transparent;
+}
+
+/* Remove any pseudo-element backgrounds */
+[data-md-color-scheme="slate"] .md-sidebar--secondary::before,
+[data-md-color-scheme="slate"] .md-sidebar--secondary::after {
+  background: transparent;
+}
+
+/* Dark mode code blocks - Dusk background */
+[data-md-color-scheme="slate"] {
+  --md-code-bg-color: var(--sondera-dusk);
+}
+
+/* Explicit solid background for code blocks to prevent page gradient showing through */
+[data-md-color-scheme="slate"] .md-typeset pre,
+[data-md-color-scheme="slate"] .md-typeset .highlight,
+[data-md-color-scheme="slate"] .md-typeset .highlight code,
+[data-md-color-scheme="slate"] .md-typeset pre > code,
+[data-md-color-scheme="slate"] .md-typeset .codehilite,
+[data-md-color-scheme="slate"] .md-typeset .codehilite code,
+[data-md-color-scheme="slate"] .tabbed-content .highlight,
+[data-md-color-scheme="slate"] .tabbed-content pre {
+  background: var(--sondera-dusk) !important;
+  isolation: isolate;
+}
+
+/* Tabbed containers should be transparent to show gradient */
+[data-md-color-scheme="slate"] .md-typeset .tabbed-set,
+[data-md-color-scheme="slate"] .md-typeset .tabbed-block,
+[data-md-color-scheme="slate"] .md-typeset .tabbed-content {
+  background: transparent !important;
+}
+
+/* Ensure code containers have solid backgrounds that block the page gradient */
+[data-md-color-scheme="slate"] .highlight > pre,
+[data-md-color-scheme="slate"] .highlight > pre > code,
+[data-md-color-scheme="slate"] .highlighttable,
+[data-md-color-scheme="slate"] .md-typeset code {
+  background-color: var(--sondera-dusk) !important;
+}
+
+/* Code block copy button - match code block background */
+[data-md-color-scheme="slate"] .md-code__nav,
+[data-md-color-scheme="slate"] .md-code__button {
+  background-color: var(--sondera-dusk) !important;
+}
+
+/* Admonitions need solid backgrounds */
+[data-md-color-scheme="slate"] .md-typeset .admonition,
+[data-md-color-scheme="slate"] .md-typeset details {
+  background-color: var(--sondera-dusk) !important;
+}
+
+/* Dark mode body text - Light Grey per brand guidelines */
+[data-md-color-scheme="slate"] .md-typeset {
+  color: var(--sondera-light-grey);
+}
+
+/* Custom Object Sans font import (fallback to system sans-serif) */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+/* Heading colors - brand compliant */
+[data-md-color-scheme="default"] .md-typeset h1,
+[data-md-color-scheme="default"] .md-typeset h2,
+[data-md-color-scheme="default"] .md-typeset h3,
+[data-md-color-scheme="default"] .md-typeset h4,
+[data-md-color-scheme="default"] .md-typeset h5,
+[data-md-color-scheme="default"] .md-typeset h6 {
+  color: var(--sondera-dusk);
+}
+
+[data-md-color-scheme="slate"] .md-typeset h1,
+[data-md-color-scheme="slate"] .md-typeset h2,
+[data-md-color-scheme="slate"] .md-typeset h3,
+[data-md-color-scheme="slate"] .md-typeset h4,
+[data-md-color-scheme="slate"] .md-typeset h5,
+[data-md-color-scheme="slate"] .md-typeset h6 {
+  color: var(--sondera-light-grey);
+}
+
+/* Hero section */
+.md-typeset .hero {
+  text-align: center;
+  padding: 2rem 0;
+}
+
+/* Centered content */
+.md-typeset .center {
+  text-align: center;
+}
+
+/* Hide permalink in centered sections */
+.md-typeset .center h2 .headerlink {
+  display: none;
+}
+
+.md-typeset .hero h1 {
+  font-size: 2.5rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+
+[data-md-color-scheme="slate"] .md-typeset .hero h1 {
+  color: var(--sondera-light-grey);
+}
+
+/* Feature grid */
+.md-typeset .grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1rem;
+  margin: 1.5rem 0;
+}
+
+.md-typeset .grid.cards > * {
+  background: var(--md-code-bg-color);
+  border-radius: 0.5rem;
+  padding: 1.25rem;
+  border: 1px solid var(--md-default-fg-color--lightest);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.md-typeset .grid.cards > *:hover {
+  border-color: var(--md-primary-fg-color);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.md-typeset .grid.cards h3 {
+  margin-top: 0;
+  font-size: 1.1rem;
+}
+
+/* Decision badges - using brand semantic colors */
+.md-typeset .badge {
+  display: inline-block;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: 0.25rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.md-typeset .badge.allow {
+  background: var(--sondera-electric-green);
+  color: var(--sondera-dusk);
+}
+
+.md-typeset .badge.deny {
+  background: #ef4444;
+  color: white;
+}
+
+.md-typeset .badge.escalate {
+  background: #f59e0b;
+  color: white;
+}
+
+/* Button styling - brand colors */
+.md-typeset .md-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.25rem;
+  font-weight: 600;
+  border-radius: 0.375rem;
+  text-decoration: none;
+  transition: transform 0.1s, box-shadow 0.2s;
+}
+
+.md-typeset .md-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(86, 147, 120, 0.3);
+}
+
+.md-typeset .md-button--primary {
+  background: var(--sondera-tactile-green);
+  color: white;
+  border: none;
+}
+
+[data-md-color-scheme="slate"] .md-typeset .md-button--primary {
+  background: var(--sondera-electric-green);
+  color: var(--sondera-dusk);
+}
+
+.md-typeset .md-button--secondary {
+  background: transparent;
+  color: var(--sondera-tactile-green);
+  border: 2px solid var(--sondera-tactile-green);
+}
+
+[data-md-color-scheme="slate"] .md-typeset .md-button--secondary {
+  color: var(--sondera-electric-green);
+  border-color: var(--sondera-electric-green);
+}
+
+.md-typeset .md-button--secondary:hover {
+  background: var(--sondera-tactile-green);
+  color: white;
+  border-color: var(--sondera-tactile-green);
+}
+
+[data-md-color-scheme="slate"] .md-typeset .md-button--secondary:hover {
+  background: var(--sondera-electric-green);
+  color: var(--sondera-dusk);
+  border-color: var(--sondera-electric-green);
+}
+
+/* Back to top button - dark mode brand colors */
+[data-md-color-scheme="slate"] .md-top {
+  background-color: var(--sondera-dusk);
+  color: var(--sondera-light-grey);
+}
+
+[data-md-color-scheme="slate"] .md-top:hover {
+  background-color: var(--sondera-electric-green);
+  color: var(--sondera-dusk);
+}
+
+/* ===========================================
+   Mermaid Diagram Styling - Light/Dark Mode
+   =========================================== */
+
+/* Light mode: black text on white boxes */
+[data-md-color-scheme="default"] .mermaid .node rect,
+[data-md-color-scheme="default"] .mermaid .node polygon {
+  fill: #ffffff !important;
+  stroke: #333333 !important;
+}
+
+[data-md-color-scheme="default"] .mermaid .node .nodeLabel {
+  color: #000000 !important;
+}
+
+[data-md-color-scheme="default"] .mermaid .edgePath path {
+  stroke: #333333 !important;
+}
+
+[data-md-color-scheme="default"] .mermaid .edgeLabel {
+  color: #000000 !important;
+  background-color: #ffffff !important;
+}
+
+/* Dark mode: white text on black boxes */
+[data-md-color-scheme="slate"] .mermaid .node rect,
+[data-md-color-scheme="slate"] .mermaid .node polygon {
+  fill: #1a1a1a !important;
+  stroke: #555555 !important;
+}
+
+[data-md-color-scheme="slate"] .mermaid .node .nodeLabel {
+  color: #ffffff !important;
+}
+
+[data-md-color-scheme="slate"] .mermaid .edgePath path {
+  stroke: #888888 !important;
+}
+
+[data-md-color-scheme="slate"] .mermaid .edgeLabel {
+  color: #ffffff !important;
+  background-color: #1a1a1a !important;
+}
+
+/* Light mode subgraphs */
+[data-md-color-scheme="default"] .mermaid .cluster rect {
+  fill: #f5f5f5 !important;
+  stroke: #cccccc !important;
+}
+
+[data-md-color-scheme="default"] .mermaid .cluster span {
+  color: #000000 !important;
+}
+
+/* Dark mode subgraphs */
+[data-md-color-scheme="slate"] .mermaid .cluster rect {
+  fill: #0d0d0d !important;
+  stroke: #444444 !important;
+}
+
+[data-md-color-scheme="slate"] .mermaid .cluster span {
+  color: #ffffff !important;
+}
+
+/* ===========================================
+   Table Styling - Brand Guidelines Compliant
+   =========================================== */
+
+/* Base table styling */
+.md-typeset table:not([class]) {
+  font-family: 'Inter', 'Object Sans', system-ui, sans-serif;
+  font-size: inherit;
+  line-height: 1.5;
+  border-collapse: separate;
+  border-spacing: 0;
+  width: 100%;
+  margin: 1.5rem 0;
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+
+/* Light mode table - visible border and shadow for separation from background */
+[data-md-color-scheme="default"] .md-typeset table:not([class]) {
+  background: white;
+  border: 1px solid var(--sondera-darker-grey);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* Table header - Light mode */
+.md-typeset table:not([class]) th {
+  background: var(--sondera-tactile-green);
+  color: white;
+  font-weight: 600;
+  text-align: left;
+  padding: 0.5rem 1rem;
+  border-bottom: 2px solid #487b64; /* 60% shade for depth */
+  letter-spacing: 0.01em;
+}
+
+.md-typeset table:not([class]) th:first-child {
+  border-top-left-radius: 0.5rem;
+}
+
+.md-typeset table:not([class]) th:last-child {
+  border-top-right-radius: 0.5rem;
+}
+
+/* Table cells - Light mode */
+.md-typeset table:not([class]) td {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--sondera-grey);
+  color: var(--sondera-dusk);
+  vertical-align: top;
+}
+
+/* Alternating row colors - Light mode */
+[data-md-color-scheme="default"] .md-typeset table:not([class]) tbody tr:nth-child(even) {
+  background: var(--sondera-light-grey);
+}
+
+[data-md-color-scheme="default"] .md-typeset table:not([class]) tbody tr:nth-child(odd) {
+  background: white;
+}
+
+/* Row hover - Light mode */
+[data-md-color-scheme="default"] .md-typeset table:not([class]) tbody tr:hover {
+  background: var(--sondera-tactile-10);
+}
+
+/* Last row border radius */
+.md-typeset table:not([class]) tbody tr:last-child td:first-child {
+  border-bottom-left-radius: 0.5rem;
+}
+
+.md-typeset table:not([class]) tbody tr:last-child td:last-child {
+  border-bottom-right-radius: 0.5rem;
+}
+
+/* Remove bottom border on last row */
+.md-typeset table:not([class]) tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* ==================
+   Dark Mode Tables
+   ================== */
+
+[data-md-color-scheme="slate"] .md-typeset table:not([class]) {
+  background: var(--sondera-dusk);
+  border: 1px solid #1a3426;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+/* Table header - Dark mode */
+[data-md-color-scheme="slate"] .md-typeset table:not([class]) th {
+  background: #0d1912;
+  color: var(--sondera-light-grey);
+  border-bottom: 1px solid #1a3426;
+}
+
+/* Table cells - Dark mode */
+[data-md-color-scheme="slate"] .md-typeset table:not([class]) td {
+  color: var(--sondera-light-grey);
+  border-bottom-color: #0d1912;
+}
+
+/* Alternating row colors - Dark mode (subtle difference) */
+[data-md-color-scheme="slate"] .md-typeset table:not([class]) tbody tr:nth-child(even) {
+  background: #0d1912;
+}
+
+[data-md-color-scheme="slate"] .md-typeset table:not([class]) tbody tr:nth-child(odd) {
+  background: var(--sondera-dusk);
+}
+
+/* Row hover - Dark mode (Electric Green highlight) */
+[data-md-color-scheme="slate"] .md-typeset table:not([class]) tbody tr:hover {
+  background: var(--sondera-electric-green);
+}
+
+[data-md-color-scheme="slate"] .md-typeset table:not([class]) tbody tr:hover td {
+  color: var(--sondera-dusk);
+}
+
+[data-md-color-scheme="slate"] .md-typeset table:not([class]) tbody tr:hover td a {
+  color: var(--sondera-dusk) !important;
+  text-decoration: underline;
+}
+
+[data-md-color-scheme="slate"] .md-typeset table:not([class]) tbody tr:hover code {
+  background: var(--sondera-dusk);
+  color: var(--sondera-light-grey);
+}
+
+/* Code in tables */
+.md-typeset table:not([class]) code {
+  font-family: 'Inconsolata', 'Consolas', monospace;
+  font-size: 0.85em;
+  padding: 0.125rem 0.375rem;
+  border-radius: 0.25rem;
+  white-space: nowrap;
+}
+
+[data-md-color-scheme="default"] .md-typeset table:not([class]) code {
+  background: var(--sondera-tactile-10);
+  color: #396250; /* 70% shade */
+}
+
+[data-md-color-scheme="slate"] .md-typeset table:not([class]) code {
+  background: var(--sondera-dusk);
+  color: var(--sondera-light-grey);
+  border: 1px solid #1a3426;
+}
+
+/* Bold text in first column */
+.md-typeset table:not([class]) td:first-child strong,
+.md-typeset table:not([class]) td:first-child b {
+  font-weight: 600;
+}
+
+/* Links in tables */
+.md-typeset table:not([class]) a {
+  text-decoration: none;
+  font-weight: 500;
+}
+
+[data-md-color-scheme="default"] .md-typeset table:not([class]) a {
+  color: var(--sondera-tactile-green);
+}
+
+[data-md-color-scheme="default"] .md-typeset table:not([class]) a:hover {
+  color: #396250;
+  text-decoration: underline;
+}
+
+[data-md-color-scheme="slate"] .md-typeset table:not([class]) a {
+  color: var(--sondera-electric-green);
+}
+
+[data-md-color-scheme="slate"] .md-typeset table:not([class]) a:hover {
+  color: #96e3c1;
+  text-decoration: underline;
+}
+
+/* Center-aligned columns (for checkmarks/icons) */
+.md-typeset table:not([class]) td:has(.twemoji),
+.md-typeset table:not([class]) td:has([class*="material"]) {
+  text-align: center;
+}
+
+/* Responsive table wrapper */
+@media (max-width: 768px) {
+  .md-typeset table:not([class]) th,
+  .md-typeset table:not([class]) td {
+    padding: 0.625rem 0.75rem;
+  }
+}
+
+/* Admonition colors - using brand palette */
+.md-typeset .admonition.tip,
+.md-typeset details.tip {
+  border-color: var(--sondera-electric-green);
+}
+
+.md-typeset .tip > .admonition-title,
+.md-typeset .tip > summary {
+  background-color: rgba(129, 221, 180, 0.1);
+}
+
+.md-typeset .tip > .admonition-title::before,
+.md-typeset .tip > summary::before {
+  background-color: var(--sondera-electric-green);
+}
+
+.md-typeset .admonition.success,
+.md-typeset details.success {
+  border-color: var(--sondera-tactile-green);
+}
+
+.md-typeset .success > .admonition-title,
+.md-typeset .success > summary {
+  background-color: rgba(86, 147, 120, 0.1);
+}
+
+.md-typeset .success > .admonition-title::before,
+.md-typeset .success > summary::before {
+  background-color: var(--sondera-tactile-green);
+}
+
+/* Code blocks - using Inconsolata */
+.md-typeset code,
+.md-typeset pre {
+  font-family: 'Inconsolata', 'Consolas', monospace;
+}
+
+/* ===========================================
+   Cedar Policy Syntax Highlighting
+   =========================================== */
+
+/* Light mode Cedar highlighting */
+[data-md-color-scheme="default"] .language-cedar {
+  /* Keywords: permit, forbid, when, unless */
+  .k { color: var(--sondera-tactile-green); font-weight: 600; }
+  /* Pseudo-keywords: principal, action, resource, context */
+  .kp { color: #396250; }
+  /* Operator keywords: has, like, in, is */
+  .k-Operator { color: var(--sondera-tactile-green); }
+  /* Strings - warm amber for visibility (patterns are important!) */
+  .s, .s1, .s2 { color: #b45309; }
+  /* Comments - subtle grey */
+  .c, .c1 { color: #6b7280; font-style: italic; }
+  /* Decorators: @id */
+  .nd { color: #7c3aed; }
+  /* Operators: ==, &&, ||, !, >, < */
+  .o { color: #374151; }
+  /* Numbers */
+  .mi, .mf { color: #0369a1; }
+  /* Identifiers/names */
+  .n { color: #1f2937; }
+  /* Namespace and class names */
+  .nn { color: #6b7280; }
+  .nc { color: #4f46e5; }
+  /* Punctuation */
+  .p { color: #4b5563; }
+}
+
+/* Dark mode Cedar highlighting */
+[data-md-color-scheme="slate"] .language-cedar {
+  /* Keywords: permit, forbid, when, unless */
+  .k { color: var(--sondera-electric-green); font-weight: 600; }
+  /* Pseudo-keywords: principal, action, resource, context */
+  .kp { color: #96e3c1; }
+  /* Operator keywords: has, like, in, is */
+  .k-Operator { color: var(--sondera-electric-green); }
+  /* Strings - warm gold for visibility */
+  .s, .s1, .s2 { color: #fbbf24; }
+  /* Comments - muted */
+  .c, .c1 { color: #9ca3af; font-style: italic; }
+  /* Decorators: @id */
+  .nd { color: #a78bfa; }
+  /* Operators */
+  .o { color: #d1d5db; }
+  /* Numbers */
+  .mi, .mf { color: #38bdf8; }
+  /* Identifiers/names */
+  .n { color: #e5e7eb; }
+  /* Namespace and class names */
+  .nn { color: #9ca3af; }
+  .nc { color: #818cf8; }
+  /* Punctuation */
+  .p { color: #9ca3af; }
+}
+
+/* Highlight text */
+.md-typeset mark {
+  background: rgba(129, 221, 180, 0.3);
+  padding: 0.1em 0.3em;
+  border-radius: 0.2em;
+}
+
+/* Navigation tabs - use white for hover/active since header background is green */
+[data-md-color-scheme="default"] .md-tabs .md-tabs__link--active,
+[data-md-color-scheme="default"] .md-tabs .md-tabs__link:hover {
+  color: white !important;
+  opacity: 1 !important;
+}
+
+[data-md-color-scheme="slate"] .md-tabs .md-tabs__link--active,
+[data-md-color-scheme="slate"] .md-tabs .md-tabs__link:hover {
+  color: white !important;
+  opacity: 1 !important;
+}
+
+/* Better list styling in cards */
+.md-typeset .grid.cards ul {
+  margin: 0.5rem 0;
+  padding-left: 1.25rem;
+}
+
+.md-typeset .grid.cards li {
+  margin: 0.25rem 0;
+}
+
+/* Framework comparison table */
+.md-typeset table.framework-table td:first-child {
+  font-weight: 600;
+}
+
+/* ===========================================
+   Clickable Cards - Entire card is a link
+   =========================================== */
+
+/* Cards with links are fully clickable (except static cards) */
+.md-typeset .grid.cards:not(.static) > ul > li {
+  position: relative;
+  cursor: pointer;
+}
+
+/* Stretch the link to cover the entire card (not for static cards) */
+.md-typeset .grid.cards:not(.static) > ul > li > p:last-child a::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 1;
+}
+
+/* Hide the link text - whole card is clickable (not for static cards) */
+.md-typeset .grid.cards:not(.static) > ul > li > p:last-child a {
+  text-decoration: none;
+  font-size: 0;
+  opacity: 0;
+}
+
+/* Arrow indicator in bottom-right corner (not for static cards) */
+.md-typeset .grid.cards:not(.static) > ul > li::after {
+  content: "→";
+  position: absolute;
+  bottom: 1rem;
+  right: 1.25rem;
+  font-size: 1.25rem;
+  font-weight: 500;
+  transition: transform 0.2s ease, color 0.2s ease;
+}
+
+/* Arrow color - Light mode */
+[data-md-color-scheme="default"] .md-typeset .grid.cards:not(.static) > ul > li::after {
+  color: var(--sondera-tactile-green);
+}
+
+/* Arrow color - Dark mode */
+[data-md-color-scheme="slate"] .md-typeset .grid.cards:not(.static) > ul > li::after {
+  color: var(--sondera-electric-green);
+}
+
+/* Card hover states - Light mode (clickable cards only) */
+[data-md-color-scheme="default"] .md-typeset .grid.cards:not(.static) > ul > li:hover {
+  border-color: var(--sondera-tactile-green);
+  background: var(--sondera-tactile-10);
+  box-shadow: 0 4px 16px rgba(86, 147, 120, 0.2);
+  transform: translateY(-2px);
+}
+
+[data-md-color-scheme="default"] .md-typeset .grid.cards:not(.static) > ul > li:hover::after {
+  transform: translateX(4px);
+  color: #396250;
+}
+
+/* Card hover states - Dark mode (clickable cards only) */
+[data-md-color-scheme="slate"] .md-typeset .grid.cards:not(.static) > ul > li:hover {
+  border-color: var(--sondera-electric-green);
+  background: rgba(129, 221, 180, 0.08);
+  box-shadow: 0 4px 16px rgba(129, 221, 180, 0.15);
+  transform: translateY(-2px);
+}
+
+[data-md-color-scheme="slate"] .md-typeset .grid.cards:not(.static) > ul > li:hover::after {
+  transform: translateX(4px);
+  color: #96e3c1;
+}
+
+/* Smooth transitions for hover (clickable cards only) */
+.md-typeset .grid.cards:not(.static) > ul > li {
+  transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+/* Card links inside content (not the main card link) */
+.md-typeset .grid.cards:not(.static) li a:not(:last-of-type) {
+  text-decoration: none;
+  position: relative;
+  z-index: 2;
+}
+
+[data-md-color-scheme="default"] .md-typeset .grid.cards:not(.static) li a:not(:last-of-type) {
+  color: var(--sondera-tactile-green);
+}
+
+[data-md-color-scheme="default"] .md-typeset .grid.cards:not(.static) li a:not(:last-of-type):hover {
+  color: #396250;
+  text-decoration: underline;
+}
+
+[data-md-color-scheme="slate"] .md-typeset .grid.cards:not(.static) li a:not(:last-of-type) {
+  color: var(--sondera-electric-green);
+}
+
+[data-md-color-scheme="slate"] .md-typeset .grid.cards:not(.static) li a:not(:last-of-type):hover {
+  color: #96e3c1;
+  text-decoration: underline;
+}
+
+/* ===========================================
+   Static Cards - Multiple links, no click-through
+   =========================================== */
+
+/* Links inside static cards use brand colors */
+.md-typeset .grid.cards.static a {
+  text-decoration: none;
+}
+
+[data-md-color-scheme="default"] .md-typeset .grid.cards.static a {
+  color: var(--sondera-tactile-green);
+}
+
+[data-md-color-scheme="default"] .md-typeset .grid.cards.static a:hover {
+  color: #396250;
+  text-decoration: underline;
+}
+
+[data-md-color-scheme="slate"] .md-typeset .grid.cards.static a {
+  color: var(--sondera-electric-green);
+}
+
+[data-md-color-scheme="slate"] .md-typeset .grid.cards.static a:hover {
+  color: #96e3c1;
+  text-decoration: underline;
+}
+
+/* Eyebrow text style (Monument Extended equivalent) */
+.md-typeset .eyebrow {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--sondera-tactile-green);
+}
+
+[data-md-color-scheme="slate"] .md-typeset .eyebrow {
+  color: var(--sondera-electric-green);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .md-typeset .hero h1 {
+    font-size: 2rem;
+  }
+
+  .md-typeset .md-button {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+/* Remove excessive animations for cleaner feel */
+.md-typeset .grid.cards > * {
+  transition: border-color 0.15s ease;
+}
+
+/* Content width optimization */
+.md-content {
+  max-width: 900px;
+}
+
+/* Header repo name - show full name without truncation */
+.md-header__source {
+  max-width: none !important;
+  width: auto !important;
+  min-width: max-content;
+  flex-shrink: 0 !important;
+}
+
+.md-source {
+  max-width: none !important;
+  min-width: max-content;
+}
+
+.md-source__repository {
+  max-width: none !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+  white-space: nowrap;
+}
+
+/* Ensure header has enough space for full repo name */
+.md-header__inner {
+  gap: 0.5rem;
+}
+
+/* Make search bar narrower to give repo name more space */
+@media (min-width: 60em) {
+  .md-search {
+    max-width: 11rem;
+  }
+}
+
+/* Ensure the source link doesn't shrink on smaller screens */
+@media (min-width: 60em) {
+  .md-header__source {
+    margin-left: 1rem;
+  }
+}
+
+/* Mobile drawer - show full repo name and stats */
+.md-sidebar .md-source,
+.md-nav__source .md-source {
+  height: auto !important;
+  min-height: 3.6rem;
+  padding: 0.6rem 1rem 0.6rem 0.6rem !important;
+  margin-right: 0.5rem;
+}
+
+.md-sidebar .md-source__repository,
+.md-nav__source .md-source__repository,
+.md-header-nav__source .md-source__repository {
+  max-width: none !important;
+  overflow: visible !important;
+  overflow-wrap: break-word !important;
+  text-overflow: unset !important;
+  white-space: normal !important;
+  word-break: break-all !important;
+  display: block !important;
+  line-height: 1.3;
+}
+
+.md-sidebar .md-source__facts,
+.md-nav__source .md-source__facts {
+  display: flex !important;
+  opacity: 1 !important;
+  margin-top: 0.25rem;
+}
