@@ -80,3 +80,7 @@ uv.lock
 # OS
 .DS_Store
 Thumbs.db
+
+# Documentation build output
+site/
+docs/book/

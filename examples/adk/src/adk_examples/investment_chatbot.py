@@ -244,7 +244,7 @@ Always include appropriate disclaimers about investment risks.
 def create_agent() -> Agent:
     """Create an ADK agent with investment tools from archetypes."""
     return Agent(
-        model="gemini-2.0-flash-exp",
+        model="gemini-2.5-flash",
         name="investment_chatbot",
         description="Investment Advisory Chatbot that provides portfolio analysis, market data, and trade recommendations.",
         instruction=INSTRUCTION,

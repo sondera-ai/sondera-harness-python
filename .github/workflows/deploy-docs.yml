@@ -22,22 +22,31 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
-      - name: Install mdBook
-        run: cargo install mdbook
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
 
-      - name: Build mdBook
-        run: mdbook build docs
+      - name: Install dependencies
+        run: |
+          cd docs
+          uv sync
+
+      - name: Build docs
+        run: |
+          cd docs
+          uv run mkdocs build
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
-      - name: Upload Book
+      - name: Upload docs
         uses: actions/upload-pages-artifact@v3
         with:
-          path: docs/book
+          path: docs/site
 
   deploy:
     environment:
