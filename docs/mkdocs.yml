@@ -70,8 +70,8 @@ extra:
   social:
     - icon: fontawesome/brands/github
       link: https://github.com/sondera-ai/sondera-harness-python
-    - icon: fontawesome/brands/discord
-      link: https://discord.gg/8zMbcnDnZs
+    - icon: fontawesome/brands/slack
+      link: https://join.slack.com/t/sonderacommunity/shared_invite/zt-3onw10qhj-5UNQ7EMuAbPk0nTwh_sNcw
     - icon: fontawesome/brands/python
       link: https://pypi.org/project/sondera-harness/
   generator: false

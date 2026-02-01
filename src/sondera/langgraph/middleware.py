@@ -28,6 +28,7 @@ except ImportError:
 
 from sondera.harness import Harness
 from sondera.types import (
+    Decision,
     PromptContent,
     Role,
     Stage,
@@ -173,7 +174,7 @@ class SonderaHarnessMiddleware(AgentMiddleware[State]):
             f"[SonderaHarness] Before Agent Adjudication for trajectory {self._harness.trajectory_id}"
         )
 
-        if adjudication.is_denied:
+        if adjudication.decision == Decision.DENY:
             self._log.warning(
                 f"[SonderaHarness] Policy violation detected (strategy={self._strategy.value}): "
                 f"{adjudication.reason}"
@@ -226,7 +227,7 @@ class SonderaHarnessMiddleware(AgentMiddleware[State]):
                 PromptContent(text=_message_to_text(request.messages[-1])),
             )
 
-            if pre_adjudication.is_denied:
+            if pre_adjudication.decision == Decision.DENY:
                 _LOGGER.warning(
                     f"[SonderaHarness] Pre-model policy violation (strategy={self._strategy.value}): "
                     f"{pre_adjudication.reason}"
@@ -259,7 +260,7 @@ class SonderaHarnessMiddleware(AgentMiddleware[State]):
                 self._log.info(
                     f"[SonderaHarness] Post-model Adjudication for trajectory {self._harness.trajectory_id}"
                 )
-                if post_adjudication.is_denied:
+                if post_adjudication.decision == Decision.DENY:
                     self._log.warning(
                         f"[SonderaHarness] Post-model policy violation (strategy={self._strategy.value}): "
                         f"{post_adjudication.reason}"
@@ -324,7 +325,7 @@ class SonderaHarnessMiddleware(AgentMiddleware[State]):
             f"[SonderaHarness] Before Tool Adjudication for trajectory {self._harness.trajectory_id}"
         )
 
-        if pre_adjudication.is_denied:
+        if pre_adjudication.decision == Decision.DENY:
             self._log.warning(
                 f"[SonderaHarness] Pre-tool policy violation for {tool_name} "
                 f"(strategy={self._strategy.value}): {pre_adjudication.reason}"
@@ -367,7 +368,7 @@ class SonderaHarnessMiddleware(AgentMiddleware[State]):
                 f"[SonderaHarness] After Tool Adjudication for trajectory {self._harness.trajectory_id}"
             )
 
-            if post_adjudication.is_denied:
+            if post_adjudication.decision == Decision.DENY:
                 self._log.warning(
                     f"[SonderaHarness] Post-tool policy violation for {tool_name} "
                     f"(strategy={self._strategy.value}): {post_adjudication.reason}"

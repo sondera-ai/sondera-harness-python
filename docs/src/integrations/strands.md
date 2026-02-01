@@ -7,6 +7,8 @@ description: Add Sondera Harness to Strands agents
 
 Easily add [policy](../concepts/policies.md) enforcement to your Strands agent. This guide covers installation, configuration, handling policy denials, and runnable examples.
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/sondera-ai/sondera-harness-python/blob/main/docs/src/notebooks/strands.ipynb){target="_blank"}
+
 ---
 
 ## Installation

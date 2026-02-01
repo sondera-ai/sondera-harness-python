@@ -84,3 +84,7 @@ Thumbs.db
 # Documentation build output
 site/
 docs/book/
+
+# Claude Code (local per-developer)
+CLAUDE.md
+.playwright-mcp/
