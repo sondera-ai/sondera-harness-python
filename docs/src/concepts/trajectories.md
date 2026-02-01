@@ -48,7 +48,7 @@ Each adjudication creates a **step** in the trajectory. Steps occur at different
 Three methods control the lifecycle: `initialize()`, `adjudicate()`, and `finalize()`.
 
 ```{.python notest}
-from sondera import Stage, Role, ToolRequestContent, PolicyViolationError
+from sondera import Stage, Role, Decision, ToolRequestContent, PolicyViolationError
 
 # Assume harness and agent are already configured (see Getting Started)
 
@@ -62,7 +62,7 @@ result = await harness.adjudicate(
     ToolRequestContent(tool_id="Bash", args={"command": "ls"})
 )
 
-if result.is_denied:
+if result.decision == Decision.DENY:
     # The step is still recorded. Your code decides what to do next.
     # Option A: Stop execution
     raise PolicyViolationError(Stage.PRE_TOOL, result.reason, result)
@@ -105,7 +105,7 @@ if failed:
 
     # 3. Find what went wrong
     for adj_step in trajectory.steps:
-        if adj_step.is_denied:
+        if adj_step.adjudication.decision == Decision.DENY:
             print(f"DENIED at {adj_step.step.stage.value}:")
             print(f"  Action: {adj_step.step.content}")
             print(f"  Reason: {adj_step.adjudication.reason}")
@@ -204,13 +204,8 @@ adj_step.step.role               # USER, MODEL, TOOL, SYSTEM
 adj_step.step.content            # The evaluated content
 
 # Access decision through .adjudication
-adj_step.adjudication.decision   # Decision.ALLOW or Decision.DENY
+adj_step.adjudication.decision   # Decision.ALLOW, Decision.DENY, or Decision.ESCALATE
 adj_step.adjudication.reason     # Why this decision was made
-
-# Convenience properties
-adj_step.is_allowed              # True if decision is ALLOW
-adj_step.is_denied               # True if decision is DENY
-adj_step.is_escalated            # True if decision is ESCALATE
 adj_step.message                 # "Allow: reason" or "Deny: reason"
 ```
 

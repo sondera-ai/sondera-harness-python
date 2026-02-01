@@ -258,21 +258,6 @@ class Adjudication(Model):
     annotations: list[PolicyAnnotation] = Field(default_factory=list)
     """Annotations from policy evaluations."""
 
-    @property
-    def is_denied(self) -> bool:
-        """Check if is denied."""
-        return self.decision == Decision.DENY
-
-    @property
-    def is_allowed(self) -> bool:
-        """Check if allowed."""
-        return self.decision == Decision.ALLOW
-
-    @property
-    def is_escalated(self) -> bool:
-        """Check if result requires escalation."""
-        return self.decision == Decision.ESCALATE
-
 
 class AdjudicatedStep(Model):
     """Result of the adjudicated input."""
@@ -285,27 +270,6 @@ class AdjudicatedStep(Model):
     """Step of the adjudication."""
     guardrails: GuardrailContext | None = None
     """Guardrail check results for this step."""
-
-    @property
-    def is_denied(self) -> bool:
-        """Check if result is denied."""
-        return (
-            self.adjudication.decision == Decision.DENY
-            and self.mode == PolicyEngineMode.GOVERN
-        )
-
-    @property
-    def is_allowed(self) -> bool:
-        """Check if result is allowed."""
-        return self.adjudication.decision == Decision.ALLOW
-
-    @property
-    def is_escalated(self) -> bool:
-        """Check if result requires escalation."""
-        return (
-            self.adjudication.decision == Decision.ESCALATE
-            and self.mode == PolicyEngineMode.GOVERN
-        )
 
     @property
     def message(self) -> str:

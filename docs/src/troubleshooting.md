@@ -14,8 +14,10 @@ Common issues and solutions.
 Every `Adjudication` includes a `reason` field explaining which policy triggered the denial:
 
 ```{.python notest}
+from sondera import Decision
+
 result = await harness.adjudicate(stage, role, content)
-if result.is_denied:
+if result.decision == Decision.DENY:
     print(result.reason)
     # e.g., "forbid-dangerous-bash: command matches forbidden pattern"
 ```
@@ -97,6 +99,8 @@ uv run sondera   # or just `sondera` if installed globally via pip
 **4. Test in isolation** with unit tests:
 
 ```{.python notest}
+from sondera import Decision
+
 @pytest.mark.asyncio
 async def test_my_policy():
     harness = CedarPolicyHarness(policy_set=policy, schema=schema)
@@ -107,7 +111,7 @@ async def test_my_policy():
         ToolRequestContent(tool_id="Bash", args={"command": "rm -rf /"})
     )
 
-    assert result.is_denied
+    assert result.decision == Decision.DENY
     print(f"Reason: {result.reason}")
 ```
 
@@ -150,7 +154,7 @@ Use the harness directly in a test:
 
 ```python
 import pytest
-from sondera import CedarPolicyHarness, Agent, Tool, ToolRequestContent, Stage, Role
+from sondera import CedarPolicyHarness, Agent, Decision, Tool, ToolRequestContent, Stage, Role
 from sondera.harness.cedar.schema import agent_to_cedar_schema
 
 @pytest.fixture
@@ -176,7 +180,7 @@ async def test_blocks_rm_rf(harness):
         Stage.PRE_TOOL, Role.MODEL,
         ToolRequestContent(tool_id="Bash", args={"command": "rm -rf /"})
     )
-    assert result.is_denied
+    assert result.decision == Decision.DENY
 
 @pytest.mark.asyncio
 async def test_allows_safe_commands(harness):
@@ -184,7 +188,7 @@ async def test_allows_safe_commands(harness):
         Stage.PRE_TOOL, Role.MODEL,
         ToolRequestContent(tool_id="Bash", args={"command": "ls -la"})
     )
-    assert result.is_allowed
+    assert result.decision == Decision.ALLOW
 ```
 
 Run with:
@@ -380,6 +384,6 @@ async def safe_adjudicate(harness, stage, role, content):
 
 ## Getting Help
 
-- **Discord** — Ask questions, share what you're building: [discord.gg/8zMbcnDnZs](https://discord.gg/8zMbcnDnZs)
+- **Slack** — Ask questions, share what you're building: [Join Slack](https://join.slack.com/t/sonderacommunity/shared_invite/zt-3onw10qhj-5UNQ7EMuAbPk0nTwh_sNcw)
 - **GitHub Issues** — Bug reports and feature requests: [github.com/sondera-ai/sondera-harness-python/issues](https://github.com/sondera-ai/sondera-harness-python/issues)
 - **Cedar Docs** — Deep dive into the policy language: [cedarpolicy.com](https://docs.cedarpolicy.com/)

@@ -23,6 +23,7 @@ from google.genai import types as genai_types
 from sondera.adk.analyze import format
 from sondera.harness import Harness
 from sondera.types import (
+    Decision,
     PromptContent,
     Role,
     Stage,
@@ -135,7 +136,7 @@ class SonderaHarnessPlugin(BasePlugin):
             f"[SonderaHarness] User message adjudication for trajectory {self._harness.trajectory_id}"
         )
 
-        if adjudication.is_denied:
+        if adjudication.decision == Decision.DENY:
             return genai_types.Content(
                 parts=[genai_types.Part(text=adjudication.reason)]
             )
@@ -212,7 +213,7 @@ class SonderaHarnessPlugin(BasePlugin):
             f"[SonderaHarness] Before model adjudication for trajectory {self._harness.trajectory_id}"
         )
 
-        if adjudication.is_denied:
+        if adjudication.decision == Decision.DENY:
             return LlmResponse(
                 content=genai_types.Content(
                     parts=[genai_types.Part(text=adjudication.reason)]
@@ -254,7 +255,7 @@ class SonderaHarnessPlugin(BasePlugin):
             f"[SonderaHarness] After model adjudication for trajectory {self._harness.trajectory_id}"
         )
 
-        if adjudication.is_denied:
+        if adjudication.decision == Decision.DENY:
             return LlmResponse(
                 content=genai_types.Content(
                     parts=[genai_types.Part(text=adjudication.reason)]
@@ -296,7 +297,7 @@ class SonderaHarnessPlugin(BasePlugin):
             f"[SonderaHarness] Before tool adjudication for trajectory {self._harness.trajectory_id}"
         )
 
-        if adjudication.is_denied:
+        if adjudication.decision == Decision.DENY:
             return {"error": f"Tool blocked: {adjudication.reason}"}
         return None
 
@@ -332,7 +333,7 @@ class SonderaHarnessPlugin(BasePlugin):
             f"[SonderaHarness] After tool adjudication for trajectory {self._harness.trajectory_id}"
         )
 
-        if adjudication.is_denied:
+        if adjudication.decision == Decision.DENY:
             return {"error": f"Tool result blocked: {adjudication.reason}"}
         return None
 

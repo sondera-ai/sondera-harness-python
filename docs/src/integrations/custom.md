@@ -7,6 +7,8 @@ description: Use the Sondera Harness API directly for any agent architecture
 
 Easily add [policy](../concepts/policies.md) enforcement to any agent using the Sondera Harness API directly. This guide covers installation, configuration, handling policy denials, and working examples.
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/sondera-ai/sondera-harness-python/blob/main/docs/src/notebooks/custom.ipynb){target="_blank"}
+
 ---
 
 ## Installation
@@ -48,7 +50,7 @@ SONDERA_HARNESS_ENDPOINT=harness.sondera.ai  # Optional
 Use the Sondera Harness API directly for full control over policy enforcement:
 
 ```{.python notest}
-from sondera import SonderaRemoteHarness, Agent, PromptContent, Role, Stage
+from sondera import SonderaRemoteHarness, Agent, Decision, PromptContent, Role, Stage
 
 # Create a harness instance
 harness = SonderaRemoteHarness(
@@ -77,10 +79,10 @@ adjudication = await harness.adjudicate(
     PromptContent(text="Hello, can you help me?"),
 )
 
-if adjudication.is_allowed:
+if adjudication.decision == Decision.ALLOW:
     # Proceed with agent logic
     pass
-elif adjudication.is_denied:
+elif adjudication.decision == Decision.DENY:
     print(f"Request blocked: {adjudication.reason}")
 
 # Finalize the trajectory
@@ -112,8 +114,7 @@ The `adjudicate()` method returns an `Adjudication` object with the policy decis
 
 | Property | Description |
 |:---------|:------------|
-| `adjudication.is_allowed` | `True` if policy permits the action |
-| `adjudication.is_denied` | `True` if policy forbids the action |
+| `adjudication.decision` | `Decision.ALLOW`, `Decision.DENY`, or `Decision.ESCALATE` |
 | `adjudication.reason` | Explanation of why the action was denied |
 
 ### BLOCK Pattern
@@ -121,9 +122,11 @@ The `adjudicate()` method returns an `Adjudication` object with the policy decis
 Stop execution immediately on denial. Use for security-critical actions:
 
 ```{.python notest}
+from sondera import Decision
+
 adjudication = await harness.adjudicate(Stage.PRE_TOOL, Role.MODEL, tool_content)
 
-if adjudication.is_denied:
+if adjudication.decision == Decision.DENY:
     await harness.finalize()
     raise Exception(f"Action blocked: {adjudication.reason}")
 
@@ -136,9 +139,11 @@ result = my_tool_function(**tool_args)
 Feed the denial back to the model so it can try a different approach:
 
 ```{.python notest}
+from sondera import Decision
+
 adjudication = await harness.adjudicate(Stage.PRE_TOOL, Role.MODEL, tool_content)
 
-if adjudication.is_denied:
+if adjudication.decision == Decision.DENY:
     # Add denial to conversation so model can adapt
     messages.append({
         "role": "user",
@@ -199,7 +204,7 @@ For high-stakes denials, pause and ask a human instead of blocking outright. Wit
 
 ```python
 import asyncio
-from sondera import CedarPolicyHarness, ToolRequestContent, Stage, Role
+from sondera import CedarPolicyHarness, Decision, ToolRequestContent, Stage, Role
 
 async def execute_with_approval(harness: CedarPolicyHarness, tool_call: dict) -> str:
     """Execute a tool call, requesting human approval if denied by policy."""
@@ -213,7 +218,7 @@ async def execute_with_approval(harness: CedarPolicyHarness, tool_call: dict) ->
         ),
     )
 
-    if result.is_allowed:
+    if result.decision == Decision.ALLOW:
         return execute_tool(tool_call)
 
     # Policy denied - request human approval
@@ -252,7 +257,7 @@ For production systems, use webhooks or message queues:
 
 ```python
 import httpx
-from sondera import CedarPolicyHarness, ToolRequestContent, Stage, Role
+from sondera import CedarPolicyHarness, Decision, ToolRequestContent, Stage, Role
 
 async def escalate_to_slack(
     harness: CedarPolicyHarness,
@@ -270,7 +275,7 @@ async def escalate_to_slack(
         ),
     )
 
-    if result.is_allowed:
+    if result.decision == Decision.ALLOW:
         return execute_tool(tool_call)
 
     # Send to Slack and wait for response

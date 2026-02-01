@@ -13,6 +13,12 @@ Sondera Harness lets you define what's allowed in code. The agent stays within t
 
 ---
 
+**Want to try it now?** Open the notebook in Colab and run it in your browser. No setup required.
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/sondera-ai/sondera-harness-python/blob/main/docs/src/notebooks/quickstart.ipynb){target="_blank"}
+
+---
+
 ## Install
 
 Python 3.12+ required. Clone the repo to get started:
@@ -64,8 +70,9 @@ permit(principal, action == Coding_Agent::Action::"Write", resource);
 @id("forbid-sensitive-write")
 forbid(principal, action == Coding_Agent::Action::"Write", resource)
 when {
-  context.parameters.file_path like "*.env*" ||
-  context.parameters.file_path like "*credentials*"
+  context has parameters &&
+  (context.parameters.file_path like "*.env*" ||
+   context.parameters.file_path like "*credentials*")
 };
 
 // Allow bash commands
@@ -76,6 +83,7 @@ permit(principal, action == Coding_Agent::Action::"Bash", resource);
 @id("forbid-dangerous-bash")
 forbid(principal, action == Coding_Agent::Action::"Bash", resource)
 when {
+  context has parameters &&
   context.parameters.command like "*rm -rf /*"
 };
 ```

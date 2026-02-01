@@ -50,7 +50,7 @@ when { context has parameters_json && context.parameters_json like "*rm -rf*" };
 Then adjudicate before executing:
 
 ```{.python notest}
-from sondera import Stage, Role, ToolRequestContent
+from sondera import Stage, Role, Decision, ToolRequestContent
 
 # Adjudicate a tool call before executing it
 result = await harness.adjudicate(
@@ -59,7 +59,7 @@ result = await harness.adjudicate(
     ToolRequestContent(tool_id="Bash", args={"command": "rm -rf /"})
 )
 
-if result.is_denied:
+if result.decision == Decision.DENY:
     # result.reason contains the policy ID and explanation
     # e.g., "block-dangerous-bash: command matches forbidden pattern"
     agent_feedback = f"Action denied: {result.reason}. Try a different approach."
@@ -78,16 +78,16 @@ This is what makes it safe to run agents longer with more autonomy. Instead of f
 After each adjudication, your code decides what to do next. In a custom agent, this logic lives in your main loop. If you're using a framework integration, the middleware handles it for you. Either way, the pattern is the same:
 
 ```{.python notest}
-from sondera import Stage, Role, PolicyViolationError
+from sondera import Stage, Role, Decision, PolicyViolationError
 
 # Adjudicate returns an Adjudication with the decision
 result = await harness.adjudicate(stage, role, content)
 
-if result.is_allowed:
+if result.decision == Decision.ALLOW:
     # Policy permits this action, proceed
     execute_action()  # Your logic here
 
-elif result.is_denied:
+elif result.decision == Decision.DENY:
     # Policy forbids this action
     # Option A: Block entirely
     raise PolicyViolationError(stage, result.reason, result)
@@ -116,12 +116,8 @@ The `Adjudication` result gives you everything you need to act on the decision: 
 ```{.python notest}
 result = await harness.adjudicate(stage, role, content)
 
-# Boolean helpers for conditional logic
-result.is_allowed    # True if decision is ALLOW
-result.is_denied     # True if decision is DENY
-
-# Raw enum value (useful for logging or switch statements)
-result.decision      # Decision.ALLOW or Decision.DENY
+# The decision enum value
+result.decision      # Decision.ALLOW, Decision.DENY, or Decision.ESCALATE
 
 # Human-readable explanation (always present for DENY)
 result.reason        # e.g., "spending-limit: amount exceeds $10,000 threshold"

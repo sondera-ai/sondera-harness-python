@@ -1,9 +1,4 @@
 <div align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/sondera-ai/harness-sdk-python/main/assets/sondera-logo-dark.svg">
-    <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/sondera-ai/harness-sdk-python/main/assets/sondera-logo-light.svg">
-    <img alt="Sondera" src="https://raw.githubusercontent.com/sondera-ai/harness-sdk-python/main/assets/sondera-logo-light.svg" height="60">
-  </picture>
 
   <h1>Sondera Harness</h1>
 
@@ -18,7 +13,7 @@
     ·
     <a href="https://github.com/sondera-ai/sondera-harness-python/tree/main/examples">Examples</a>
     ·
-    <a href="https://discord.gg/8zMbcnDnZs">Discord</a>
+    <a href="https://join.slack.com/t/sonderacommunity/shared_invite/zt-3onw10qhj-5UNQ7EMuAbPk0nTwh_sNcw">Slack</a>
   </p>
 
   <p>
@@ -46,11 +41,15 @@ This policy stops your agent from running `rm -rf`, every time.
 
 ## Quickstart
 
+> **Try it now:** [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/sondera-ai/sondera-harness-python/blob/main/docs/src/notebooks/quickstart.ipynb) - no install required.
+
 ### 1. Install
 
 ```bash
 uv add "sondera-harness[langgraph]"   # or: pip install "sondera-harness[langgraph]"
 ```
+
+Works with [LangChain/LangGraph](https://docs.sondera.ai/integrations/langgraph/), [Google ADK](https://docs.sondera.ai/integrations/adk/), [Strands](https://docs.sondera.ai/integrations/strands/), and [custom agents](https://docs.sondera.ai/integrations/custom/).
 
 ### 2. Add to Your Agent (LangGraph)
 
@@ -84,8 +83,6 @@ agent = create_agent(
 )
 ```
 
-Also supports [Google ADK](https://docs.sondera.ai/integrations/adk/), [Strands](https://docs.sondera.ai/integrations/strands/), and [custom integrations](https://docs.sondera.ai/integrations/custom/).
-
 > [!NOTE]
 > This example uses Sondera Platform ([free account](https://sondera.ai)), which also enables the TUI below. For local-only development, see [CedarPolicyHarness](https://docs.sondera.ai/integrations/custom/).
 
@@ -115,7 +112,7 @@ uv run sondera   # or: sondera (if installed via pip)
 
 ## Community
 
-- [Discord](https://discord.gg/8zMbcnDnZs) for questions and feedback
+- [Slack](https://join.slack.com/t/sonderacommunity/shared_invite/zt-3onw10qhj-5UNQ7EMuAbPk0nTwh_sNcw) for questions and feedback
 - [GitHub Issues](https://github.com/sondera-ai/sondera-harness-python/issues) for bugs
 - [Contributing](CONTRIBUTING.md) for development setup
 

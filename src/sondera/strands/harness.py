@@ -16,6 +16,7 @@ from strands.hooks.events import (
 from sondera.harness import Harness
 from sondera.strands.analyze import format_strands_agent
 from sondera.types import (
+    Decision,
     PromptContent,
     Role,
     Stage,
@@ -163,7 +164,7 @@ class SonderaHarnessHook(HookProvider):
                 f"[SonderaHarness] Before model adjudication for trajectory {self._harness.trajectory_id}"
             )
 
-            if adjudication.is_denied:
+            if adjudication.decision == Decision.DENY:
                 self._log.warning(
                     f"[SonderaHarness] Model call blocked: {adjudication.reason}"
                 )
@@ -192,7 +193,7 @@ class SonderaHarnessHook(HookProvider):
                 f"[SonderaHarness] After model adjudication for trajectory {self._harness.trajectory_id}"
             )
 
-            if adjudication.is_denied:
+            if adjudication.decision == Decision.DENY:
                 self._log.warning(
                     f"[SonderaHarness] Model response blocked: {adjudication.reason}"
                 )
@@ -231,7 +232,7 @@ class SonderaHarnessHook(HookProvider):
                 f"[SonderaHarness] Before tool adjudication for trajectory {self._harness.trajectory_id}"
             )
 
-            if adjudication.is_denied:
+            if adjudication.decision == Decision.DENY:
                 # Cancel the tool call using Strands' cancel_tool mechanism
                 event.cancel_tool = f"Tool blocked by policy: {adjudication.reason}"
                 self._log.warning(
@@ -262,7 +263,7 @@ class SonderaHarnessHook(HookProvider):
                 f"[SonderaHarness] After tool adjudication for trajectory {self._harness.trajectory_id}"
             )
 
-            if adjudication.is_denied:
+            if adjudication.decision == Decision.DENY:
                 # Modify the result to indicate policy violation
                 event.result = {
                     "content": [

@@ -7,6 +7,8 @@ description: Add Sondera Harness to Google ADK agents
 
 Easily add [policy](../concepts/policies.md) enforcement to your Google ADK agent. This guide covers installation, configuration, handling policy denials, and runnable examples.
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/sondera-ai/sondera-harness-python/blob/main/docs/src/notebooks/adk.ipynb){target="_blank"}
+
 ---
 
 ## Installation

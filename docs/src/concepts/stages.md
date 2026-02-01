@@ -113,7 +113,7 @@ when { resource.step_count > 100 };  // resource.step_count is always available
 Block prompt injection attempts before they reach the LLM:
 
 ```{.python notest}
-from sondera import Stage, Role, PromptContent
+from sondera import Stage, Role, Decision, PromptContent
 
 # Check user input before sending to the model
 result = await harness.adjudicate(
@@ -122,7 +122,7 @@ result = await harness.adjudicate(
     PromptContent(text=user_input)
 )
 
-if result.is_denied:
+if result.decision == Decision.DENY:
     # Don't send to model; return error to user
     print(f"Input blocked: {result.reason}")
 else:
@@ -150,7 +150,7 @@ when {
 Filter model output before it reaches the user:
 
 ```{.python notest}
-from sondera import Stage, Role, PromptContent
+from sondera import Stage, Role, Decision, PromptContent
 
 # Check model output before returning to user
 result = await harness.adjudicate(
@@ -159,7 +159,7 @@ result = await harness.adjudicate(
     PromptContent(text=model_response)
 )
 
-if result.is_denied:
+if result.decision == Decision.DENY:
     # Model generated inappropriate content; substitute safe response
     response = "I can't provide that information."
 else:
@@ -187,7 +187,7 @@ when {
 Check tool arguments before execution. The role is `MODEL` because the model is requesting the tool call.
 
 ```{.python notest}
-from sondera import Stage, Role, ToolRequestContent
+from sondera import Stage, Role, Decision, ToolRequestContent
 
 # Check tool arguments before execution
 result = await harness.adjudicate(
@@ -196,7 +196,7 @@ result = await harness.adjudicate(
     ToolRequestContent(tool_id="Transfer", args={"amount": 50000})
 )
 
-if result.is_denied:
+if result.decision == Decision.DENY:
     # Tool does NOT execute. Return reason to model so it can adjust.
     print(f"Transfer blocked: {result.reason}")
 else:
@@ -237,7 +237,7 @@ when {
 Sanitize tool results before returning to the model:
 
 ```{.python notest}
-from sondera import Stage, Role, ToolResponseContent
+from sondera import Stage, Role, Decision, ToolResponseContent
 
 # Check tool result before returning to model
 result = await harness.adjudicate(
@@ -246,7 +246,7 @@ result = await harness.adjudicate(
     ToolResponseContent(tool_id="Database", response=query_result)
 )
 
-if result.is_denied:
+if result.decision == Decision.DENY:
     # Result contained sensitive data; sanitize before returning to model
     sanitized_result = redact_pii(query_result)
 else:

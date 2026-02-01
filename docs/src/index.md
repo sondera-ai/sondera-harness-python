@@ -16,7 +16,7 @@ Open-source. Works with LangGraph, ADK, Strands, or any custom agent.
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://github.com/sondera-ai/sondera-harness-python/blob/main/LICENSE)
 
 [:material-rocket-launch: Get Started](quickstart.md){ .md-button .md-button--primary }
-[:material-github: GitHub](https://github.com/sondera-ai/sondera-harness-python){ .md-button .md-button--secondary }
+[:simple-googlecolab: Try in Colab](https://colab.research.google.com/github/sondera-ai/sondera-harness-python/blob/main/docs/src/notebooks/quickstart.ipynb){ .md-button .md-button--secondary target="_blank" }
 
 </div>
 
@@ -196,7 +196,7 @@ Both implement the same interface. Switch by changing one line.
 
 ## Need Help?
 
-- [:fontawesome-brands-discord: Join our Discord](https://discord.gg/8zMbcnDnZs) for questions and feedback
+- [:fontawesome-brands-slack: Join Slack](https://join.slack.com/t/sonderacommunity/shared_invite/zt-3onw10qhj-5UNQ7EMuAbPk0nTwh_sNcw) for questions and feedback
 - [:fontawesome-brands-github: Open an issue](https://github.com/sondera-ai/sondera-harness-python/issues) to report bugs
 
 ---
