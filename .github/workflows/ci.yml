@@ -77,6 +77,9 @@ jobs:
       - name: Test markdown documentation
         run: uv run pytest --markdown-docs -m markdown-docs src -v
 
+      - name: Check docs build for warnings and errors
+        run: uv run mkdocs build --strict
+
   test:
     name: Test (Python ${{ matrix.python-version }})
     needs: [lint, typecheck, test-docs]

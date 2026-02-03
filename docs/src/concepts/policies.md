@@ -69,13 +69,13 @@ This policy blocks any Bash command containing `rm -rf` or `sudo`. The harness e
 
 ## How Policies Become Decisions
 
-When you call `harness.adjudicate()`, Cedar evaluates your policies and returns a [decision](decisions.md): ALLOW or DENY.
+When you call `harness.adjudicate()`, Cedar evaluates your policies and returns a [decision](decisions.md): ALLOW, DENY, or ESCALATE.
 
 Cedar evaluates in this order:
 
-1. **Check forbid policies**: If any `forbid` matches → **DENY**
-2. **Check permit policies**: If any `permit` matches → **ALLOW**
-3. **Default**: If no policies match → **DENY**
+1. **Check forbid policies**: If any `forbid` matches, then **DENY** (or **ESCALATE** if all matching forbids have `@escalate`)
+2. **Check permit policies**: If any `permit` matches, then **ALLOW**
+3. **Default**: If no policies match, then **DENY**
 
 This is a **default-deny** model. Actions are blocked unless explicitly permitted. It's safer: a missing policy means "don't allow" rather than "allow everything."
 
@@ -87,7 +87,7 @@ permit(principal, action, resource);
 forbid(principal, action == MyAgent::Action::"DeleteFiles", resource);
 ```
 
-When a policy denies an action, you choose how to handle it: **block** the agent entirely, **steer** it by returning the reason so it can try a different approach, or **escalate** to a human for approval. See [Decisions](decisions.md) for details.
+When a policy denies an action, you choose how to handle it: **block** the agent entirely, or **steer** it by returning the reason so it can try a different approach. For actions that need approval rather than outright denial, use the `@escalate` annotation to trigger an **escalate** decision. See [Decisions](decisions.md) for details.
 
 ---
 

@@ -44,7 +44,7 @@ The **agent harness** wraps the scaffold from the outside. It lets you define po
 
 Each pass through the loop is a **turn**. The agent repeats turns until the task is complete. All turns together form a [**trajectory**](trajectories.md): the complete record of an agent's execution.
 
-[Policies](policies.md) are rules written in [Cedar](https://www.cedarpolicy.com/), a language designed for authorization logic. When a decision is DENY, you choose how to handle it: **block** the agent entirely, **steer** it by returning the reason so it can try a different approach, or **escalate** to a human for approval. See [Writing Policies](../writing-policies.md) for Cedar syntax, or [Human-in-the-Loop](../writing-policies.md#human-in-the-loop) for escalation patterns.
+[Policies](policies.md) are rules written in [Cedar](https://www.cedarpolicy.com/), a language designed for authorization logic. When a decision is DENY, you choose how to handle it: **block** the agent entirely, or **steer** it by returning the reason so it can try a different approach. For actions that need approval, use the `@escalate` annotation on forbid policies to trigger an **escalate** decision. See [Writing Policies](../writing-policies.md) for Cedar syntax, or [Escalation with @escalate](../writing-policies.md#escalation-with-escalate) for approval patterns.
 
 ---
 
@@ -52,7 +52,7 @@ Each pass through the loop is a **turn**. The agent repeats turns until the task
 
 | Concept                             | What it is                              | Why it matters                                                                                    |
 | :---------------------------------- | :-------------------------------------- | :------------------------------------------------------------------------------------------------ |
-| [**Decisions**](decisions.md)       | ALLOW or DENY                           | Steer agents toward better behavior. Let them self-correct instead of just failing.               |
+| [**Decisions**](decisions.md)       | ALLOW, DENY, or ESCALATE                | Steer agents toward better behavior. Let them self-correct instead of just failing.               |
 | [**Policies**](policies.md)         | Rules that define agent behavior        | Define guardrails once, enforce everywhere. Can't be bypassed by prompt injection.                |
 | [**Stages**](stages.md)             | The six interception points in the loop | Target policies precisely. Catch mistakes at the right moment without disrupting the whole agent. |
 | [**Trajectories**](trajectories.md) | Immutable records of every step         | Debug failures, improve reliability over time, prove compliance when you need it.                 |

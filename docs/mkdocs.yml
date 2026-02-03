@@ -4,6 +4,12 @@ site_url: https://docs.sondera.ai/
 repo_url: https://github.com/sondera-ai/sondera-harness-python
 repo_name: sondera-ai/sondera-harness-python
 
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn
+  anchors: warn
+
 docs_dir: src
 
 theme:
