@@ -94,7 +94,7 @@ class TestCedarPolicyHarnessInit:
         """Test that schema is required."""
         with pytest.raises(ValueError, match="schema is required"):
             CedarPolicyHarness(
-                policy_set="permit(principal, action, resource);",
+                policy_set='@id("allow-all") permit(principal, action, resource);',
                 schema=None,
             )
 
@@ -104,11 +104,37 @@ class TestCedarPolicyHarnessInit:
         with pytest.raises(ValueError, match="policy_set is required"):
             CedarPolicyHarness(policy_set=None, schema=schema)
 
+    def test_requires_id_annotation(self, coding_agent):
+        """Test that @id annotation is required on all policies."""
+        schema = agent_to_cedar_schema(coding_agent)
+        with pytest.raises(ValueError, match="missing required @id annotation"):
+            CedarPolicyHarness(
+                policy_set="permit(principal, action, resource);",
+                schema=schema,
+            )
+
+    def test_warns_on_duplicate_id(self, coding_agent, caplog):
+        """Test that duplicate @id annotations trigger a warning."""
+        import logging
+
+        schema = agent_to_cedar_schema(coding_agent)
+        policy = """
+        @id("duplicate-id")
+        permit(principal, action, resource);
+
+        @id("duplicate-id")
+        forbid(principal, action == CodingAgent::Action::"read_file", resource);
+        """
+        with caplog.at_level(logging.WARNING):
+            CedarPolicyHarness(policy_set=policy, schema=schema)
+
+        assert "Duplicate policy @id: 'duplicate-id'" in caplog.text
+
     def test_accepts_policy_string(self, coding_agent):
         """Test that policy can be provided as a string."""
         schema = agent_to_cedar_schema(coding_agent)
         harness = CedarPolicyHarness(
-            policy_set="permit(principal, action, resource);",
+            policy_set='@id("allow-all") permit(principal, action, resource);',
             schema=schema,
         )
         assert harness._namespace == "CodingAgent"
@@ -117,7 +143,7 @@ class TestCedarPolicyHarnessInit:
         """Test that namespace is correctly extracted from schema."""
         schema = agent_to_cedar_schema(coding_agent)
         harness = CedarPolicyHarness(
-            policy_set="permit(principal, action, resource);",
+            policy_set='@id("allow-all") permit(principal, action, resource);',
             schema=schema,
         )
         assert harness._namespace == "CodingAgent"
@@ -131,7 +157,7 @@ class TestCedarPolicyHarnessLifecycle:
         """Test that initialize sets the agent."""
         schema = agent_to_cedar_schema(coding_agent)
         harness = CedarPolicyHarness(
-            policy_set="permit(principal, action, resource);",
+            policy_set='@id("allow-all") permit(principal, action, resource);',
             schema=schema,
         )
 
@@ -146,7 +172,7 @@ class TestCedarPolicyHarnessLifecycle:
         """Test that resume raises NotImplementedError."""
         schema = agent_to_cedar_schema(coding_agent)
         harness = CedarPolicyHarness(
-            policy_set="permit(principal, action, resource);",
+            policy_set='@id("allow-all") permit(principal, action, resource);',
             schema=schema,
         )
 
@@ -160,7 +186,7 @@ class TestCedarPolicyHarnessLifecycle:
         """Test that finalize clears the trajectory."""
         schema = agent_to_cedar_schema(coding_agent)
         harness = CedarPolicyHarness(
-            policy_set="permit(principal, action, resource);",
+            policy_set='@id("allow-all") permit(principal, action, resource);',
             schema=schema,
         )
 
@@ -174,7 +200,7 @@ class TestCedarPolicyHarnessLifecycle:
         """Test that finalize raises when no trajectory is active."""
         schema = agent_to_cedar_schema(coding_agent)
         harness = CedarPolicyHarness(
-            policy_set="permit(principal, action, resource);",
+            policy_set='@id("allow-all") permit(principal, action, resource);',
             schema=schema,
         )
 
@@ -190,7 +216,7 @@ class TestCedarPolicyHarnessPermitAll:
         """Create a harness with permit-all policy."""
         schema = agent_to_cedar_schema(coding_agent)
         return CedarPolicyHarness(
-            policy_set="permit(principal, action, resource);",
+            policy_set='@id("allow-all") permit(principal, action, resource);',
             schema=schema,
         )
 
@@ -264,7 +290,7 @@ class TestCedarPolicyHarnessDenyAll:
         """Create a harness with deny-all policy."""
         schema = agent_to_cedar_schema(coding_agent)
         return CedarPolicyHarness(
-            policy_set="forbid(principal, action, resource);",
+            policy_set='@id("deny-all") forbid(principal, action, resource);',
             schema=schema,
         )
 
@@ -298,7 +324,10 @@ class TestCedarPolicyHarnessTypedParameters:
         """Test policy that denies specific file paths."""
         schema = agent_to_cedar_schema(coding_agent)
         policy = """
+        @id("allow-all")
         permit(principal, action, resource);
+
+        @id("deny-etc-passwd")
         forbid(principal, action == CodingAgent::Action::"read_file", resource)
         when { context.parameters.path == "/etc/passwd" };
         """
@@ -326,9 +355,14 @@ class TestCedarPolicyHarnessTypedParameters:
         """Test policy that denies dangerous commands using pattern matching."""
         schema = agent_to_cedar_schema(coding_agent)
         policy = """
+        @id("allow-all")
         permit(principal, action, resource);
+
+        @id("deny-rm-rf")
         forbid(principal, action == CodingAgent::Action::"execute_command", resource)
         when { context.parameters_json like "*rm -rf*" };
+
+        @id("deny-sudo")
         forbid(principal, action == CodingAgent::Action::"execute_command", resource)
         when { context.parameters_json like "*sudo*" };
         """
@@ -373,11 +407,18 @@ class TestCedarPolicyHarnessTypedParameters:
         """Test policy that only allows operations in specific directory."""
         schema = agent_to_cedar_schema(coding_agent)
         policy = """
+        @id("allow-read-workspace")
         permit(principal, action == CodingAgent::Action::"read_file", resource)
         when { context.parameters_json like "*\\"/workspace/*" };
+
+        @id("allow-write-workspace")
         permit(principal, action == CodingAgent::Action::"write_file", resource)
         when { context.parameters_json like "*\\"/workspace/*" };
+
+        @id("allow-search-code")
         permit(principal, action == CodingAgent::Action::"search_code", resource);
+
+        @id("allow-execute-command")
         permit(principal, action == CodingAgent::Action::"execute_command", resource);
         """
         harness = CedarPolicyHarness(policy_set=policy, schema=schema)
@@ -410,11 +451,18 @@ class TestCedarPolicyHarnessResponseFiltering:
         """Test policy that denies responses containing secrets."""
         schema = agent_to_cedar_schema(coding_agent)
         policy = """
+        @id("allow-all")
         permit(principal, action, resource);
+
+        @id("deny-password")
         forbid(principal, action, resource)
         when { context.response_json like "*password*" };
+
+        @id("deny-api-key")
         forbid(principal, action, resource)
         when { context.response_json like "*api_key*" };
+
+        @id("deny-secret")
         forbid(principal, action, resource)
         when { context.response_json like "*secret*" };
         """
@@ -463,7 +511,7 @@ class TestCedarPolicyHarnessNonToolContent:
         """Test that prompt content is evaluated against policies."""
         schema = agent_to_cedar_schema(coding_agent)
         # Policy that allows all actions
-        policy = "permit(principal, action, resource);"
+        policy = '@id("allow-all") permit(principal, action, resource);'
         harness = CedarPolicyHarness(
             policy_set=policy,
             schema=schema,
@@ -486,7 +534,7 @@ class TestCedarPolicyHarnessNonToolContent:
         """Test that prompt content can be denied by policy."""
         schema = agent_to_cedar_schema(coding_agent)
         # Policy that denies Prompt action
-        policy = 'forbid(principal, action == CodingAgent::Action::"Prompt", resource);'
+        policy = '@id("deny-prompt") forbid(principal, action == CodingAgent::Action::"Prompt", resource);'
         harness = CedarPolicyHarness(
             policy_set=policy,
             schema=schema,
@@ -513,7 +561,7 @@ class TestCedarPolicyHarnessWithoutAgent:
         """Test that adjudicate raises RuntimeError when not initialized."""
         schema = agent_to_cedar_schema(coding_agent)
         harness = CedarPolicyHarness(
-            policy_set="forbid(principal, action, resource);",
+            policy_set='@id("deny-all") forbid(principal, action, resource);',
             schema=schema,
         )
         # Don't initialize with an agent
@@ -539,7 +587,7 @@ class TestCedarPolicyHarnessInternalErrors:
 
         schema = agent_to_cedar_schema(coding_agent)
         harness = CedarPolicyHarness(
-            policy_set="forbid(principal, action, resource);",
+            policy_set='@id("deny-all") forbid(principal, action, resource);',
             schema=schema,
         )
         await harness.initialize(agent=coding_agent)
@@ -597,6 +645,7 @@ class TestCedarPolicyHarnessEscalate:
         """Test that @escalate on forbid policy returns ESCALATE decision."""
         schema = agent_to_cedar_schema(coding_agent)
         policy = f"""
+        @id("allow-all")
         permit(principal, action, resource);
 
         @id("escalate-execute")
@@ -628,6 +677,7 @@ class TestCedarPolicyHarnessEscalate:
         """Test that hard deny wins over escalate when both match."""
         schema = agent_to_cedar_schema(coding_agent)
         policy = """
+        @id("allow-all")
         permit(principal, action, resource);
 
         @id("escalate-execute")
@@ -647,10 +697,9 @@ class TestCedarPolicyHarnessEscalate:
         )
 
         assert result.decision == Decision.DENY
-        # Reason should only contain the hard deny policy, not the escalate one
-        # Cedar internal IDs: policy0=permit, policy1=escalate, policy2=hard-deny
-        assert "policy2" in result.reason
-        assert "policy1" not in result.reason
+        # policy_ids should only contain the hard deny policy, not the escalate one
+        assert "hard-deny-execute" in result.policy_ids
+        assert "escalate-execute" not in result.policy_ids
 
     @pytest.mark.asyncio
     async def test_multiple_escalate_policies_returns_all_annotations(
@@ -659,6 +708,7 @@ class TestCedarPolicyHarnessEscalate:
         """Test that multiple @escalate policies return all annotations."""
         schema = agent_to_cedar_schema(coding_agent)
         policy = """
+        @id("allow-all")
         permit(principal, action, resource);
 
         @id("escalate-1")
@@ -702,6 +752,7 @@ class TestCedarPolicyHarnessEscalate:
         """Test that allowed actions are not affected by escalate policies."""
         schema = agent_to_cedar_schema(coding_agent)
         policy = """
+        @id("allow-all")
         permit(principal, action, resource);
 
         @id("escalate-execute")

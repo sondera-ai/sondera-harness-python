@@ -173,7 +173,7 @@ when {
 
 ## Annotations
 
-Policies can include an `@id` annotation to identify them in adjudication results. This makes it easy to see which policy allowed or denied an action.
+Policies must include an `@id` annotation to identify them in adjudication results. This makes it easy to see which policy allowed or denied an action.
 
 ```cedar
 @id("high-value-transfer-block")
@@ -185,7 +185,7 @@ when {
 };
 ```
 
-When a policy matches, its `@id` is included in the adjudication reason. See [Decisions](decisions.md#annotations) for how to access policy annotations in your code.
+When a policy matches, its `@id` is included in `result.policy_ids`. See [Decisions](decisions.md#annotations) for how to access policy annotations in your code.
 
 ---
 

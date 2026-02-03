@@ -89,8 +89,8 @@ result = await harness.adjudicate(
 )
 
 if result.decision == Decision.DENY:
-    # result.reason contains the policy ID and explanation
-    # e.g., "block-dangerous-bash: command matches forbidden pattern"
+    # result.reason is a human-readable explanation
+    # result.policy_ids contains the IDs of policies that matched
     agent_feedback = f"Action denied: {result.reason}. Try a different approach."
 ```
 
@@ -167,8 +167,11 @@ result = await harness.adjudicate(stage, role, content)
 # The decision enum value
 result.decision      # Decision.ALLOW, Decision.DENY, or Decision.ESCALATE
 
-# Human-readable explanation (always present for DENY)
-result.reason        # e.g., "spending-limit: amount exceeds $10,000 threshold"
+# Human-readable explanation
+result.reason        # e.g., "Denied by policies"
+
+# List of policy IDs that matched
+result.policy_ids    # e.g., ["spending-limit", "transfer-block"]
 ```
 
 ### Annotations

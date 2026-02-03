@@ -15,6 +15,7 @@ from cedar import (
     EntityUid,
     PolicySet,
     Request,
+    Response,
     Schema,
 )
 from sondera.harness.abc import Harness as AbstractHarness
@@ -105,10 +106,18 @@ class CedarPolicyHarness(AbstractHarness):
         else:
             self._policy_set = policy_set
 
+        seen_ids: set[str] = set()
         for policy in self._policy_set.policies():
             annotations = policy.annotations()
+            if "id" not in annotations:
+                raise ValueError(
+                    f"Policy '{policy.id()}' is missing required @id annotation."
+                )
+            policy_id = annotations["id"]
+            if policy_id in seen_ids:
+                self._logger.warning(f"Duplicate policy @id: '{policy_id}'")
+            seen_ids.add(policy_id)
             if "escalate" in annotations and str(policy.effect()) != "Forbid":
-                policy_id = annotations.get("id", policy.id())
                 raise ValueError(
                     f"Policy '{policy_id}' has @escalate but is not a forbid policy. "
                     "@escalate is only valid on forbid policies."
@@ -270,50 +279,73 @@ class CedarPolicyHarness(AbstractHarness):
                     decision=Decision.ALLOW,
                     reason="Non-tool content allowed by default",
                 )
-        assert request is not None, "Unexpected none request"
         response = self._authorizer.is_authorized(request, self._policy_set)
-        if str(response.decision) == "Allow":
-            return Adjudication(
-                decision=Decision.ALLOW,
-                reason=f"Allowed by policies: {response.reason}",
-            )
+        return self._convert_cedar_response_to_adjudication(response)
 
-        annotations: list[PolicyAnnotation] = []
-        hard_deny_ids = []
+    def _convert_cedar_response_to_adjudication(
+        self, response: Response
+    ) -> Adjudication:
+        escalate_ids = []
+        escalate_annotations = []
+        non_escalate_ids = []
+        non_escalate_annotations = []
         for internal_id in response.reason:
             policy = self._policy_set.policy(internal_id)
             if policy is None:
                 raise RuntimeError(f"Policy '{internal_id}' not found in policy set")
-            policy_annotations = policy.annotations()
-            if "escalate" not in policy_annotations:
-                hard_deny_ids.append(internal_id)
-            else:
-                custom = {
-                    k: v
-                    for k, v in policy_annotations.items()
-                    if k not in ("id", "reason", "escalate")
-                }
-                annotations.append(
-                    PolicyAnnotation(
-                        id=policy_annotations.get("id", internal_id),
-                        description=policy_annotations.get("reason", ""),
-                        escalate=True,
-                        escalate_arg=policy_annotations["escalate"],
-                        custom=custom,
-                    )
-                )
-
-        if not hard_deny_ids and annotations:
-            return Adjudication(
-                decision=Decision.ESCALATE,
-                reason=f"Escalated by policies: {response.reason}",
-                annotations=annotations,
+            cedar_policy_annotations = policy.annotations()
+            non_default_annotations = {
+                k: v
+                for k, v in cedar_policy_annotations.items()
+                if k not in ("id", "reason", "escalate")
+            }
+            is_escalate = "escalate" in cedar_policy_annotations
+            sondera_policy_annotation = PolicyAnnotation(
+                id=cedar_policy_annotations["id"],
+                description=cedar_policy_annotations.get("reason", ""),
+                escalate=is_escalate,
+                escalate_arg=cedar_policy_annotations.get("escalate", ""),
+                custom=non_default_annotations,
             )
-        else:
+            if is_escalate:
+                escalate_ids.append(cedar_policy_annotations["id"])
+                escalate_annotations.append(sondera_policy_annotation)
+            else:
+                non_escalate_ids.append(cedar_policy_annotations["id"])
+                non_escalate_annotations.append(sondera_policy_annotation)
+
+        if str(response.decision) == "Allow":
+            # The @escalate annotation is only valid for `permit` Cedar policies, so we can just return the
+            # non-escalate IDs here:
+            return Adjudication(
+                decision=Decision.ALLOW,
+                reason="Allowed by all policies",
+                policy_ids=non_escalate_ids,
+                annotations=non_escalate_annotations,
+            )
+        # At this point we know the Cedar decision was DENY, so we just need to figure out if the
+        # final decision should be a hard DENY or else ESCALATE.
+        if non_escalate_ids:
             return Adjudication(
                 decision=Decision.DENY,
-                reason=f"Denied by policies: {hard_deny_ids}",
+                reason="Denied by policies",
+                policy_ids=non_escalate_ids,
+                annotations=non_escalate_annotations,
             )
+        if escalate_ids:
+            return Adjudication(
+                decision=Decision.ESCALATE,
+                reason="Escalated by policies",
+                policy_ids=escalate_ids,
+                annotations=escalate_annotations,
+            )
+        # Default deny because no policies matched (neither permit nor forbid/escalate)
+        return Adjudication(
+            decision=Decision.DENY,
+            reason="No matching permit policy",
+            policy_ids=[],
+            annotations=[],
+        )
 
     def _message_request(
         self,
