@@ -106,7 +106,7 @@ when { context has parameters_json };
 
 | Part | Description |
 |:-----|:------------|
-| `@id` | Required identifier for the policy (appears in `result.policy_ids`) |
+| `@id` | Required identifier for the policy |
 | `permit` / `forbid` | Allow or deny the action |
 | `principal` | Who is making the request (the agent) |
 | `action` | The tool being called (e.g., `My_Agent::Action::"Bash"`) |

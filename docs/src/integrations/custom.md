@@ -226,16 +226,16 @@ async def execute_with_escalation(harness: CedarPolicyHarness, tool_call: dict) 
 
     if result.decision == Decision.ESCALATE:
         # Escalation - request approval before proceeding
-        annotation = result.annotations[0]
+        policy = result.policies[0]
         print(f"Action requires approval: {tool_call['name']}")
-        print(f"Reason: {annotation.description}")
-        print(f"Route to: {annotation.escalate_arg}")  # e.g., "finance-team"
+        print(f"Reason: {policy.description}")
+        print(f"Route to: {policy.escalate_arg}")  # e.g., "finance-team"
 
         approved = await request_approval(
             action=tool_call["name"],
             args=tool_call["args"],
-            reason=annotation.description,
-            route_to=annotation.escalate_arg,
+            reason=policy.description,
+            route_to=policy.escalate_arg,
         )
 
         if approved:
@@ -292,11 +292,11 @@ async def escalate_to_slack(harness: CedarPolicyHarness, tool_call: dict) -> str
         return f"Action blocked: {result.reason}"
 
     if result.decision == Decision.ESCALATE:
-        annotation = result.annotations[0]
-        webhook_url = SLACK_WEBHOOKS.get(annotation.escalate_arg)
+        policy = result.policies[0]
+        webhook_url = SLACK_WEBHOOKS.get(policy.escalate_arg)
 
         if not webhook_url:
-            return f"No webhook configured for: {annotation.escalate_arg}"
+            return f"No webhook configured for: {policy.escalate_arg}"
 
         async with httpx.AsyncClient() as client:
             await client.post(webhook_url, json={
@@ -308,7 +308,7 @@ async def escalate_to_slack(harness: CedarPolicyHarness, tool_call: dict) -> str
                     },
                     {
                         "type": "section",
-                        "text": {"type": "mrkdwn", "text": f"*Reason:* {annotation.description}"},
+                        "text": {"type": "mrkdwn", "text": f"*Reason:* {policy.description}"},
                     },
                     {
                         "type": "actions",

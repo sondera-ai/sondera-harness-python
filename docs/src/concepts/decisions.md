@@ -90,7 +90,7 @@ result = await harness.adjudicate(
 
 if result.decision == Decision.DENY:
     # result.reason is a human-readable explanation
-    # result.policy_ids contains the IDs of policies that matched
+    # result.policies contains metadata about the policies that matched
     agent_feedback = f"Action denied: {result.reason}. Try a different approach."
 ```
 
@@ -125,14 +125,14 @@ elif result.decision == Decision.DENY:
     # return f"Action denied: {result.reason}. Try a different approach."
 
 elif result.decision == Decision.ESCALATE:
-    # Action requires approval before proceeding. Use annotation metadata
+    # Action requires approval before proceeding. Use policy metadata
     # to route the approval request.
-    annotation = result.annotations[0]
+    policy = result.policies[0]
     # Assuming you have a `request_approval` function implemented:
     approved = await request_approval(
         action=content,
-        reason=annotation.description,
-        route_to=annotation.escalate_arg,  # e.g., "finance-team"
+        reason=policy.description,
+        route_to=policy.escalate_arg,  # e.g., "finance-team"
     )
     if approved:
         execute_action()
@@ -165,42 +165,42 @@ The `Adjudication` result gives you everything you need to act on the decision: 
 result = await harness.adjudicate(stage, role, content)
 
 # The decision enum value
-result.decision      # Decision.ALLOW, Decision.DENY, or Decision.ESCALATE
+result.decision  # Decision.ALLOW, Decision.DENY, or Decision.ESCALATE
 
 # Human-readable explanation
-result.reason        # e.g., "Denied by policies"
+result.reason    # e.g., "Denied by policies"
 
-# List of policy IDs that matched
-result.policy_ids    # e.g., ["spending-limit", "transfer-block"]
+# Policies that determined this decision (list of PolicyMetadata)
+result.policies  # e.g., [PolicyMetadata(id="spending-limit", ...), ...]
 ```
 
-### Annotations
+### Accessing Policy Metadata from Cedar Annotations
 
-Sometimes you need more than just the decision. Annotations let policies attach custom metadata: severity levels, audit tags, escalation routing, or data you need for logging and alerting.
+Sometimes you need more than just the decision. Cedar annotations let policy authors attach custom metadata to a policy: severity levels, audit tags, escalation routing, data you need for logging and alerting, etc. For each policy that contributed to a decision, this metadata can be accessed via a corresponding `PolicyMetadata` object.
 
 ```{.python notest}
-# Annotations come from matching policies
-result.annotations  # List of PolicyAnnotation objects
+# Policies that determined this decision
+result.policies  # List of PolicyMetadata objects
 
-# Each annotation has: id, description, escalation info, and custom metadata dict
-for annotation in result.annotations:
-    print(annotation.id)           # Policy ID that matched
-    print(annotation.description)  # Human-readable description
-    print(annotation.escalate)     # True if this policy has @escalate
-    print(annotation.escalate_arg) # The @escalate argument, e.g., "finance-team"
-    print(annotation.custom)       # {"severity": "critical", ...}
+# Each policy has: id, description, escalation info, and custom metadata dict
+for policy in result.policies:
+    print(policy.id)           # Policy ID that matched
+    print(policy.description)  # Human-readable description (from @reason)
+    print(policy.escalate)     # True if this policy has @escalate
+    print(policy.escalate_arg) # The @escalate argument, e.g., "finance-team"
+    print(policy.custom)       # {"severity": "critical", ...}
 
-    if annotation.escalate:
-        # Escalate to the team specified in annotation.escalate_arg.
+    if policy.escalate:
+        # Escalate to the team specified in policy.escalate_arg.
         # E.g., assuming you have a request_approval function:
-        await request_approval(route_to=annotation.escalate_arg)
+        await request_approval(route_to=policy.escalate_arg)
 
     # Use custom metadata for your own logic
-    if annotation.custom.get("severity") == "critical":
+    if policy.custom.get("severity") == "critical":
         alert_security_team(result)  # Your alerting logic here
 ```
 
-Annotations are defined in your Cedar policies using the `@` syntax. See [Writing Policies](../writing-policies.md) for details.
+Policy metadata is defined in your Cedar policies using the `@` syntax. See [Writing Policies](../writing-policies.md) for details.
 
 ---
 

@@ -185,7 +185,7 @@ when {
 };
 ```
 
-When a policy matches, its `@id` is included in `result.policy_ids`. See [Decisions](decisions.md#annotations) for how to access policy annotations in your code.
+When a policy matches, its metadata is included in `result.policies`. See [Decisions](decisions.md#accessing-policy-metadata-from-cedar-annotations) for how to access policy metadata in your code.
 
 ---
 

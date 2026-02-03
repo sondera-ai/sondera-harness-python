@@ -8,7 +8,7 @@ from sondera.types import (
     Agent,
     Decision,
     Parameter,
-    PolicyAnnotation,
+    PolicyMetadata,
     Role,
     Stage,
     Tool,
@@ -663,8 +663,8 @@ class TestCedarPolicyHarnessEscalate:
         )
 
         assert result.decision == Decision.ESCALATE
-        assert result.annotations == [
-            PolicyAnnotation(
+        assert result.policies == [
+            PolicyMetadata(
                 id="escalate-execute",
                 description="Commands require approval",
                 escalate=True,
@@ -697,9 +697,10 @@ class TestCedarPolicyHarnessEscalate:
         )
 
         assert result.decision == Decision.DENY
-        # policy_ids should only contain the hard deny policy, not the escalate one
-        assert "hard-deny-execute" in result.policy_ids
-        assert "escalate-execute" not in result.policy_ids
+        # policies should only contain the hard deny policy, not the escalate one
+        policy_ids = [p.id for p in result.policies]
+        assert "hard-deny-execute" in policy_ids
+        assert "escalate-execute" not in policy_ids
 
     @pytest.mark.asyncio
     async def test_multiple_escalate_policies_returns_all_annotations(
@@ -732,14 +733,14 @@ class TestCedarPolicyHarnessEscalate:
 
         assert result.decision == Decision.ESCALATE
         # Sort in case policy evaluation order can vary
-        assert sorted(result.annotations, key=lambda a: a.id) == [
-            PolicyAnnotation(
+        assert sorted(result.policies, key=lambda p: p.id) == [
+            PolicyMetadata(
                 id="escalate-1",
                 description="Reason A",
                 escalate=True,
                 escalate_arg="team-a",
             ),
-            PolicyAnnotation(
+            PolicyMetadata(
                 id="escalate-2",
                 description="Reason B",
                 escalate=True,

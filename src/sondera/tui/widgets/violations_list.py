@@ -44,15 +44,13 @@ class ViolationsList(Widget):
             reason = record.adjudication.reason
             reason_display = reason[:40] + "..." if len(reason) > 43 else reason
 
-            # Format annotations as comma-separated policy IDs
-            annotations = record.adjudication.annotations
-            if annotations:
-                ann_ids = [ann.id for ann in annotations]
-                annotations_display = ", ".join(ann_ids)
-                if len(annotations_display) > 30:
-                    annotations_display = annotations_display[:27] + "..."
+            # Format policies as comma-separated policy IDs
+            if record.adjudication.policies:
+                policies_display = ", ".join(p.id for p in record.adjudication.policies)
+                if len(policies_display) > 30:
+                    policies_display = policies_display[:27] + "..."
             else:
-                annotations_display = "-"
+                policies_display = "-"
 
             table.add_row(
                 decision_display,
@@ -66,7 +64,7 @@ class ViolationsList(Widget):
                 if len(record.step_id) > 11
                 else record.step_id,
                 reason_display,
-                annotations_display,
+                policies_display,
             )
 
     def get_selected_adjudication(self) -> AdjudicationRecord | None:
