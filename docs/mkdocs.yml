@@ -131,6 +131,9 @@ nav:
     - LangChain / LangGraph: integrations/langgraph.md
     - Google ADK: integrations/adk.md
     - Strands: integrations/strands.md
+    - OpenClaw:
+      - Overview: integrations/openclaw.md
+      - Cedar Policies: integrations/openclaw-policies.md
     - Custom Agent: integrations/custom.md
   - Writing Policies: writing-policies.md
   - Core Concepts:

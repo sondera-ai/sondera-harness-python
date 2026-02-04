@@ -904,6 +904,20 @@
   color: var(--sondera-electric-green);
 }
 
+/* ===========================================
+   Light/Dark Mode Image Toggle
+   =========================================== */
+
+/* Hide light-mode images when in dark mode */
+[data-md-color-scheme="slate"] .only-light {
+  display: none !important;
+}
+
+/* Hide dark-mode images when in light mode */
+[data-md-color-scheme="default"] .only-dark {
+  display: none !important;
+}
+
 /* Responsive adjustments */
 @media (max-width: 768px) {
   .md-typeset .hero h1 {

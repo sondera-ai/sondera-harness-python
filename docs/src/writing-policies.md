@@ -286,6 +286,9 @@ when {
   (context.parameters_json like "*rm -rf /*" ||
    context.parameters_json like "*rm -rf ~*" ||
    context.parameters_json like "*rm -rf .*" ||
+   context.parameters_json like "*rm -fr /*" ||
+   context.parameters_json like "*rm -fr ~*" ||
+   context.parameters_json like "*rm -fr .*" ||
    context.parameters_json like "*mkfs*" ||
    context.parameters_json like "*dd if=/dev/zero*" ||
    context.parameters_json like "*dd of=/dev/*" ||

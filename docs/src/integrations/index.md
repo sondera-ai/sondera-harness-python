@@ -1,6 +1,6 @@
 ---
 title: Integrations
-description: Add Sondera Harness to LangGraph, Google ADK, Strands, or build your own
+description: Add Sondera Harness to LangGraph, Google ADK, Strands, OpenClaw, or build your own
 ---
 
 # Integrations
@@ -44,6 +44,16 @@ Sondera Harness provides native integrations for popular agent frameworks, plus 
     Requires Strands 0.1+
 
     [View guide](strands.md)
+
+-   :material-robot:{ .lg .middle } **OpenClaw**
+
+    ---
+
+    Local Cedar policy evaluation for OpenClaw AI agents. No API calls required.
+
+    TypeScript extension
+
+    [View guide](openclaw.md)
 
 -   :material-code-braces:{ .lg .middle } **Custom Agent**
 
