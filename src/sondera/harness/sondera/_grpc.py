@@ -16,8 +16,8 @@ from sondera.types import (
     Decision,
     GuardrailContext,
     Parameter,
-    PolicyAnnotation,
     PolicyEngineMode,
+    PolicyMetadata,
     PromptContent,
     Role,
     SourceCode,
@@ -127,9 +127,9 @@ def _convert_pb_adjudication_to_sdk(
         primitives_pb2.DECISION_ESCALATE: Decision.ESCALATE,
     }
 
-    # Convert annotations
-    annotations = [
-        PolicyAnnotation(
+    # Convert annotations to PolicyMetadata
+    policies = [
+        PolicyMetadata(
             id=ann.id if ann.HasField("id") else "",
             description=ann.description if ann.HasField("description") else "",
             custom=dict(ann.custom),
@@ -140,8 +140,7 @@ def _convert_pb_adjudication_to_sdk(
     return Adjudication(
         decision=decision_map[adjudication.decision],
         reason=adjudication.reason,
-        policy_ids=list(adjudication.policy_ids),
-        annotations=annotations,
+        policies=policies,
     )
 
 

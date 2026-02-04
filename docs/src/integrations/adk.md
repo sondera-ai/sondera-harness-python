@@ -125,6 +125,9 @@ The agent continues running and can retry with different parameters or inform th
 !!! tip "Need to block completely?"
     If you need to stop execution entirely on denial, raise an exception in a custom plugin that wraps `SonderaHarnessPlugin`, or handle denials in your application code.
 
+!!! note "ESCALATE Support"
+    The ADK plugin currently handles `ALLOW` and `DENY` decisions. For `ESCALATE` workflows (using the `@escalate` policy annotation), use the [custom integration](custom.md#handling-escalations) pattern.
+
 ---
 
 ## Examples
@@ -228,5 +231,5 @@ Schedule a meeting with John for tomorrow at 2pm.
 ## Next Steps
 
 - [:octicons-arrow-right-24: Writing Policies](../writing-policies.md) - Cedar syntax and common patterns
-- [:octicons-arrow-right-24: Decisions](../concepts/decisions.md) - How ALLOW and DENY work
+- [:octicons-arrow-right-24: Decisions](../concepts/decisions.md) - How ALLOW, DENY, and ESCALATE work
 - [:octicons-arrow-right-24: Troubleshooting](../troubleshooting.md) - Common issues and solutions

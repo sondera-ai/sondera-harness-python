@@ -4,6 +4,12 @@ site_url: https://docs.sondera.ai/
 repo_url: https://github.com/sondera-ai/sondera-harness-python
 repo_name: sondera-ai/sondera-harness-python
 
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn
+  anchors: warn
+
 docs_dir: src
 
 theme:
@@ -125,6 +131,9 @@ nav:
     - LangChain / LangGraph: integrations/langgraph.md
     - Google ADK: integrations/adk.md
     - Strands: integrations/strands.md
+    - OpenClaw:
+      - Overview: integrations/openclaw.md
+      - Cedar Policies: integrations/openclaw-policies.md
     - Custom Agent: integrations/custom.md
   - Writing Policies: writing-policies.md
   - Core Concepts:

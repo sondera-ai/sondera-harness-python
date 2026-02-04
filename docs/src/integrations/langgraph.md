@@ -148,6 +148,9 @@ The model receives these messages as context and can adjust its behavior accordi
 !!! tip "Example default behavior"
     The example agents use `Strategy.STEER` by default. Add `--enforce` to use `Strategy.BLOCK` instead.
 
+!!! note "ESCALATE Support"
+    The LangGraph middleware currently handles `ALLOW` and `DENY` decisions. For `ESCALATE` workflows (using the `@escalate` policy annotation), use the [custom integration](custom.md#handling-escalations) pattern.
+
 ---
 
 ## Examples
@@ -302,5 +305,5 @@ uv run python examples/langgraph/src/langgraph_examples/life_sciences_agent.py
 ## Next Steps
 
 - [:octicons-arrow-right-24: Writing Policies](../writing-policies.md) - Cedar syntax and common patterns
-- [:octicons-arrow-right-24: Decisions](../concepts/decisions.md) - How ALLOW and DENY work
+- [:octicons-arrow-right-24: Decisions](../concepts/decisions.md) - How ALLOW, DENY, and ESCALATE work
 - [:octicons-arrow-right-24: Troubleshooting](../troubleshooting.md) - Common issues and solutions

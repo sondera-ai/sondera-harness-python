@@ -119,6 +119,9 @@ For tool calls, the agent receives the denial reason and can retry with differen
 !!! tip "Need to block completely?"
     If you need to stop execution entirely on denial, raise an exception in a custom hook that wraps `SonderaHarnessHook`, or handle denials in your application code.
 
+!!! note "ESCALATE Support"
+    The Strands hook currently handles `ALLOW` and `DENY` decisions. For `ESCALATE` workflows (using the `@escalate` policy annotation), use the [custom integration](custom.md#handling-escalations) pattern.
+
 ---
 
 ## Examples
@@ -226,5 +229,5 @@ Schedule a meeting with John for tomorrow at 2pm.
 ## Next Steps
 
 - [:octicons-arrow-right-24: Writing Policies](../writing-policies.md) - Cedar syntax and common patterns
-- [:octicons-arrow-right-24: Decisions](../concepts/decisions.md) - How ALLOW and DENY work
+- [:octicons-arrow-right-24: Decisions](../concepts/decisions.md) - How ALLOW, DENY, and ESCALATE work
 - [:octicons-arrow-right-24: Troubleshooting](../troubleshooting.md) - Common issues and solutions

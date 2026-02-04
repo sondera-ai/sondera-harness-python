@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.12, <3.15"
 resolution-markers = [
     "python_full_version >= '3.14'",
@@ -3788,7 +3788,7 @@ dev = [
 [[package]]
 name = "sondera-examples-cedar"
 version = "0.1.0"
-source = { virtual = "examples/cedar" }
+source = { editable = "examples/cedar" }
 dependencies = [
     { name = "loguru" },
     { name = "sondera-archetypes" },
@@ -3908,14 +3908,13 @@ dev = [
 
 [[package]]
 name = "sondera-harness"
-version = "0.7.0"
+version = "0.7.1"
 source = { editable = "." }
 dependencies = [
     { name = "cedar-python" },
     { name = "click" },
     { name = "click-default-group" },
     { name = "grpcio" },
-    { name = "grpcio-tools" },
     { name = "httpx" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
@@ -3942,6 +3941,7 @@ strands = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "grpcio-tools" },
     { name = "pyright" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -3964,7 +3964,6 @@ requires-dist = [
     { name = "google-adk", marker = "extra == 'adk'", specifier = ">=1.22.0" },
     { name = "google-adk", marker = "extra == 'all'", specifier = ">=1.22.0" },
     { name = "grpcio", specifier = ">=1.76.0" },
-    { name = "grpcio-tools", specifier = ">=1.76.0" },
     { name = "httpx", specifier = ">=0.27.0" },
     { name = "langchain", marker = "extra == 'all'", specifier = ">=1.2.0" },
     { name = "langchain", marker = "extra == 'langgraph'", specifier = ">=1.2.0" },
@@ -3980,6 +3979,7 @@ provides-extras = ["adk", "langgraph", "strands", "all"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "grpcio-tools", specifier = ">=1.76.0" },
     { name = "pyright" },
     { name = "pytest", specifier = ">=8.0.0" },
     { name = "pytest-asyncio", specifier = ">=0.23.0" },
@@ -3989,7 +3989,7 @@ dev = [
 ]
 examples = [
     { name = "sondera-examples-adk", editable = "examples/adk" },
-    { name = "sondera-examples-cedar", virtual = "examples/cedar" },
+    { name = "sondera-examples-cedar", editable = "examples/cedar" },
     { name = "sondera-examples-langgraph", editable = "examples/langgraph" },
     { name = "sondera-examples-strands", editable = "examples/strands" },
 ]

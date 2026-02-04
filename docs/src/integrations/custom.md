@@ -108,14 +108,14 @@ You control exactly when policies are evaluated by calling `adjudicate()`:
 
 ---
 
-## Handling Denials
+## Handling Decisions
 
 The `adjudicate()` method returns an `Adjudication` object with the policy decision:
 
 | Property | Description |
 |:---------|:------------|
 | `adjudication.decision` | `Decision.ALLOW`, `Decision.DENY`, or `Decision.ESCALATE` |
-| `adjudication.reason` | Explanation of why the action was denied |
+| `adjudication.reason` | Explanation of why the action was denied or escalated |
 
 ### BLOCK Pattern
 
@@ -196,18 +196,17 @@ await harness.initialize()
 
 ---
 
-## Human-in-the-Loop
+## Handling Escalations
 
-For high-stakes denials, pause and ask a human instead of blocking outright. With the direct API, you have full control over how to implement approval workflows.
+When a policy uses the `@escalate` annotation, the harness returns `Decision.ESCALATE` instead of `Decision.DENY`. This signals that the action needs approval before proceeding, rather than being blocked outright.
 
-### Basic Approval Pattern
+### Basic Escalation Pattern
 
 ```python
-import asyncio
 from sondera import CedarPolicyHarness, Decision, ToolRequestContent, Stage, Role
 
-async def execute_with_approval(harness: CedarPolicyHarness, tool_call: dict) -> str:
-    """Execute a tool call, requesting human approval if denied by policy."""
+async def execute_with_escalation(harness: CedarPolicyHarness, tool_call: dict) -> str:
+    """Execute a tool call, handling escalations for approval."""
 
     result = await harness.adjudicate(
         Stage.PRE_TOOL,
@@ -221,50 +220,61 @@ async def execute_with_approval(harness: CedarPolicyHarness, tool_call: dict) ->
     if result.decision == Decision.ALLOW:
         return execute_tool(tool_call)
 
-    # Policy denied - request human approval
-    print(f"Action requires approval: {tool_call['name']}")
-    print(f"Reason: {result.reason}")
+    if result.decision == Decision.DENY:
+        # Hard denial - do not allow override
+        return f"Action '{tool_call['name']}' blocked: {result.reason}"
 
-    approved = await request_human_approval(
-        action=tool_call["name"],
-        args=tool_call["args"],
-        reason=result.reason,
-    )
+    if result.decision == Decision.ESCALATE:
+        # Escalation - request approval before proceeding
+        policy = result.policies[0]
+        print(f"Action requires approval: {tool_call['name']}")
+        print(f"Reason: {policy.description}")
+        print(f"Route to: {policy.escalate_arg}")  # e.g., "finance-team"
 
-    if approved:
-        return execute_tool(tool_call)
-    else:
-        return f"Action '{tool_call['name']}' was rejected by human reviewer."
+        approved = await request_approval(
+            action=tool_call["name"],
+            args=tool_call["args"],
+            reason=policy.description,
+            route_to=policy.escalate_arg,
+        )
+
+        if approved:
+            return execute_tool(tool_call)  # Your tool execution function
+        else:
+            return f"Action '{tool_call['name']}' was rejected."
 
 
-async def request_human_approval(action: str, args: dict, reason: str) -> bool:
-    """Request human approval for a denied action.
+async def request_approval(action: str, args: dict, reason: str, route_to: str) -> bool:
+    """Request approval for an escalated action.
 
     Replace this with your actual approval mechanism:
-    - Slack notification
+    - Slack notification (route to specific channel based on route_to)
     - Email approval
     - Web UI confirmation
     - CLI prompt
     """
     # Example: simple CLI prompt
-    response = input(f"Approve '{action}' with args {args}? (y/n): ")
+    response = input(f"[{route_to}] Approve '{action}' with args {args}? (y/n): ")
     return response.lower() == "y"
 ```
 
-### Webhook-Based Approval
+### Webhook-Based Escalation
 
-For production systems, use webhooks or message queues:
+For production systems, use webhooks or message queues. The `escalate_arg` can route approvals to different teams:
 
 ```python
 import httpx
 from sondera import CedarPolicyHarness, Decision, ToolRequestContent, Stage, Role
 
-async def escalate_to_slack(
-    harness: CedarPolicyHarness,
-    tool_call: dict,
-    webhook_url: str,
-) -> str:
-    """Escalate denied actions to Slack for approval."""
+# Map escalate_arg values to Slack webhook URLs
+SLACK_WEBHOOKS = {
+    "finance-team": "https://hooks.slack.com/services/xxx/finance",
+    "ops-team": "https://hooks.slack.com/services/xxx/ops",
+    "security-team": "https://hooks.slack.com/services/xxx/security",
+}
+
+async def escalate_to_slack(harness: CedarPolicyHarness, tool_call: dict) -> str:
+    """Escalate actions to the appropriate Slack channel for approval."""
 
     result = await harness.adjudicate(
         Stage.PRE_TOOL,
@@ -276,34 +286,42 @@ async def escalate_to_slack(
     )
 
     if result.decision == Decision.ALLOW:
-        return execute_tool(tool_call)
+        return execute_tool(tool_call)  # Your tool execution function
 
-    # Send to Slack and wait for response
-    async with httpx.AsyncClient() as client:
-        await client.post(webhook_url, json={
-            "text": f"Action requires approval: {tool_call['name']}",
-            "blocks": [
-                {
-                    "type": "section",
-                    "text": {"type": "mrkdwn", "text": f"*Action:* `{tool_call['name']}`"},
-                },
-                {
-                    "type": "section",
-                    "text": {"type": "mrkdwn", "text": f"*Reason:* {result.reason}"},
-                },
-                {
-                    "type": "actions",
-                    "elements": [
-                        {"type": "button", "text": {"type": "plain_text", "text": "Approve"}, "action_id": "approve"},
-                        {"type": "button", "text": {"type": "plain_text", "text": "Reject"}, "action_id": "reject"},
-                    ],
-                },
-            ],
-        })
+    if result.decision == Decision.DENY:
+        return f"Action blocked: {result.reason}"
 
-    # In practice, you'd wait for a callback from Slack
-    # This is simplified for illustration
-    return "Escalated to Slack for approval"
+    if result.decision == Decision.ESCALATE:
+        policy = result.policies[0]
+        webhook_url = SLACK_WEBHOOKS.get(policy.escalate_arg)
+
+        if not webhook_url:
+            return f"No webhook configured for: {policy.escalate_arg}"
+
+        async with httpx.AsyncClient() as client:
+            await client.post(webhook_url, json={
+                "text": f"Action requires approval: {tool_call['name']}",
+                "blocks": [
+                    {
+                        "type": "section",
+                        "text": {"type": "mrkdwn", "text": f"*Action:* `{tool_call['name']}`"},
+                    },
+                    {
+                        "type": "section",
+                        "text": {"type": "mrkdwn", "text": f"*Reason:* {policy.description}"},
+                    },
+                    {
+                        "type": "actions",
+                        "elements": [
+                            {"type": "button", "text": {"type": "plain_text", "text": "Approve"}, "action_id": "approve"},
+                            {"type": "button", "text": {"type": "plain_text", "text": "Reject"}, "action_id": "reject"},
+                        ],
+                    },
+                ],
+            })
+
+        # In practice, you'd wait for a callback from Slack
+        return f"Escalated to {annotation.escalate_arg} for approval"
 ```
 
 ---
@@ -317,5 +335,5 @@ async def escalate_to_slack(
 ## Next Steps
 
 - [:octicons-arrow-right-24: Writing Policies](../writing-policies.md) - Cedar syntax and common patterns
-- [:octicons-arrow-right-24: Decisions](../concepts/decisions.md) - How ALLOW and DENY work
+- [:octicons-arrow-right-24: Decisions](../concepts/decisions.md) - How ALLOW, DENY, and ESCALATE work
 - [:octicons-arrow-right-24: Troubleshooting](../troubleshooting.md) - Common issues and solutions

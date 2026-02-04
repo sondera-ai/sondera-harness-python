@@ -68,8 +68,8 @@ from sondera.types import (
     Content,
     Decision,
     Parameter,
-    PolicyAnnotation,
     PolicyEngineMode,
+    PolicyMetadata,
     PromptContent,
     Role,
     SourceCode,
@@ -112,7 +112,7 @@ __all__ = [
     "AdjudicatedStep",
     "AdjudicatedTrajectory",
     "AdjudicationRecord",
-    "PolicyAnnotation",
+    "PolicyMetadata",
     "Decision",
     # Exceptions
     "SonderaError",

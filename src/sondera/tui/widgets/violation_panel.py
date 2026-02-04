@@ -53,20 +53,22 @@ class ViolationPanel(Widget):
         with Container(classes="reason-container"):
             yield Markdown(record.adjudication.reason, classes="reason-text")
 
-        # Annotations section
-        annotations = record.adjudication.annotations
-        if annotations:
-            yield Static("[bold]Policy Annotations[/bold]", classes="section-header")
+        # Policies section
+        policies = record.adjudication.policies
+        if policies:
+            yield Static("[bold]Policies[/bold]", classes="section-header")
             with VerticalScroll(classes="annotations-container"):
-                for ann in annotations:
+                for policy in policies:
                     with Container(classes="annotation-card"):
-                        yield Static(f"[bold]{ann.id}[/bold]", classes="annotation-id")
-                        if ann.description:
+                        yield Static(
+                            f"[bold]{policy.id}[/bold]", classes="annotation-id"
+                        )
+                        if policy.description:
                             yield Static(
-                                ann.description, classes="annotation-description"
+                                policy.description, classes="annotation-description"
                             )
-                        if ann.custom:
+                        if policy.custom:
                             with Grid(classes="annotation-custom-grid"):
-                                for key, value in ann.custom.items():
+                                for key, value in policy.custom.items():
                                     yield Static(f"{key}:", classes="label")
                                     yield Static(value, classes="value")

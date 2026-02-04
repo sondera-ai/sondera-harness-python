@@ -562,30 +562,6 @@ class SonderaRemoteHarness(AbstractHarness):
             )
             raise
 
-    async def _list_trajectory_steps(
-        self, trajectory_id: str
-    ) -> list[primitives_pb2.AdjudicatedStep]:
-        """List trajectory steps internally."""
-        request = harness_pb2.GetTrajectoryRequest(
-            trajectory_id=trajectory_id,
-        )
-        await self._ensure_connected()
-        assert self._stub is not None, "Client not connected"
-
-        # Inject organization_id and auth metadata
-        metadata = self._get_metadata()
-
-        try:
-            response = await self._stub.GetTrajectory(request, metadata=metadata)
-            return list(response.steps)
-        except grpc.aio.AioRpcError as e:
-            if e.code() == grpc.StatusCode.NOT_FOUND:
-                return []
-            logging.error(
-                f"Failed to list trajectory steps for {trajectory_id}: {e.code()} - {e.details()}"
-            )
-            raise
-
     async def _list_agents(
         self,
         provider_id: str | None = None,

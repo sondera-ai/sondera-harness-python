@@ -231,19 +231,19 @@ class GuardrailContext(Model):
     """Map of check name to check result."""
 
 
-class PolicyAnnotation(Model):
-    """Annotation from a policy evaluation."""
+class PolicyMetadata(Model):
+    """Metadata about a policy that contributed to an adjudication decision."""
 
     id: str
-    """Unique identifier of the policy that produced this annotation."""
+    """Unique identifier of the policy."""
     description: str
-    """Human-readable description of why this annotation was added."""
+    """Human-readable description from the policy's @reason annotation."""
     escalate: bool = False
     """Whether this policy requires escalation to a human or other oracle to decide the final verdict."""
     escalate_arg: str = ""
     """The argument passed to @escalate, if any."""
     custom: dict[str, str] = Field(default_factory=dict)
-    """Custom key-value metadata from the policy."""
+    """Custom key-value metadata from the policy's annotations."""
 
 
 class Adjudication(Model):
@@ -253,10 +253,9 @@ class Adjudication(Model):
     """Whether the input is allowed."""
     reason: str
     """Reason for the adjudication decision."""
-    policy_ids: list[str] = Field(default_factory=list)
-    """IDs of policies that contributed to this decision."""
-    annotations: list[PolicyAnnotation] = Field(default_factory=list)
-    """Annotations from policy evaluations."""
+    policies: list[PolicyMetadata] = Field(default_factory=list)
+    """Policies that determined this decision. Each entry contains the policy's
+    id, description (from @reason annotation), escalation info, and custom metadata."""
 
 
 class AdjudicatedStep(Model):

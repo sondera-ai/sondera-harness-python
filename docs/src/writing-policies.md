@@ -60,7 +60,7 @@ when { context has parameters_json && context.parameters_json like "*rm -rf*" };
 ```
 
 !!! tip "How Evaluation Works"
-    - If **any** `forbid` policy matches → **DENY**
+    - If **any** `forbid` policy matches → **DENY** (or **ESCALATE** if all matching forbids have `@escalate`)
     - If **any** `permit` policy matches and no `forbid` → **ALLOW**
     - If **no policies** match → **DENY** (default deny)
 
@@ -106,7 +106,7 @@ when { context has parameters_json };
 
 | Part | Description |
 |:-----|:------------|
-| `@id` | Optional identifier for the policy (shows in denial reasons) |
+| `@id` | Required identifier for the policy |
 | `permit` / `forbid` | Allow or deny the action |
 | `principal` | Who is making the request (the agent) |
 | `action` | The tool being called (e.g., `My_Agent::Action::"Bash"`) |
@@ -286,6 +286,9 @@ when {
   (context.parameters_json like "*rm -rf /*" ||
    context.parameters_json like "*rm -rf ~*" ||
    context.parameters_json like "*rm -rf .*" ||
+   context.parameters_json like "*rm -fr /*" ||
+   context.parameters_json like "*rm -fr ~*" ||
+   context.parameters_json like "*rm -fr .*" ||
    context.parameters_json like "*mkfs*" ||
    context.parameters_json like "*dd if=/dev/zero*" ||
    context.parameters_json like "*dd of=/dev/*" ||
@@ -595,39 +598,47 @@ when {
 !!! note "Email Detection Limitations"
     Pattern-based email detection (e.g., `*@*.com*`) produces many false positives. For robust PII detection, consider using a dedicated PII scanner before passing data to the harness, then set a context flag like `context.contains_pii`.
 
-#### Human-in-the-Loop
+#### Escalation with @escalate
 
-Require human approval for high-risk actions. Your application must set `context.human_approved = true` after receiving approval:
+Use the `@escalate` annotation to flag actions that require approval before proceeding. When a `forbid` policy with `@escalate` matches, the harness returns `Decision.ESCALATE` instead of `Decision.DENY`, signaling that the action should be paused for approval rather than blocked outright.
 
 ```cedar
-// Requires your app to pass context.human_approved (boolean) and context.environment
-
-// Require approval for production changes
+// Require approval for production deployments
 @id("production-approval-required")
+@escalate("ops-team")
+@reason("Production deployments require ops team approval")
 forbid(principal, action == My_Agent::Action::"Deploy", resource)
 when {
   context has environment &&
-  context.environment == "production" &&
-  !(context has human_approved && context.human_approved == true)
+  context.environment == "production"
 };
 
 // Require approval for customer-facing communications
 @id("customer-email-approval")
+@escalate("customer-success")
+@reason("Customer emails require review before sending")
 forbid(principal, action == My_Agent::Action::"SendEmail", resource)
 when {
   context has parameters &&
   context.parameters has recipient_type &&
-  context.parameters.recipient_type == "customer" &&
-  !(context has human_approved && context.human_approved == true)
+  context.parameters.recipient_type == "customer"
 };
 
 // Require approval for data deletion
 @id("deletion-approval")
-forbid(principal, action == My_Agent::Action::"DeleteRecord", resource)
-when {
-  !(context has human_approved && context.human_approved == true)
-};
+@escalate
+@reason("Data deletion requires approval")
+forbid(principal, action == My_Agent::Action::"DeleteRecord", resource);
 ```
+
+**Key points:**
+
+- `@escalate` is only valid on `forbid` policies
+- The optional argument (e.g., `@escalate("ops-team")`) is available as `annotation.escalate_arg` for routing
+- If ANY `forbid` without `@escalate` matches, the result is DENY (hard deny wins)
+- Use `@reason` to provide a human-readable explanation
+
+See [Decisions](concepts/decisions.md#how-escalate-works) for how to handle `Decision.ESCALATE` in your code.
 
 #### Role-Based Access
 
