@@ -168,18 +168,43 @@ class TestCedarPolicyHarnessLifecycle:
         assert harness._authorizer is not None
 
     @pytest.mark.asyncio
-    async def test_resume_raises_not_implemented(self, coding_agent):
-        """Test that resume raises NotImplementedError."""
+    async def test_resume_restores_trajectory(self, coding_agent):
+        """Test that resume restores an existing trajectory from storage."""
         schema = agent_to_cedar_schema(coding_agent)
         harness = CedarPolicyHarness(
             policy_set='@id("allow-all") permit(principal, action, resource);',
             schema=schema,
         )
 
-        with pytest.raises(
-            NotImplementedError, match="Resuming trajectories is not supported"
-        ):
-            await harness.resume("test-trajectory-123", agent=coding_agent)
+        # Initialize and adjudicate to create a trajectory with steps
+        await harness.initialize(agent=coding_agent)
+        tid = harness.trajectory_id
+        assert tid is not None
+        await harness.adjudicate(
+            stage=Stage.PRE_TOOL,
+            role=Role.MODEL,
+            content=ToolRequestContent(
+                tool_id="read_file", args={"path": "/tmp/test.txt"}
+            ),
+        )
+        await harness.finalize()
+
+        # Resume should restore trajectory and step count
+        await harness.resume(tid, agent=coding_agent)
+        assert harness.trajectory_id == tid
+        assert harness._trajectory_step_count == 1
+
+    @pytest.mark.asyncio
+    async def test_resume_unknown_trajectory_raises(self, coding_agent):
+        """Test that resume raises ValueError for unknown trajectory."""
+        schema = agent_to_cedar_schema(coding_agent)
+        harness = CedarPolicyHarness(
+            policy_set='@id("allow-all") permit(principal, action, resource);',
+            schema=schema,
+        )
+
+        with pytest.raises(ValueError, match="not found in storage"):
+            await harness.resume("nonexistent-id", agent=coding_agent)
 
     @pytest.mark.asyncio
     async def test_finalize_clears_trajectory(self, coding_agent):

@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "cedar": {
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "run",
+        "cedar",
+        "mcp"
+      ],
+      "env": {}
+    }
+  }
+}

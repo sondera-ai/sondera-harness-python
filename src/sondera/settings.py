@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -8,10 +9,13 @@ _ENV_PATH = Path("~/.sondera/env").expanduser()
 
 
 class Settings(BaseSettings):
+    sondera_harness_type: Literal["sondera", "local"] = "sondera"
     sondera_harness_endpoint: str = "harness.sondera.ai"
     sondera_api_token: str | None = None
     sondera_harness_client_secure: bool = True
     sondera_api_key_header: str = "authorization"
+
+    local_trajectory_storage_dir: str = ".sondera/trajectories"
 
     # AI Assist - LiteLLM model format (e.g. gemini/, openai/, anthropic/,
     # ollama/, vllm/).  LiteLLM reads provider-specific env vars automatically

@@ -2,7 +2,7 @@ import asyncio
 import contextlib
 import json
 import time
-from collections import Counter, defaultdict
+from collections import Counter
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -15,7 +15,11 @@ from textual.theme import Theme
 from textual.widgets import Footer, Header, Static
 
 import sondera.settings as _settings
-from sondera.harness.sondera.harness import SonderaRemoteHarness
+from sondera.harness import (
+    FileTrajectoryStorage,
+    SonderaRemoteHarness,
+    TrajectoryStorage,
+)
 from sondera.tui.ai.panel import AskInput, AskPanel, AskSessionState
 from sondera.tui.colors import ThemeColors, get_theme_colors
 from sondera.tui.mixins import SectionNavMixin
@@ -24,46 +28,7 @@ from sondera.tui.widgets.agents_feed import AgentsFeed, AgentStatus
 from sondera.tui.widgets.dashboard_header import DashboardHeader
 from sondera.tui.widgets.trajectory_feed import _is_stale
 from sondera.tui.widgets.violations_feed import ViolationsFeed
-from sondera.types import AdjudicationRecord, Decision, TrajectoryStatus
-
-
-def _dedup_adjudications(
-    records: list[AdjudicationRecord],
-) -> list[AdjudicationRecord]:
-    """Deduplicate adjudication records from the API.
-
-    The backend creates 2 records per adjudicated step (with consecutive integer
-    step_ids, identical trajectory/decision/reason). This merges those pairs so
-    each logical step is counted once.
-    """
-    # Group by (trajectory_id, decision, reason)
-    groups: dict[tuple, list[AdjudicationRecord]] = defaultdict(list)
-    for rec in records:
-        key = (rec.trajectory_id, rec.adjudication.decision, rec.adjudication.reason)
-        groups[key].append(rec)
-
-    deduped: list[AdjudicationRecord] = []
-    for _key, recs in groups.items():
-        # Sort by integer step_id and merge consecutive pairs
-        try:
-            recs.sort(key=lambda r: int(r.step_id))
-        except (ValueError, TypeError):
-            deduped.extend(recs)
-            continue
-
-        i = 0
-        while i < len(recs):
-            deduped.append(recs[i])
-            # Skip the next record if it's the consecutive duplicate
-            if (
-                i + 1 < len(recs)
-                and int(recs[i + 1].step_id) - int(recs[i].step_id) == 1
-            ):
-                i += 2
-            else:
-                i += 1
-    return deduped
-
+from sondera.types import Decision, TrajectoryStatus
 
 sondera_dark = Theme(
     name="sondera-dark",
@@ -137,10 +102,6 @@ class SonderaApp(SectionNavMixin, App):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.harness = SonderaRemoteHarness(
-            sondera_harness_endpoint=_settings.SETTINGS.sondera_harness_endpoint,
-            sondera_api_key=_settings.SETTINGS.sondera_api_token,
-        )
         self._all_trajectories: list = []
         self._agents: list = []
         self._agents_map: dict[str, str] = {}
@@ -150,6 +111,17 @@ class SonderaApp(SectionNavMixin, App):
         self._agents_by_id: dict = {}
         self._ask_state = AskSessionState()
         self._last_activity = time.monotonic()
+
+        # Setup Harness
+        if _settings.SETTINGS.sondera_harness_type == "sondera":
+            self.harness: TrajectoryStorage = SonderaRemoteHarness(
+                sondera_harness_endpoint=_settings.SETTINGS.sondera_harness_endpoint,
+                sondera_api_key=_settings.SETTINGS.sondera_api_token,
+            )
+        elif _settings.SETTINGS.sondera_harness_type == "local":
+            self.harness: TrajectoryStorage = FileTrajectoryStorage(
+                _settings.SETTINGS.local_trajectory_storage_dir
+            )
 
     AUTO_REFRESH_INTERVAL = 30
     PAGE_SIZE = 20
@@ -322,10 +294,6 @@ class SonderaApp(SectionNavMixin, App):
             pass
 
         adjudications, _adj_next = adj_result
-
-        # Deduplicate: the API returns 2 records per adjudicated step
-        # (consecutive step_ids, same trajectory/decision/reason).
-        adjudications = _dedup_adjudications(adjudications)
 
         # Merge locally-known tools for the AI Assistant: the platform
         # may not return tools if RegisterAgent hit ALREADY_EXISTS before
@@ -668,10 +636,15 @@ class SonderaApp(SectionNavMixin, App):
     def _on_config_result(self, changed: bool | None) -> None:
         """Reinitialize harness if config was saved."""
         if changed:
-            self.harness = SonderaRemoteHarness(
-                sondera_harness_endpoint=_settings.SETTINGS.sondera_harness_endpoint,
-                sondera_api_key=_settings.SETTINGS.sondera_api_token,
-            )
+            if _settings.SETTINGS.sondera_harness_type == "sondera":
+                self.harness = SonderaRemoteHarness(
+                    sondera_harness_endpoint=_settings.SETTINGS.sondera_harness_endpoint,
+                    sondera_api_key=_settings.SETTINGS.sondera_api_token,
+                )
+            elif _settings.SETTINGS.sondera_harness_type == "local":
+                self.harness = FileTrajectoryStorage(
+                    _settings.SETTINGS.local_trajectory_storage_dir
+                )
             self._bump_activity()  # Reset idle timer with new timeout
             self.update_dataset()
             self.notify("Configuration saved", timeout=3)

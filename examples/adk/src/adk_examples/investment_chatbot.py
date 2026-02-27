@@ -3,8 +3,8 @@
 Quickstart:
   1. Install: uv sync
   2. Set keys: export GOOGLE_API_KEY=...
-  3. Login: sondera auth login
-  4. Run: uv run python -m adk_examples.investment_chatbot
+  3. Run: uv run python -m adk_examples.investment_chatbot
+  4. With local Cedar policies: uv run python -m adk_examples.investment_chatbot --cedar
 
 Suggested prompts:
 - I'd like to review my portfolio performance. My customer ID is CUST001.
@@ -17,8 +17,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+from pathlib import Path
 from typing import List, Literal, Optional
 
+import click
 from archetypes.finance import get_account_info as _get_account_info
 from archetypes.finance import get_market_news as _get_market_news
 from archetypes.finance import get_portfolio as _get_portfolio
@@ -27,11 +29,15 @@ from archetypes.finance import make_trade_recommendation as _make_trade_recommen
 from archetypes.finance import send_notification as _send_notification
 from google.adk import Agent
 from google.adk.runners import InMemoryRunner
-from google.genai import types
 from pydantic import BaseModel
 
+from adk_examples.io import interactive_loop
+from cedar import PolicySet, Schema
 from sondera.adk import SonderaHarnessPlugin
-from sondera.harness import SonderaRemoteHarness
+from sondera.adk.analyze import format as analyze_agent
+from sondera.harness import CedarPolicyHarness, SonderaRemoteHarness
+from sondera.harness.abc import Harness
+from sondera.harness.cedar.schema import agent_to_cedar_schema
 
 
 # ADK-compatible Pydantic models with typing module hints
@@ -240,9 +246,8 @@ Always include appropriate disclaimers about investment risks.
 """
 
 
-def create_agent() -> Agent:
-    """Create an ADK agent with investment tools from archetypes."""
-    return Agent(
+async def run(*, cedar: bool, policies_dir: Path) -> None:
+    agent = Agent(
         model="gemini-2.5-flash",
         name="investment_chatbot",
         description="Investment Advisory Chatbot that provides portfolio analysis, market data, and trade recommendations.",
@@ -257,70 +262,49 @@ def create_agent() -> Agent:
         ],
     )
 
+    if cedar:
+        sondera_agent = analyze_agent(agent)
+        cedar_schema = agent_to_cedar_schema(sondera_agent)
 
-async def interactive_loop(runner: InMemoryRunner, app_name: str) -> None:
-    """REPL to interact with the agent."""
-    print("\nADK Investment Advisor Demo\n" + "-" * 40)
-    print("Type your message (Ctrl-C to exit).\n")
-
-    session = await runner.session_service.create_session(
-        user_id="user", app_name=app_name
-    )
-
-    while True:
-        try:
-            user_input = input("You: ")
-        except (EOFError, KeyboardInterrupt):
-            print("\nBye!")
-            break
-
-        message = types.Content(
-            role="user", parts=[types.Part.from_text(text=user_input)]
+        schema = Schema.from_json(cedar_schema.model_dump_json(exclude_none=True))
+        (policies_dir / "investment_chatbot.cedarschema").write_text(
+            schema.to_cedarschema()
         )
 
-        response_text = ""
-        async for event in runner.run_async(
-            user_id="user",
-            session_id=session.id,
-            new_message=message,
-        ):
-            if event.is_final_response() and event.content and event.content.parts:
-                for part in event.content.parts:
-                    if part.text:
-                        response_text = part.text
-                        break
+        policy_set = PolicySet((policies_dir / "investment_chatbot.cedar").read_text())
+        harness: Harness = CedarPolicyHarness(
+            policy_set=policy_set, schema=cedar_schema
+        )
+    else:
+        harness = SonderaRemoteHarness()
 
-        if response_text:
-            print(f"Agent: {response_text}\n")
-
-
-async def build_runner() -> tuple[InMemoryRunner, str]:
-    """Create the ADK runner with Sondera plugin."""
-    agent = create_agent()
     app_name = "investment_chatbot_app"
-
-    harness = SonderaRemoteHarness()
     plugin = SonderaHarnessPlugin(harness=harness)
+    runner = InMemoryRunner(agent=agent, app_name=app_name, plugins=[plugin])
 
-    runner = InMemoryRunner(
-        agent=agent,
-        app_name=app_name,
-        plugins=[plugin],
-    )
-
-    return runner, app_name
+    await interactive_loop(runner, app_name, title="ADK Investment Advisor Demo")
 
 
-async def main() -> None:
+@click.command()
+@click.option(
+    "--cedar",
+    is_flag=True,
+    help="Use local Cedar policy engine instead of remote harness.",
+)
+@click.option(
+    "--policies-dir",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    default="policies",
+    help="Directory containing Cedar policy files.",
+)
+def main(*, cedar: bool, policies_dir: Path) -> None:
     logging.basicConfig(
         level=getattr(
             logging, os.environ.get("LOG_LEVEL", "INFO").upper(), logging.INFO
         )
     )
-
-    runner, app_name = await build_runner()
-    await interactive_loop(runner, app_name)
+    asyncio.run(run(cedar=cedar, policies_dir=policies_dir))
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

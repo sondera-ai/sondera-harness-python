@@ -11,7 +11,7 @@ import inspect
 import json
 from typing import Any
 
-from sondera.harness.sondera.harness import SonderaRemoteHarness
+from sondera.harness import TrajectoryStorage
 from sondera.tui.ai.context import _enum_str
 from sondera.types import Agent, Decision
 
@@ -468,7 +468,7 @@ def _resolve_agent_id(
 async def execute_tool(
     name: str,
     args: dict[str, Any],
-    harness: SonderaRemoteHarness,
+    harness: TrajectoryStorage,
     agents: list[Agent],
     agents_map: dict[str, str],
     adjudications: list[Any] | None = None,
@@ -563,7 +563,7 @@ def _resolve_trajectory_id(prefix: str, adjudications: list[Any]) -> str | None:
 
 async def _exec_get_trajectory(
     args: dict[str, Any],
-    harness: SonderaRemoteHarness,
+    harness: TrajectoryStorage,
     agents: list[Agent],
     agents_map: dict[str, str],
     adjudications: list[Any] | None = None,
@@ -589,7 +589,7 @@ async def _exec_get_trajectory(
 
 async def _exec_list_agent_trajectories(
     args: dict[str, Any],
-    harness: SonderaRemoteHarness,
+    harness: TrajectoryStorage,
     agents: list[Agent],
     agents_map: dict[str, str],
 ) -> dict[str, Any]:
@@ -614,7 +614,7 @@ async def _exec_list_agent_trajectories(
 
 async def _exec_list_violations(
     args: dict[str, Any],
-    harness: SonderaRemoteHarness,
+    harness: TrajectoryStorage,
     agents: list[Agent],
     agents_map: dict[str, str],
 ) -> dict[str, Any]:

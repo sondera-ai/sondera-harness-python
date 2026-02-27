@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime
 
 from rich.text import Text
 from textual.app import ComposeResult
@@ -17,21 +17,10 @@ from textual.widget import Widget
 from textual.widgets import Static
 
 from sondera.tui.colors import get_theme_colors
+from sondera.tui.util import relative_time as _relative_time
 from sondera.types import AdjudicationRecord, Decision
 
 MAX_VISIBLE_GROUPS = 10
-
-
-def _relative_time(dt: datetime) -> str:
-    """Format a datetime as a relative time string."""
-    delta = (datetime.now(tz=UTC) - dt).total_seconds()
-    if delta < 60:
-        return "just now"
-    if delta < 3600:
-        return f"{int(delta // 60)}m ago"
-    if delta < 86400:
-        return f"{int(delta // 3600)}h ago"
-    return f"{int(delta // 86400)}d ago"
 
 
 @dataclass

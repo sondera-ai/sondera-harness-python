@@ -1,6 +1,19 @@
 from abc import ABC, abstractmethod
+from datetime import datetime
+from typing import Any
 
-from sondera.types import Adjudication, Agent, Content, ModelMetadata, Role, Stage
+from sondera.types import (
+    AdjudicatedTrajectory,
+    Adjudication,
+    AdjudicationRecord,
+    Agent,
+    Content,
+    ModelMetadata,
+    Role,
+    Stage,
+    Trajectory,
+    TrajectoryStatus,
+)
 
 
 class Harness(ABC):
@@ -112,4 +125,54 @@ class Harness(ABC):
             RuntimeError: If no active trajectory exists (initialize not called)
             ValueError: If the content type is not supported
         """
+        ...
+
+    # -- Query methods (paginated methods return (items, next_page_token)) ----
+
+    @abstractmethod
+    async def list_agents(
+        self,
+        provider_id: str | None = None,
+        page_size: int = 50,
+        page_token: str = "",
+    ) -> tuple[list[Agent], str]: ...
+
+    @abstractmethod
+    async def get_agent(self, agent_id: str) -> Agent | None: ...
+
+    @abstractmethod
+    async def list_trajectories(
+        self,
+        agent_id: str,
+        status: TrajectoryStatus | None = None,
+        page_size: int = 50,
+        page_token: str = "",
+        min_step_count: int = 0,
+        session_id: str | None = None,
+    ) -> tuple[list[Trajectory], str]: ...
+
+    @abstractmethod
+    async def get_trajectory(self, trajectory_id: str) -> AdjudicatedTrajectory | None:
+        """Return trajectory with fully hydrated AdjudicatedSteps."""
+        ...
+
+    @abstractmethod
+    async def list_adjudications(
+        self,
+        agent_id: str | None = None,
+        page_size: int = 50,
+        page_token: str = "",
+    ) -> tuple[list[AdjudicationRecord], str]:
+        """Only deny/escalate records."""
+        ...
+
+    @abstractmethod
+    async def analyze_trajectories(
+        self,
+        agent_id: str,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
+        analytics: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Supported analytics: ``trajectory_count``."""
         ...

@@ -3,8 +3,8 @@
 Quickstart:
   1. Install: uv sync
   2. Set keys: export GOOGLE_API_KEY=...
-  3. Login: sondera auth login
-  4. Run: uv run python -m adk_examples.payment_agent
+  3. Run: uv run python -m adk_examples.payment_agent
+  4. With local Cedar policies: uv run python -m adk_examples.payment_agent --cedar
 
 Suggested prompts:
 - I was mistakenly charged twice for a $5,000 purchase at MerchantX yesterday. Can you refund one of them? My customer id is 10a2b3_us. Tx Id is 002.
@@ -16,19 +16,25 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+from pathlib import Path
 from typing import List
 
+import click
 from archetypes.payments import get_customer_profile as _get_customer_profile
 from archetypes.payments import get_transactions as _get_transactions
 from archetypes.payments import initiate_refund as _initiate_refund
 from archetypes.payments import send_email as _send_email
 from google.adk import Agent
 from google.adk.runners import InMemoryRunner
-from google.genai import types
 from pydantic import BaseModel
 
+from adk_examples.io import interactive_loop
+from cedar import PolicySet, Schema
 from sondera.adk import SonderaHarnessPlugin
-from sondera.harness import SonderaRemoteHarness
+from sondera.adk.analyze import format as analyze_agent
+from sondera.harness import CedarPolicyHarness, SonderaRemoteHarness
+from sondera.harness.abc import Harness
+from sondera.harness.cedar.schema import agent_to_cedar_schema
 
 
 # ADK-compatible Pydantic models with typing module hints
@@ -143,9 +149,9 @@ Guidelines:
 """
 
 
-def create_agent() -> Agent:
-    """Create an ADK agent with payment processing tools from archetypes."""
-    return Agent(
+async def _async_main(*, cedar: bool, policies_dir: Path) -> None:
+
+    agent = Agent(
         model="gemini-2.5-flash",
         name="payment_agent",
         description="Payment Processor Customer Service Agent that handles refunds, customer inquiries, and sensitive payment data with guardrails.",
@@ -153,70 +159,47 @@ def create_agent() -> Agent:
         tools=[get_customer_profile, get_transactions, initiate_refund, send_email],
     )
 
+    if cedar:
+        sondera_agent = analyze_agent(agent)
+        cedar_schema = agent_to_cedar_schema(sondera_agent)
 
-async def interactive_loop(runner: InMemoryRunner, app_name: str) -> None:
-    """REPL to interact with the agent."""
-    print("\nADK Payment Agent Demo\n" + "-" * 40)
-    print("Type your message (Ctrl-C to exit).\n")
+        schema = Schema.from_json(cedar_schema.model_dump_json(exclude_none=True))
+        (policies_dir / "payment_agent.cedarschema").write_text(schema.to_cedarschema())
 
-    session = await runner.session_service.create_session(
-        user_id="user", app_name=app_name
-    )
-
-    while True:
-        try:
-            user_input = input("You: ")
-        except (EOFError, KeyboardInterrupt):
-            print("\nBye!")
-            break
-
-        message = types.Content(
-            role="user", parts=[types.Part.from_text(text=user_input)]
+        policy_set = PolicySet((policies_dir / "payment_agent.cedar").read_text())
+        harness: Harness = CedarPolicyHarness(
+            policy_set=policy_set, schema=cedar_schema
         )
+    else:
+        harness = SonderaRemoteHarness()
 
-        response_text = ""
-        async for event in runner.run_async(
-            user_id="user",
-            session_id=session.id,
-            new_message=message,
-        ):
-            if event.is_final_response() and event.content and event.content.parts:
-                for part in event.content.parts:
-                    if part.text:
-                        response_text = part.text
-                        break
-
-        if response_text:
-            print(f"Agent: {response_text}\n")
-
-
-async def build_runner() -> tuple[InMemoryRunner, str]:
-    """Create the ADK runner with Sondera plugin."""
-    agent = create_agent()
     app_name = "payment_agent_app"
-
-    harness = SonderaRemoteHarness()
     plugin = SonderaHarnessPlugin(harness=harness)
+    runner = InMemoryRunner(agent=agent, app_name=app_name, plugins=[plugin])
 
-    runner = InMemoryRunner(
-        agent=agent,
-        app_name=app_name,
-        plugins=[plugin],
-    )
-
-    return runner, app_name
+    await interactive_loop(runner, app_name, title="ADK Payment Agent Demo")
 
 
-async def main() -> None:
+@click.command()
+@click.option(
+    "--cedar",
+    is_flag=True,
+    help="Use local Cedar policy engine instead of remote harness.",
+)
+@click.option(
+    "--policies-dir",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    default="policies",
+    help="Directory containing Cedar policy files.",
+)
+def main(*, cedar: bool, policies_dir: Path) -> None:
     logging.basicConfig(
         level=getattr(
             logging, os.environ.get("LOG_LEVEL", "INFO").upper(), logging.INFO
         )
     )
-
-    runner, app_name = await build_runner()
-    await interactive_loop(runner, app_name)
+    asyncio.run(_async_main(cedar=cedar, policies_dir=policies_dir))
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
