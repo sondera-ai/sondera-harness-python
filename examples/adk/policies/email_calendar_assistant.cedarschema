@@ -1,0 +1,115 @@
+namespace email_calendar_assistant {
+  entity Agent = {
+    name: __cedar::String,
+    provider_id: __cedar::String,
+    tools: Set<Tool>
+  };
+
+  entity Message in [Trajectory] = {
+    content: __cedar::String,
+    role: Role
+  };
+
+  entity Role enum ["user", "model", "system", "tool"];
+
+  entity Tool = {
+    description: __cedar::String,
+    name: __cedar::String
+  };
+
+  entity Trajectory = {
+    step_count: __cedar::Long
+  };
+
+  action "Prompt" appliesTo {
+    principal: [Agent],
+    resource: [Message],
+    context: {}
+  };
+
+  action "create_calendar_event" appliesTo {
+    principal: [Agent],
+    resource: [Trajectory],
+    context: {
+      parameters?: {
+        attendees: Set<__cedar::String>,
+        end_time: __cedar::String,
+        location?: __cedar::String,
+        start_time: __cedar::String,
+        title: __cedar::String
+      },
+      parameters_json?: __cedar::String,
+      response?: {
+        event_id?: __cedar::String,
+        start_time?: __cedar::String,
+        status?: __cedar::String,
+        title?: __cedar::String
+      },
+      response_json?: __cedar::String
+    }
+  };
+
+  action "get_calendar_events" appliesTo {
+    principal: [Agent],
+    resource: [Trajectory],
+    context: {
+      parameters?: {
+        date?: __cedar::String,
+        user_id: __cedar::String
+      },
+      parameters_json?: __cedar::String,
+      response?: {
+        value: Set<{
+          attendees?: Set<__cedar::String>,
+          end_time?: __cedar::String,
+          id?: __cedar::String,
+          location?: __cedar::String,
+          start_time?: __cedar::String,
+          title?: __cedar::String
+        }>
+      },
+      response_json?: __cedar::String
+    }
+  };
+
+  action "get_unread_emails" appliesTo {
+    principal: [Agent],
+    resource: [Trajectory],
+    context: {
+      parameters?: {
+        user_id: __cedar::String
+      },
+      parameters_json?: __cedar::String,
+      response?: {
+        value: Set<{
+          body?: __cedar::String,
+          id?: __cedar::String,
+          received_at?: __cedar::String,
+          sender?: __cedar::String,
+          subject?: __cedar::String
+        }>
+      },
+      response_json?: __cedar::String
+    }
+  };
+
+  action "send_email" appliesTo {
+    principal: [Agent],
+    resource: [Trajectory],
+    context: {
+      parameters?: {
+        body: __cedar::String,
+        subject: __cedar::String,
+        to: __cedar::String
+      },
+      parameters_json?: __cedar::String,
+      response?: {
+        message_id?: __cedar::String,
+        status?: __cedar::String,
+        subject?: __cedar::String,
+        to?: __cedar::String
+      },
+      response_json?: __cedar::String
+    }
+  };
+}

@@ -1,6 +1,6 @@
 """AI Assist session lifecycle: trajectory creation for conversations.
 
-Wraps SonderaRemoteHarness lifecycle (initialize/adjudicate/finalize) to
+Wraps Harness lifecycle (initialize/adjudicate/finalize) to
 persist AI conversations as trajectories on the Sondera Platform and
 enforce policy decisions at each stage.
 
@@ -20,11 +20,11 @@ from sondera import (
     Agent,
     PromptContent,
     Role,
-    SonderaRemoteHarness,
     Stage,
     ToolRequestContent,
     ToolResponseContent,
 )
+from sondera.harness import Harness, SonderaRemoteHarness
 from sondera.tui.ai.tools import get_sdk_tools
 
 _log = logging.getLogger(__name__)
@@ -78,7 +78,7 @@ class AskSession:
     """
 
     def __init__(self) -> None:
-        self._harness: SonderaRemoteHarness | None = None
+        self._harness: Harness | None = None
         self._active: bool = False
 
     @property

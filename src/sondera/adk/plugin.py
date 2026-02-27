@@ -114,6 +114,9 @@ class SonderaHarnessPlugin(BasePlugin):
         self._harness = harness
         self._log = logger_instance or logger
         self._current_model_name: str | None = None
+        # Track the active session so we resume the same trajectory
+        # across multiple messages in a single conversation.
+        self._active_session_id: str | None = None
 
     # -------------------------------------------------------------------------
     # User Message Callback
@@ -137,17 +140,31 @@ class SonderaHarnessPlugin(BasePlugin):
         Returns:
             Modified content if policy violation, None to proceed normally.
         """
-        # Initialize trajectory with agent metadata
         agent = format(
             cast(LlmAgent, invocation_context.agent),
             invocation_context.app_name,
             invocation_context.app_name,
         )
-        # Pass ADK session ID to group trajectories by conversation
         session_id = (
             invocation_context.session.id if invocation_context.session else None
         )
-        await self._harness.initialize(agent=agent, session_id=session_id)
+
+        # Continue the existing trajectory when the session is unchanged,
+        # otherwise start a fresh one.
+        same_session = (
+            session_id is not None
+            and session_id == self._active_session_id
+            and self._harness.trajectory_id is not None
+        )
+        if same_session:
+            # Trajectory is already active — nothing to do.
+            pass
+        else:
+            # Finalize any previous trajectory before starting a new session
+            if self._harness.trajectory_id is not None:
+                await self._harness.finalize()
+            await self._harness.initialize(agent=agent, session_id=session_id)
+            self._active_session_id = session_id
 
         # Extract text from all parts of the user message
         content = _extract_text(user_message)
@@ -367,8 +384,9 @@ class SonderaHarnessPlugin(BasePlugin):
             ToolRequestContent(tool_id=tool.name, args=tool_args),
         )
         self._log.info(
-            "[SonderaHarness] Before tool adjudication for trajectory %s",
+            "[SonderaHarness] Before tool adjudication for trajectory %s - %s",
             self._harness.trajectory_id,
+            adjudication,
         )
 
         if adjudication.decision == Decision.DENY:
@@ -404,14 +422,19 @@ class SonderaHarnessPlugin(BasePlugin):
         """
         self._log.debug("[SonderaHarness] After tool: %s", tool.name)
 
+        if "error" in result:
+            # There's already an error from the before_tool callback, skip adjudication.
+            return result
+
         adjudication = await self._harness.adjudicate(
             Stage.POST_TOOL,
             Role.TOOL,
             ToolResponseContent(tool_id=tool.name, response=result),
         )
         self._log.info(
-            "[SonderaHarness] After tool adjudication for trajectory %s",
+            "[SonderaHarness] After tool adjudication for trajectory %s - %s",
             self._harness.trajectory_id,
+            adjudication,
         )
 
         if adjudication.decision == Decision.DENY:
@@ -457,20 +480,28 @@ class SonderaHarnessPlugin(BasePlugin):
     ) -> None:
         """Callback executed after an ADK runner run has completed.
 
-        Finalizes the harness trajectory.
+        Does NOT finalize the trajectory here — finalization happens when the
+        session changes (on_user_message_callback) or when the plugin is closed.
+        This keeps a single trajectory alive across multiple turns.
 
         Args:
             invocation_context: The context for the entire invocation.
         """
-        self._log.info(
-            "[SonderaHarness] Finalizing trajectory %s",
+        self._log.debug(
+            "[SonderaHarness] Run completed for trajectory %s",
             self._harness.trajectory_id,
         )
-        await self._harness.finalize()
 
     async def close(self) -> None:
         """Method executed when the runner is closed.
 
-        Used for cleanup tasks such as closing network connections.
+        Finalizes the active trajectory and cleans up resources.
         """
+        if self._harness.trajectory_id is not None:
+            self._log.info(
+                "[SonderaHarness] Finalizing trajectory %s",
+                self._harness.trajectory_id,
+            )
+            await self._harness.finalize()
+            self._active_session_id = None
         self._log.debug("[SonderaHarness] Plugin closed")

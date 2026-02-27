@@ -1,0 +1,182 @@
+namespace investment_chatbot {
+  entity Agent = {
+    name: __cedar::String,
+    provider_id: __cedar::String,
+    tools: Set<Tool>
+  };
+
+  entity Message in [Trajectory] = {
+    content: __cedar::String,
+    role: Role
+  };
+
+  entity Role enum ["user", "model", "system", "tool"];
+
+  entity Tool = {
+    description: __cedar::String,
+    name: __cedar::String
+  };
+
+  entity Trajectory = {
+    step_count: __cedar::Long
+  };
+
+  action "Prompt" appliesTo {
+    principal: [Agent],
+    resource: [Message],
+    context: {}
+  };
+
+  action "get_account_info" appliesTo {
+    principal: [Agent],
+    resource: [Trajectory],
+    context: {
+      parameters?: {
+        customer_id: __cedar::String
+      },
+      parameters_json?: __cedar::String,
+      response?: {
+        account_id?: __cedar::String,
+        account_number?: __cedar::String,
+        account_status?: __cedar::String,
+        account_type?: __cedar::String,
+        customer_id?: __cedar::String,
+        email?: __cedar::String,
+        error?: __cedar::String,
+        investment_objectives?: Set<__cedar::String>,
+        name?: __cedar::String,
+        region?: __cedar::String,
+        risk_tolerance?: __cedar::String,
+        ssn?: __cedar::String
+      },
+      response_json?: __cedar::String
+    }
+  };
+
+  action "get_market_news" appliesTo {
+    principal: [Agent],
+    resource: [Trajectory],
+    context: {
+      parameters?: {
+        symbol: __cedar::String
+      },
+      parameters_json?: __cedar::String,
+      response?: {
+        news?: Set<{
+          headline?: __cedar::String,
+          message?: __cedar::String,
+          published?: __cedar::String,
+          sentiment?: __cedar::String,
+          source?: __cedar::String
+        }>,
+        symbol?: __cedar::String
+      },
+      response_json?: __cedar::String
+    }
+  };
+
+  action "get_portfolio" appliesTo {
+    principal: [Agent],
+    resource: [Trajectory],
+    context: {
+      parameters?: {
+        customer_id: __cedar::String
+      },
+      parameters_json?: __cedar::String,
+      response?: {
+        account_id?: __cedar::String,
+        cash_balance?: __cedar::Long,
+        customer_id?: __cedar::String,
+        error?: __cedar::String,
+        holdings?: Set<{
+          cost_basis?: __cedar::Long,
+          current_price?: __cedar::Long,
+          gain_loss?: __cedar::Long,
+          market_value?: __cedar::Long,
+          shares?: __cedar::Long,
+          symbol?: __cedar::String
+        }>,
+        total_value?: __cedar::Long
+      },
+      response_json?: __cedar::String
+    }
+  };
+
+  action "get_stock_quote" appliesTo {
+    principal: [Agent],
+    resource: [Trajectory],
+    context: {
+      parameters?: {
+        symbol: __cedar::String
+      },
+      parameters_json?: __cedar::String,
+      response?: {
+        aum?: __cedar::String,
+        change?: __cedar::Long,
+        change_percent?: __cedar::Long,
+        day_high?: __cedar::Long,
+        day_low?: __cedar::Long,
+        dividend_yield?: __cedar::Long,
+        error?: __cedar::String,
+        expense_ratio?: __cedar::Long,
+        market_cap?: __cedar::String,
+        name?: __cedar::String,
+        pe_ratio?: __cedar::Long,
+        price?: __cedar::Long,
+        symbol?: __cedar::String,
+        volume?: __cedar::Long
+      },
+      response_json?: __cedar::String
+    }
+  };
+
+  action "make_trade_recommendation" appliesTo {
+    principal: [Agent],
+    resource: [Trajectory],
+    context: {
+      parameters?: {
+        action: __cedar::String,
+        customer_id: __cedar::String,
+        shares: __cedar::Long,
+        symbol: __cedar::String
+      },
+      parameters_json?: __cedar::String,
+      response?: {
+        action?: __cedar::String,
+        customer_id?: __cedar::String,
+        disclaimer?: __cedar::String,
+        reasoning?: __cedar::String,
+        recommendation_id?: __cedar::String,
+        recommended_price?: __cedar::Long,
+        requires_approval?: __cedar::Bool,
+        risk_score?: __cedar::String,
+        shares?: __cedar::Long,
+        status?: __cedar::String,
+        symbol?: __cedar::String
+      },
+      response_json?: __cedar::String
+    }
+  };
+
+  action "send_notification" appliesTo {
+    principal: [Agent],
+    resource: [Trajectory],
+    context: {
+      parameters?: {
+        customer_id: __cedar::String,
+        message: __cedar::String,
+        subject: __cedar::String
+      },
+      parameters_json?: __cedar::String,
+      response?: {
+        channel?: __cedar::String,
+        customer_id?: __cedar::String,
+        message?: __cedar::String,
+        notification_id?: __cedar::String,
+        status?: __cedar::String,
+        subject?: __cedar::String
+      },
+      response_json?: __cedar::String
+    }
+  };
+}

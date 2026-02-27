@@ -224,6 +224,33 @@ class TestOnUserMessageCallback:
         mock_harness.initialize.assert_awaited_once()
         mock_harness.adjudicate.assert_not_awaited()
 
+    @pytest.mark.asyncio
+    async def test_same_session_reuses_trajectory(
+        self, plugin, invocation_context, mock_harness
+    ):
+        """Second message in the same session should reuse the active trajectory."""
+        msg1 = genai_types.Content(
+            role="user", parts=[genai_types.Part.from_text(text="first")]
+        )
+        msg2 = genai_types.Content(
+            role="user", parts=[genai_types.Part.from_text(text="second")]
+        )
+
+        # First message initializes
+        await plugin.on_user_message_callback(
+            invocation_context=invocation_context, user_message=msg1
+        )
+        mock_harness.initialize.assert_awaited_once()
+
+        # Second message in the same session should NOT call initialize or resume
+        await plugin.on_user_message_callback(
+            invocation_context=invocation_context, user_message=msg2
+        )
+        mock_harness.initialize.assert_awaited_once()  # still just once
+        mock_harness.resume.assert_not_awaited()
+        # But adjudicate should have been called for both messages
+        assert mock_harness.adjudicate.await_count == 2
+
 
 # ---------------------------------------------------------------------------
 # before_model_callback
@@ -449,6 +476,21 @@ class TestToolCallbacks:
 
 class TestAfterRunCallback:
     @pytest.mark.asyncio
-    async def test_finalizes(self, plugin, invocation_context, mock_harness):
+    async def test_does_not_finalize(self, plugin, invocation_context, mock_harness):
+        """after_run_callback defers finalization to close()."""
         await plugin.after_run_callback(invocation_context=invocation_context)
+        mock_harness.finalize.assert_not_awaited()
+
+
+class TestClose:
+    @pytest.mark.asyncio
+    async def test_finalizes_active_trajectory(self, plugin, mock_harness):
+        mock_harness.trajectory_id = "traj-123"
+        await plugin.close()
         mock_harness.finalize.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_no_finalize_without_trajectory(self, plugin, mock_harness):
+        mock_harness.trajectory_id = None
+        await plugin.close()
+        mock_harness.finalize.assert_not_awaited()

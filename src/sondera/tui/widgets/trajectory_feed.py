@@ -16,6 +16,7 @@ from textual.widget import Widget
 from textual.widgets import Static
 
 from sondera.tui.colors import SPINNER_CHARS, SPINNER_INTERVAL, get_theme_colors
+from sondera.tui.util import _utc_seconds_ago
 from sondera.types import (
     AdjudicatedStep,
     AdjudicatedTrajectory,
@@ -163,7 +164,9 @@ def _is_stale(trajectory: Trajectory | AdjudicatedTrajectory) -> bool:
         if trajectory.ended_at:
             candidates.append(trajectory.ended_at)
         last = max(candidates)
-    now = datetime.now() if last.tzinfo is None else datetime.now(tz=UTC)
+    if last.tzinfo is None:
+        last = last.astimezone(UTC)
+    now = datetime.now(tz=UTC)
     return (now - last).total_seconds() > _STALE_THRESHOLD_SECONDS
 
 
@@ -171,10 +174,7 @@ def _relative_time(
     dt: datetime, primary: str, fg: str, fg_secondary: str, fg_dim: str
 ) -> tuple[str, str]:
     """Format a datetime as a relative time string with theme-aware color."""
-    local = dt.astimezone()
-    now = datetime.now(tz=local.tzinfo)
-    delta = now - local
-    seconds = int(delta.total_seconds())
+    seconds = _utc_seconds_ago(dt)
     if seconds < 5:
         label = "just now"
     elif seconds < 60:
@@ -202,7 +202,9 @@ def _relative_time(
 
 def _uptime_label(created_at: datetime) -> str:
     """Format a duration since created_at as a compact uptime string."""
-    now = datetime.now(tz=UTC) if created_at.tzinfo else datetime.now()
+    if created_at.tzinfo is None:
+        created_at = created_at.astimezone(UTC)
+    now = datetime.now(tz=UTC)
     seconds = int((now - created_at).total_seconds())
     if seconds < 60:
         return f"\u2191{seconds}s"

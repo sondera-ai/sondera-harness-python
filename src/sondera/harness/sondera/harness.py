@@ -30,6 +30,7 @@ from sondera.harness.sondera._grpc import (
     _convert_sdk_tool_to_pb,
     _convert_sdk_trajectory_status_to_pb,
 )
+from sondera.harness.trajectory.abc import TrajectoryStorage
 from sondera.proto.sondera.core.v1 import primitives_pb2
 from sondera.proto.sondera.harness.v1 import harness_pb2, harness_pb2_grpc
 from sondera.settings import SETTINGS
@@ -47,7 +48,7 @@ from sondera.types import (
 )
 
 
-class SonderaRemoteHarness(AbstractHarness):
+class SonderaRemoteHarness(AbstractHarness, TrajectoryStorage):
     """gRPC-based Harness implementation for the Sondera Platform.
 
     Example:

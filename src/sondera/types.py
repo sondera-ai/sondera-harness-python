@@ -1,7 +1,7 @@
 """Sondera SDK type definitions for agent interoperability and policy evaluation."""
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any, Literal
 
@@ -126,7 +126,7 @@ class TrajectoryStep(Model):
     stage: Stage
     """ Stage of the step.
     """
-    created_at: datetime = Field(default_factory=datetime.now)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))
     """ Created at timestamp.
     """
     content: Any
@@ -156,10 +156,10 @@ class Trajectory(Model):
     metadata: dict[str, Any] = Field(default_factory=dict)
     """ Metadata of the trajectory.
     """
-    created_at: datetime = Field(default_factory=datetime.now)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))
     """ Created at timestamp.
     """
-    updated_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))
     """ Updated at timestamp.
     """
     started_at: datetime | None = Field(default=None)
@@ -305,6 +305,21 @@ class PolicyMetadata(Model):
     """The argument passed to @escalate, if any."""
     custom: dict[str, str] = Field(default_factory=dict)
     """Custom key-value metadata from the policy's annotations."""
+
+    def __str__(self) -> str:
+        parts = [f"[{self.id}]"]
+        if self.description:
+            parts.append(self.description)
+        if self.escalate:
+            parts.append(
+                f"(escalate: {self.escalate_arg})"
+                if self.escalate_arg
+                else "(escalate)"
+            )
+        if self.custom:
+            tags = ", ".join(f"{k}={v}" for k, v in self.custom.items())
+            parts.append(f"({tags})")
+        return " ".join(parts)
 
 
 class Adjudication(Model):

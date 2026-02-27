@@ -5,6 +5,8 @@ CedarPolicyEngine local harness implementation.
 import json
 import logging
 import uuid
+from datetime import datetime
+from typing import Any
 
 from cedar.schema import CedarSchema
 
@@ -19,18 +21,27 @@ from cedar import (
     Schema,
 )
 from sondera.harness.abc import Harness as AbstractHarness
+from sondera.harness.trajectory.abc import TrajectoryStorage
+from sondera.harness.trajectory.file_storage import FileTrajectoryStorage
 from sondera.types import (
+    AdjudicatedStep,
+    AdjudicatedTrajectory,
     Adjudication,
+    AdjudicationRecord,
     Agent,
     Content,
     Decision,
     ModelMetadata,
+    PolicyEngineMode,
     PolicyMetadata,
     PromptContent,
     Role,
     Stage,
     ToolRequestContent,
     ToolResponseContent,
+    Trajectory,
+    TrajectoryStatus,
+    TrajectoryStep,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -72,6 +83,7 @@ class CedarPolicyHarness(AbstractHarness):
         *,
         policy_set: PolicySet | str,
         schema: CedarSchema,
+        storage: TrajectoryStorage | None = None,
         agent: Agent | None = None,
         logger: logging.Logger | None = None,
     ):
@@ -135,6 +147,9 @@ class CedarPolicyHarness(AbstractHarness):
         # Cache for pre-parsed tool response schemas (tool_name -> parsed schema dict)
         self._tool_response_schemas: dict[str, dict[str, object]] = {}
 
+        # Default to file-based storage
+        self._storage = storage or FileTrajectoryStorage()
+
     def _build_authorizer(self) -> Authorizer:
         """Build the Cedar authorizer with current entities."""
         if not self._trajectory_id:
@@ -191,14 +206,26 @@ class CedarPolicyHarness(AbstractHarness):
         *,
         agent: Agent | None = None,
     ) -> None:
-        """Resume an existing trajectory.
+        """Resume a trajectory from storage, restoring step count.
 
         Args:
             trajectory_id: The trajectory ID to resume.
             agent: Optional agent to use (overrides constructor agent).
         """
-        raise NotImplementedError(
-            "Resuming trajectories is not supported in CedarPolicyHarness."
+        if agent:
+            self._agent = agent
+
+        trajectory = await self._storage.get_trajectory(trajectory_id)
+        if trajectory is None:
+            raise ValueError(f"Trajectory {trajectory_id} not found in storage")
+
+        self._trajectory_id = trajectory_id
+        self._trajectory_step_count = len(trajectory.steps)
+        self._authorizer = self._build_authorizer()
+        self._logger.debug(
+            "Resumed trajectory %s at step %d",
+            trajectory_id,
+            self._trajectory_step_count,
         )
 
     async def initialize(
@@ -207,7 +234,7 @@ class CedarPolicyHarness(AbstractHarness):
         agent: Agent | None = None,
         session_id: str | None = None,
     ) -> None:
-        """Initialize a new trajectory.
+        """Create a new trajectory and persist agent + header.
 
         Args:
             agent: Optional agent to use (overrides constructor agent).
@@ -220,10 +247,22 @@ class CedarPolicyHarness(AbstractHarness):
         self._authorizer = self._build_authorizer()
         self._logger.debug("Initialized trajectory %s", self._trajectory_id)
 
+        if self._agent:
+            self._storage.save_agent(self._agent)
+        trajectory = Trajectory(
+            id=self._trajectory_id,
+            agent_id=self._agent.id if self._agent else "unknown",
+            status=TrajectoryStatus.RUNNING,
+            session_id=session_id,
+        )
+        self._storage.init_trajectory(trajectory)
+
     async def finalize(self) -> None:
-        """Finalize the current trajectory."""
+        """Mark trajectory as COMPLETED in storage."""
         if not self._trajectory_id:
             raise ValueError("No active trajectory. Call initialize first.")
+        if self._agent:
+            self._storage.finalize_trajectory(self._agent.id, self._trajectory_id)
         self._logger.debug("Finalized trajectory %s", self._trajectory_id)
         self._trajectory_id = None
         self._trajectory_step_count = 0
@@ -279,12 +318,39 @@ class CedarPolicyHarness(AbstractHarness):
             case (Stage.POST_TOOL, ToolResponseContent()):
                 request = self._tool_response(agent_uid, trajectory_uid, content)
             case _:
-                return Adjudication(
+                adjudication = Adjudication(
                     decision=Decision.ALLOW,
                     reason="Non-tool content allowed by default",
                 )
+                self._persist_step(stage, role, content, adjudication)
+                return adjudication
+
         response = self._authorizer.is_authorized(request, self._policy_set)
-        return self._convert_cedar_response_to_adjudication(response)
+        adjudication = self._convert_cedar_response_to_adjudication(response)
+        self._persist_step(stage, role, content, adjudication)
+        return adjudication
+
+    def _persist_step(
+        self,
+        stage: Stage,
+        role: Role,
+        content: Content,
+        adjudication: Adjudication,
+    ) -> None:
+        """Write step to storage. Indexes DENY/ESCALATE adjudications."""
+        if not self._agent or not self._trajectory_id:
+            return
+        step = AdjudicatedStep(
+            mode=PolicyEngineMode.GOVERN,
+            adjudication=adjudication,
+            step=TrajectoryStep(role=role, stage=stage, content=content),
+        )
+        self._storage.append_step(
+            self._agent.id,
+            self._trajectory_id,
+            step,
+            self._trajectory_step_count - 1,
+        )
 
     def _convert_cedar_response_to_adjudication(
         self, response: Response
@@ -325,15 +391,17 @@ class CedarPolicyHarness(AbstractHarness):
         # At this point we know the Cedar decision was DENY, so we just need to figure out if the
         # final decision should be a hard DENY or else ESCALATE.
         if non_escalate_policies:
+            detail = "; ".join(str(p) for p in non_escalate_policies)
             return Adjudication(
                 decision=Decision.DENY,
-                reason="Denied by policies",
+                reason=f"Denied by policies: {detail}",
                 policies=non_escalate_policies,
             )
         if escalate_policies:
+            detail = "; ".join(str(p) for p in escalate_policies)
             return Adjudication(
                 decision=Decision.ESCALATE,
-                reason="Escalated by policies",
+                reason=f"Escalated by policies: {detail}",
                 policies=escalate_policies,
             )
         # Default deny because no policies matched (neither permit nor forbid/escalate)
@@ -459,4 +527,64 @@ class CedarPolicyHarness(AbstractHarness):
             resource=trajectory_uid,
             context=context,
             schema=self._schema,
+        )
+
+    # -- Query methods (delegated to storage) ---------------------------------
+
+    async def list_agents(
+        self,
+        provider_id: str | None = None,
+        page_size: int = 50,
+        page_token: str = "",
+    ) -> tuple[list[Agent], str]:
+        return await self._storage.list_agents(
+            provider_id=provider_id, page_size=page_size, page_token=page_token
+        )
+
+    async def get_agent(self, agent_id: str) -> Agent | None:
+        return await self._storage.get_agent(agent_id)
+
+    async def list_trajectories(
+        self,
+        agent_id: str,
+        status: TrajectoryStatus | None = None,
+        page_size: int = 50,
+        page_token: str = "",
+        min_step_count: int = 0,
+        session_id: str | None = None,
+    ) -> tuple[list[Trajectory], str]:
+        return await self._storage.list_trajectories(
+            agent_id=agent_id,
+            status=status,
+            page_size=page_size,
+            page_token=page_token,
+            min_step_count=min_step_count,
+            session_id=session_id,
+        )
+
+    async def get_trajectory(self, trajectory_id: str) -> AdjudicatedTrajectory | None:
+        return await self._storage.get_trajectory(trajectory_id)
+
+    async def list_adjudications(
+        self,
+        agent_id: str | None = None,
+        page_size: int = 50,
+        page_token: str = "",
+    ) -> tuple[list[AdjudicationRecord], str]:
+        return await self._storage.list_adjudications(
+            agent_id=agent_id, page_size=page_size, page_token=page_token
+        )
+
+    async def analyze_trajectories(
+        self,
+        agent_id: str,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
+        analytics: list[str] | None = None,
+    ) -> dict[str, Any]:
+        return await self._storage.analyze_trajectories(
+            agent_id=agent_id,
+            start_time=start_time,
+            end_time=end_time,
+            analytics=analytics,
         )
