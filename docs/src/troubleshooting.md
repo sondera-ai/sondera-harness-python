@@ -335,12 +335,12 @@ from sondera.exceptions import AuthenticationError, ConfigurationError
 
 try:
     harness = SonderaRemoteHarness(
-        sondera_api_key=os.getenv("SONDERA_API_KEY"),
+        sondera_api_key=os.getenv("SONDERA_API_TOKEN"),
     )
     await harness.initialize(agent=agent)
 except ConfigurationError:
-    # Missing API key or endpoint
-    logger.error("SONDERA_API_KEY not set")
+    # Missing API token or endpoint
+    logger.error("SONDERA_API_TOKEN not set")
     raise
 except AuthenticationError:
     # Invalid or expired token

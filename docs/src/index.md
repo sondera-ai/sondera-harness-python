@@ -93,6 +93,7 @@ Python 3.12+ required.
     uv add "sondera-harness[langgraph]"   # LangGraph
     uv add "sondera-harness[adk]"         # Google ADK
     uv add "sondera-harness[strands]"     # Strands
+    uv add "sondera-harness[ai]"          # AI Assist
     ```
 
 === "pip"
@@ -106,6 +107,7 @@ Python 3.12+ required.
     pip install "sondera-harness[langgraph]"   # LangGraph
     pip install "sondera-harness[adk]"         # Google ADK
     pip install "sondera-harness[strands]"     # Strands
+    pip install "sondera-harness[ai]"          # AI Assist
     ```
 
 ---

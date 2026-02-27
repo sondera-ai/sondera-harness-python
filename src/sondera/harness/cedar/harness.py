@@ -24,6 +24,7 @@ from sondera.types import (
     Agent,
     Content,
     Decision,
+    ModelMetadata,
     PolicyMetadata,
     PromptContent,
     Role,
@@ -204,11 +205,13 @@ class CedarPolicyHarness(AbstractHarness):
         self,
         *,
         agent: Agent | None = None,
+        session_id: str | None = None,
     ) -> None:
         """Initialize a new trajectory.
 
         Args:
             agent: Optional agent to use (overrides constructor agent).
+            session_id: Optional session identifier (stored but not used locally).
         """
         if agent:
             self._agent = agent
@@ -230,6 +233,8 @@ class CedarPolicyHarness(AbstractHarness):
         stage: Stage,
         role: Role,
         content: Content,
+        *,
+        model_metadata: ModelMetadata | None = None,
     ) -> Adjudication:
         """Adjudicate a trajectory step using Cedar policies.
 
@@ -294,12 +299,12 @@ class CedarPolicyHarness(AbstractHarness):
             non_default_annotations = {
                 k: v
                 for k, v in cedar_policy_annotations.items()
-                if k not in ("id", "reason", "escalate")
+                if k not in ("id", "description", "escalate")
             }
             is_escalate = "escalate" in cedar_policy_annotations
             policy_metadata = PolicyMetadata(
                 id=cedar_policy_annotations["id"],
-                description=cedar_policy_annotations.get("reason", ""),
+                description=cedar_policy_annotations.get("description", ""),
                 escalate=is_escalate,
                 escalate_arg=cedar_policy_annotations.get("escalate", ""),
                 custom=non_default_annotations,

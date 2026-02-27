@@ -55,7 +55,7 @@ from sondera import SonderaRemoteHarness, Agent, Decision, PromptContent, Role, 
 # Create a harness instance
 harness = SonderaRemoteHarness(
     sondera_harness_endpoint="localhost:50051",
-    sondera_api_key="<YOUR_SONDERA_API_KEY>",
+    sondera_api_key="<YOUR_API_TOKEN>",
     sondera_harness_client_secure=True,  # Enable TLS for production
 )
 

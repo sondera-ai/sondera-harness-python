@@ -9,7 +9,7 @@ Quickstart:
 
 import argparse
 import asyncio
-from typing import Any, TypedDict, cast
+from typing import Any, TypedDict
 
 from archetypes.healthcare import (
     EligibilityResult,
@@ -249,7 +249,7 @@ async def main():
     )
     print("-" * 60)
 
-    result = await wrapped_graph.ainvoke(cast(dict[str, Any], initial_state))
+    result = await wrapped_graph.ainvoke(initial_state)
 
     print("\n" + result["report"])
     print("\n✨ Analysis complete!")

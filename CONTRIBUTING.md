@@ -18,6 +18,9 @@ cd harness-sdk-python
 
 # Install with all optional dependencies for development
 uv sync --all-extras --all-groups
+
+# Install pre-commit hooks
+uv run pre-commit install
 ```
 
 ### Running Tests

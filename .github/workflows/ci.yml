@@ -80,6 +80,27 @@ jobs:
       - name: Check docs build for warnings and errors
         run: uv run mkdocs build --strict
 
+  pre-commit:
+    name: Pre-commit checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install dependencies
+        run: uv sync --all-extras --all-groups
+
+      - name: Run pre-commit (skip ruff and pyright)
+        # Skip ruff and pyright because they run as separate CI jobs in parallel with this job
+        env:
+          SKIP: ruff,ruff-format,pyright
+        run: uv run pre-commit run --all-files
+
   test:
     name: Test (Python ${{ matrix.python-version }})
     needs: [lint, typecheck, test-docs]
@@ -102,7 +123,15 @@ jobs:
         run: uv sync --all-extras --all-groups --python ${{ matrix.python-version }}
 
       - name: Run pytest with coverage
-        run: uv run pytest tests/ --cov=sondera --cov-report=xml --cov-report=term-missing
+        run: uv run pytest tests/ --cov=sondera --cov-report=xml --cov-report=term-missing --junitxml=test-results/junit.xml
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-py${{ matrix.python-version }}
+          path: test-results/
+          retention-days: 30
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4

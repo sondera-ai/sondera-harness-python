@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sondera-harness"
-version = "0.7.1"
+version = "0.8.0"
 description = "Sondera Harness SDK for Python - Agent governance and policy enforcement"
 readme = "README.md"
 requires-python = ">=3.12,<3.15"
@@ -52,10 +52,12 @@ sondera-harness = "sondera.cli:cli"
 sondera = ["py.typed", "tui/*.tcss"]
 
 [project.optional-dependencies]
+ai = ["litellm>=1.30.0"]
 adk = ["google-adk>=1.22.0"]
 langgraph = ["langchain>=1.2.0", "langgraph>=1.0.5"]
 strands = ["strands-agents>=1.21.0"]
 all = [
+    "litellm>=1.30.0",
     "google-adk>=1.22.0",
     "langchain>=1.2.0",
     "langgraph>=1.0.5",
@@ -68,15 +70,18 @@ dev = [
     "pytest-asyncio>=0.23.0",
     "pytest-cov>=5.0.0",
     "textual-dev>=1.8.0",
-    "ruff>=0.8.0",
+    "ruff>=0.15.0",
     "pyright",
     "grpcio-tools>=1.76.0",
+    "pre-commit>=4.0.0",
+    "detect-secrets>=1.5.0",
 ]
 examples = [
     "sondera-examples-adk",
     "sondera-examples-langgraph",
     "sondera-examples-strands",
-    "sondera-examples-cedar"
+    "sondera-examples-cedar",
+    "sondera-examples-claude-code"
 ]
 
 [tool.ruff]
@@ -96,6 +101,8 @@ select = [
     "C4",     # flake8-comprehensions
     "UP",     # pyupgrade
     "SIM",    # flake8-simplify
+    "S",      # flake8-bandit (SAST)
+    "T10",    # flake8-debugger
 ]
 
 ignore = [
@@ -105,6 +112,16 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 # Required for ADK's function schema introspection.
 "examples/adk/**" = ["UP006", "UP035", "UP045"]  # Allow deprecated typing syntax (List, Optional, etc.)
+"examples/**" = ["S101"]  # assert is fine in example code
+"docs/**" = ["S101"]  # assert is fine in documentation notebooks
+"scripts/**" = ["S603", "S607"]  # subprocess calls in build scripts
+"setup.py" = ["S603"]  # subprocess call to generate protos during build
+"src/sondera/harness/**" = ["S101"]  # type-narrowing asserts after _ensure_connected()
+"src/sondera/tui/**" = ["S110", "S112"]  # try-except-pass/continue for widget queries that may not be mounted
+"src/sondera/adk/analyze.py" = ["S110"]  # try-except-pass in type introspection
+"src/sondera/langgraph/analyze.py" = ["S110"]  # try-except-pass in type introspection
+"src/sondera/strands/analyze.py" = ["S110"]  # try-except-pass in type introspection
+"tests/*" = ["S101", "S108"]  # assert and temp file paths are fine in tests
 
 [tool.ruff.lint.isort]
 known-first-party = ["sondera"]
@@ -116,6 +133,7 @@ skip-magic-trailing-comma = false
 line-ending = "auto"
 
 [tool.pyright]
+reportMissingImports = "none"  # Optional dependencies (adk, langgraph, strands) aren't installed
 exclude = [
     "**/node_modules",
     "**/__pycache__",
@@ -124,6 +142,8 @@ exclude = [
     "dist",
     "src/sondera/proto",  # Generated protobuf files
     "tests",
+    "examples/cedar",  # Not in workspace, has external deps
+    "examples/github_copilot",  # Not in workspace, has external deps
 ]
 
 # Define execution environments for main SDK and examples
@@ -142,6 +162,10 @@ root = "examples/langgraph/src"
 extraPaths = ["src", "examples/archetypes/src"]
 
 [[tool.pyright.executionEnvironments]]
+root = "examples/claude-code/src"
+extraPaths = ["src"]
+
+[[tool.pyright.executionEnvironments]]
 root = "examples/strands/src"
 extraPaths = ["src", "examples/archetypes/src"]
 
@@ -154,6 +178,7 @@ addopts = "-v"
 [tool.uv.workspace]
 members = [
     "examples/adk",
+    "examples/claude-code",
  "examples/langgraph",
  "examples/strands",
  "examples/archetypes",
@@ -167,3 +192,4 @@ sondera-examples-adk = { workspace = true }
 sondera-examples-langgraph = { workspace = true }
 sondera-examples-strands = { workspace = true }
 sondera-examples-cedar = { workspace = true }
+sondera-examples-claude-code = { workspace = true }

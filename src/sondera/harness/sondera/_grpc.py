@@ -14,7 +14,9 @@ from sondera.types import (
     Check,
     Content,
     Decision,
+    DecisionSummary,
     GuardrailContext,
+    ModelMetadata,
     Parameter,
     PolicyEngineMode,
     PolicyMetadata,
@@ -82,6 +84,22 @@ def _convert_sdk_content_to_pb(content: Content) -> primitives_pb2.Content:
         )
     else:
         raise ValueError(f"Unsupported content type: {type(content)}")
+
+
+def _convert_sdk_model_metadata_to_pb(
+    metadata: ModelMetadata,
+) -> primitives_pb2.ModelMetadata:
+    """Convert SDK ModelMetadata to protobuf ModelMetadata."""
+    pb = primitives_pb2.ModelMetadata()
+    if metadata.model_name is not None:
+        pb.model_name = metadata.model_name
+    if metadata.input_tokens is not None:
+        pb.input_tokens = metadata.input_tokens
+    if metadata.output_tokens is not None:
+        pb.output_tokens = metadata.output_tokens
+    if metadata.latency_ms is not None:
+        pb.latency_ms = metadata.latency_ms
+    return pb
 
 
 def _convert_sdk_tool_to_pb(tool: Tool) -> primitives_pb2.Tool:
@@ -295,8 +313,6 @@ def _convert_pb_trajectory_step_to_sdk(
         stage=_convert_pb_stage_to_sdk(pb_step.stage),
         content=content,
         created_at=created_at,
-        state={},  # State is not in protobuf TrajectoryStep
-        context=None,  # Context is not in protobuf TrajectoryStep
     )
 
 
@@ -377,6 +393,24 @@ def _convert_pb_trajectory_to_sdk(
         for key, value in pb_trajectory.metadata.items()
     }
 
+    # step_count: proto int32 defaults to 0 when unset; treat 0 as unknown
+    raw_step_count = pb_trajectory.step_count if pb_trajectory.step_count > 0 else None
+
+    # Convert decision_summary if present
+    decision_summary = None
+    if pb_trajectory.HasField("decision_summary"):
+        ds = pb_trajectory.decision_summary
+        decision_summary = DecisionSummary(
+            allow_count=ds.allow_count,
+            deny_count=ds.deny_count,
+            escalate_count=ds.escalate_count,
+        )
+
+    # Extract optional session_id
+    session_id = (
+        pb_trajectory.session_id if pb_trajectory.HasField("session_id") else None
+    )
+
     return Trajectory(
         id=pb_trajectory.id,
         agent_id=pb_trajectory.agent_id,
@@ -387,6 +421,9 @@ def _convert_pb_trajectory_to_sdk(
         started_at=started_at,
         ended_at=ended_at,
         steps=[],  # Steps are not included in the basic trajectory response
+        raw_step_count=raw_step_count,
+        decision_summary=decision_summary,
+        session_id=session_id,
     )
 
 
@@ -418,9 +455,11 @@ def _convert_pb_adjudication_record_to_sdk(
 ) -> AdjudicationRecord:
     """Convert protobuf AdjudicationRecord to SDK AdjudicationRecord."""
     adjudication = _convert_pb_adjudication_to_sdk(pb_record.adjudication)
+    step_index = pb_record.step_index or None
     return AdjudicationRecord(
         agent_id=pb_record.agent_id,
         trajectory_id=pb_record.trajectory_id,
         step_id=pb_record.step_id,
         adjudication=adjudication,
+        step_index=step_index,
     )

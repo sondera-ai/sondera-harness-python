@@ -3,6 +3,7 @@ import datetime
 from google.protobuf import struct_pb2 as _struct_pb2
 from google.protobuf import timestamp_pb2 as _timestamp_pb2
 from sondera.core.v1 import primitives_pb2 as _primitives_pb2
+from sondera.harness.v1 import policy_pack_pb2 as _policy_pack_pb2
 from google.protobuf.internal import containers as _containers
 from google.protobuf import descriptor as _descriptor
 from google.protobuf import message as _message
@@ -44,10 +45,12 @@ class GetAgentResponse(_message.Message):
     def __init__(self, agent: _Optional[_Union[_primitives_pb2.Agent, _Mapping]] = ...) -> None: ...
 
 class CreateTrajectoryRequest(_message.Message):
-    __slots__ = ("agent_id",)
+    __slots__ = ("agent_id", "session_id")
     AGENT_ID_FIELD_NUMBER: _ClassVar[int]
+    SESSION_ID_FIELD_NUMBER: _ClassVar[int]
     agent_id: str
-    def __init__(self, agent_id: _Optional[str] = ...) -> None: ...
+    session_id: str
+    def __init__(self, agent_id: _Optional[str] = ..., session_id: _Optional[str] = ...) -> None: ...
 
 class CreateTrajectoryResponse(_message.Message):
     __slots__ = ("trajectory",)
@@ -56,16 +59,18 @@ class CreateTrajectoryResponse(_message.Message):
     def __init__(self, trajectory: _Optional[_Union[_primitives_pb2.Trajectory, _Mapping]] = ...) -> None: ...
 
 class AddTrajectoryStepRequest(_message.Message):
-    __slots__ = ("trajectory_id", "stage", "role", "content")
+    __slots__ = ("trajectory_id", "stage", "role", "content", "model_metadata")
     TRAJECTORY_ID_FIELD_NUMBER: _ClassVar[int]
     STAGE_FIELD_NUMBER: _ClassVar[int]
     ROLE_FIELD_NUMBER: _ClassVar[int]
     CONTENT_FIELD_NUMBER: _ClassVar[int]
+    MODEL_METADATA_FIELD_NUMBER: _ClassVar[int]
     trajectory_id: str
     stage: _primitives_pb2.Stage
     role: _primitives_pb2.Role
     content: _primitives_pb2.Content
-    def __init__(self, trajectory_id: _Optional[str] = ..., stage: _Optional[_Union[_primitives_pb2.Stage, str]] = ..., role: _Optional[_Union[_primitives_pb2.Role, str]] = ..., content: _Optional[_Union[_primitives_pb2.Content, _Mapping]] = ...) -> None: ...
+    model_metadata: _primitives_pb2.ModelMetadata
+    def __init__(self, trajectory_id: _Optional[str] = ..., stage: _Optional[_Union[_primitives_pb2.Stage, str]] = ..., role: _Optional[_Union[_primitives_pb2.Role, str]] = ..., content: _Optional[_Union[_primitives_pb2.Content, _Mapping]] = ..., model_metadata: _Optional[_Union[_primitives_pb2.ModelMetadata, _Mapping]] = ...) -> None: ...
 
 class AddTrajectoryStepResponse(_message.Message):
     __slots__ = ("adjudicated_step",)
@@ -102,16 +107,20 @@ class GetTrajectoryResponse(_message.Message):
     def __init__(self, trajectory: _Optional[_Union[_primitives_pb2.Trajectory, _Mapping]] = ..., steps: _Optional[_Iterable[_Union[_primitives_pb2.AdjudicatedStep, _Mapping]]] = ...) -> None: ...
 
 class ListTrajectoriesRequest(_message.Message):
-    __slots__ = ("agent_id", "status", "page_size", "page_token")
+    __slots__ = ("agent_id", "status", "page_size", "page_token", "session_id", "min_step_count")
     AGENT_ID_FIELD_NUMBER: _ClassVar[int]
     STATUS_FIELD_NUMBER: _ClassVar[int]
     PAGE_SIZE_FIELD_NUMBER: _ClassVar[int]
     PAGE_TOKEN_FIELD_NUMBER: _ClassVar[int]
+    SESSION_ID_FIELD_NUMBER: _ClassVar[int]
+    MIN_STEP_COUNT_FIELD_NUMBER: _ClassVar[int]
     agent_id: str
     status: _primitives_pb2.TrajectoryStatus
     page_size: int
     page_token: str
-    def __init__(self, agent_id: _Optional[str] = ..., status: _Optional[_Union[_primitives_pb2.TrajectoryStatus, str]] = ..., page_size: _Optional[int] = ..., page_token: _Optional[str] = ...) -> None: ...
+    session_id: str
+    min_step_count: int
+    def __init__(self, agent_id: _Optional[str] = ..., status: _Optional[_Union[_primitives_pb2.TrajectoryStatus, str]] = ..., page_size: _Optional[int] = ..., page_token: _Optional[str] = ..., session_id: _Optional[str] = ..., min_step_count: _Optional[int] = ...) -> None: ...
 
 class ListTrajectoriesResponse(_message.Message):
     __slots__ = ("trajectories", "next_page_token")
@@ -172,16 +181,18 @@ class ListAdjudicationsRequest(_message.Message):
     def __init__(self, agent_id: _Optional[str] = ..., page_size: _Optional[int] = ..., page_token: _Optional[str] = ...) -> None: ...
 
 class AdjudicationRecord(_message.Message):
-    __slots__ = ("agent_id", "trajectory_id", "step_id", "adjudication")
+    __slots__ = ("agent_id", "trajectory_id", "step_id", "adjudication", "step_index")
     AGENT_ID_FIELD_NUMBER: _ClassVar[int]
     TRAJECTORY_ID_FIELD_NUMBER: _ClassVar[int]
     STEP_ID_FIELD_NUMBER: _ClassVar[int]
     ADJUDICATION_FIELD_NUMBER: _ClassVar[int]
+    STEP_INDEX_FIELD_NUMBER: _ClassVar[int]
     agent_id: str
     trajectory_id: str
     step_id: str
     adjudication: _primitives_pb2.Adjudication
-    def __init__(self, agent_id: _Optional[str] = ..., trajectory_id: _Optional[str] = ..., step_id: _Optional[str] = ..., adjudication: _Optional[_Union[_primitives_pb2.Adjudication, _Mapping]] = ...) -> None: ...
+    step_index: int
+    def __init__(self, agent_id: _Optional[str] = ..., trajectory_id: _Optional[str] = ..., step_id: _Optional[str] = ..., adjudication: _Optional[_Union[_primitives_pb2.Adjudication, _Mapping]] = ..., step_index: _Optional[int] = ...) -> None: ...
 
 class ListAdjudicationsResponse(_message.Message):
     __slots__ = ("adjudications", "next_page_token")

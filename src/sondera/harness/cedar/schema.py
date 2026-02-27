@@ -69,10 +69,6 @@ def json_schema_to_cedar_type(schema: dict[str, Any]) -> SchemaType:
         return SchemaType(type="Set", element=element_type)
 
     elif json_type == "string":
-        # Check for enum values which could be treated as specific strings
-        if "enum" in schema:
-            # For now, just treat as String
-            return SchemaType(type="String")
         return SchemaType(type="String")
 
     elif json_type in ["number", "integer"]:

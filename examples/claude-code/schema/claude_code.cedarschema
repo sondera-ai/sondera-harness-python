@@ -1,0 +1,38 @@
+namespace claude_code {
+  entity Agent = {
+    name: __cedar::String,
+    provider_id: __cedar::String
+  };
+
+  entity Trajectory = {};
+
+  // Write tool - create or overwrite files
+  action "Write" appliesTo {
+    principal: [Agent],
+    resource: [Trajectory],
+    context: {
+      parameters?: {
+        permission_mode?: __cedar::String,
+        file_path?: __cedar::String,
+        content?: __cedar::String,
+        is_plan_file?: __cedar::Bool
+      }
+    }
+  };
+
+  // Edit tool - precise string replacements
+  action "Edit" appliesTo {
+    principal: [Agent],
+    resource: [Trajectory],
+    context: {
+      parameters?: {
+        permission_mode?: __cedar::String,
+        file_path?: __cedar::String,
+        old_string?: __cedar::String,
+        new_string?: __cedar::String,
+        replace_all?: __cedar::Bool,
+        is_plan_file?: __cedar::Bool
+      }
+    }
+  };
+}

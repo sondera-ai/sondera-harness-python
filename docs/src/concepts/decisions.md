@@ -42,7 +42,7 @@ when { context.parameters_json like "*rm -rf*" };
 // Soft deny with escalation: can proceed after approval
 @id("high-value-transfer")
 @escalate("finance-team")
-@reason("Transfers over $10,000 require approval")
+@description("Transfers over $10,000 require approval")
 forbid(principal, action == MyAgent::Action::"Transfer", resource)
 when { context.parameters.amount > 10000 };
 ```
@@ -185,7 +185,7 @@ result.policies  # List of PolicyMetadata objects
 # Each policy has: id, description, escalation info, and custom metadata dict
 for policy in result.policies:
     print(policy.id)           # Policy ID that matched
-    print(policy.description)  # Human-readable description (from @reason)
+    print(policy.description)  # Human-readable description
     print(policy.escalate)     # True if this policy has @escalate
     print(policy.escalate_arg) # The @escalate argument, e.g., "finance-team"
     print(policy.custom)       # {"severity": "critical", ...}

@@ -153,6 +153,18 @@ class Content(_message.Message):
     tool_response: ToolResponse
     def __init__(self, prompt: _Optional[_Union[Prompt, _Mapping]] = ..., tool_request: _Optional[_Union[ToolRequest, _Mapping]] = ..., tool_response: _Optional[_Union[ToolResponse, _Mapping]] = ...) -> None: ...
 
+class ModelMetadata(_message.Message):
+    __slots__ = ("model_name", "input_tokens", "output_tokens", "latency_ms")
+    MODEL_NAME_FIELD_NUMBER: _ClassVar[int]
+    INPUT_TOKENS_FIELD_NUMBER: _ClassVar[int]
+    OUTPUT_TOKENS_FIELD_NUMBER: _ClassVar[int]
+    LATENCY_MS_FIELD_NUMBER: _ClassVar[int]
+    model_name: str
+    input_tokens: int
+    output_tokens: int
+    latency_ms: int
+    def __init__(self, model_name: _Optional[str] = ..., input_tokens: _Optional[int] = ..., output_tokens: _Optional[int] = ..., latency_ms: _Optional[int] = ...) -> None: ...
+
 class TrajectoryStep(_message.Message):
     __slots__ = ("stage", "role", "created_at", "content")
     STAGE_FIELD_NUMBER: _ClassVar[int]
@@ -165,8 +177,18 @@ class TrajectoryStep(_message.Message):
     content: Content
     def __init__(self, stage: _Optional[_Union[Stage, str]] = ..., role: _Optional[_Union[Role, str]] = ..., created_at: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., content: _Optional[_Union[Content, _Mapping]] = ...) -> None: ...
 
+class DecisionSummary(_message.Message):
+    __slots__ = ("allow_count", "deny_count", "escalate_count")
+    ALLOW_COUNT_FIELD_NUMBER: _ClassVar[int]
+    DENY_COUNT_FIELD_NUMBER: _ClassVar[int]
+    ESCALATE_COUNT_FIELD_NUMBER: _ClassVar[int]
+    allow_count: int
+    deny_count: int
+    escalate_count: int
+    def __init__(self, allow_count: _Optional[int] = ..., deny_count: _Optional[int] = ..., escalate_count: _Optional[int] = ...) -> None: ...
+
 class Trajectory(_message.Message):
-    __slots__ = ("id", "agent_id", "status", "metadata", "created_at", "updated_at", "started_at", "ended_at", "steps")
+    __slots__ = ("id", "agent_id", "status", "metadata", "created_at", "updated_at", "started_at", "ended_at", "steps", "step_count", "session_id", "decision_summary")
     class MetadataEntry(_message.Message):
         __slots__ = ("key", "value")
         KEY_FIELD_NUMBER: _ClassVar[int]
@@ -183,6 +205,9 @@ class Trajectory(_message.Message):
     STARTED_AT_FIELD_NUMBER: _ClassVar[int]
     ENDED_AT_FIELD_NUMBER: _ClassVar[int]
     STEPS_FIELD_NUMBER: _ClassVar[int]
+    STEP_COUNT_FIELD_NUMBER: _ClassVar[int]
+    SESSION_ID_FIELD_NUMBER: _ClassVar[int]
+    DECISION_SUMMARY_FIELD_NUMBER: _ClassVar[int]
     id: str
     agent_id: str
     status: TrajectoryStatus
@@ -192,7 +217,10 @@ class Trajectory(_message.Message):
     started_at: _timestamp_pb2.Timestamp
     ended_at: _timestamp_pb2.Timestamp
     steps: _containers.RepeatedCompositeFieldContainer[TrajectoryStep]
-    def __init__(self, id: _Optional[str] = ..., agent_id: _Optional[str] = ..., status: _Optional[_Union[TrajectoryStatus, str]] = ..., metadata: _Optional[_Mapping[str, _struct_pb2.Value]] = ..., created_at: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., updated_at: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., started_at: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., ended_at: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., steps: _Optional[_Iterable[_Union[TrajectoryStep, _Mapping]]] = ...) -> None: ...
+    step_count: int
+    session_id: str
+    decision_summary: DecisionSummary
+    def __init__(self, id: _Optional[str] = ..., agent_id: _Optional[str] = ..., status: _Optional[_Union[TrajectoryStatus, str]] = ..., metadata: _Optional[_Mapping[str, _struct_pb2.Value]] = ..., created_at: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., updated_at: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., started_at: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., ended_at: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., steps: _Optional[_Iterable[_Union[TrajectoryStep, _Mapping]]] = ..., step_count: _Optional[int] = ..., session_id: _Optional[str] = ..., decision_summary: _Optional[_Union[DecisionSummary, _Mapping]] = ...) -> None: ...
 
 class Check(_message.Message):
     __slots__ = ("name", "flagged", "message")

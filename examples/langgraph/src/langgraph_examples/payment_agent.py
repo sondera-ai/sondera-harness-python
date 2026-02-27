@@ -2,7 +2,7 @@
 
 Quickstart:
   1. Install: uv pip install -e ../archetypes && uv pip install -e ".[google]"
-  2. Set keys: export GOOGLE_API_KEY=... SONDERA_API_KEY=$(uv run python scripts/generate_test_jwt.py)
+  2. Set keys: export GOOGLE_API_KEY=... SONDERA_API_TOKEN=$(uv run python scripts/generate_test_jwt.py)
   3. Run: uv run python -m langgraph_examples.payment_agent
 """
 

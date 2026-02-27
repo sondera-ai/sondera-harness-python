@@ -48,7 +48,7 @@ class SonderaHarnessHook(HookProvider):
         # Create harness instance
         harness = RemoteHarness(
             sondera_harness_endpoint="localhost:50051",
-            sondera_api_key="<YOUR_SONDERA_API_KEY>",
+            sondera_api_key="<YOUR_API_TOKEN>",
         )
 
         # Create hook with harness using dependency injection

@@ -13,7 +13,6 @@ Suggested prompts:
 
 from __future__ import annotations
 
-import argparse
 import asyncio
 import logging
 import os
@@ -191,7 +190,7 @@ async def interactive_loop(runner: InMemoryRunner, app_name: str) -> None:
             print(f"Agent: {response_text}\n")
 
 
-async def build_runner(*, enforce: bool) -> tuple[InMemoryRunner, str]:
+async def build_runner() -> tuple[InMemoryRunner, str]:
     """Create the ADK runner with Sondera plugin."""
     agent = create_agent()
     app_name = "payment_agent_app"
@@ -209,19 +208,13 @@ async def build_runner(*, enforce: bool) -> tuple[InMemoryRunner, str]:
 
 
 async def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Run the Sondera-instrumented payment agent demo."
-    )
-    parser.add_argument("--enforce", action="store_true")
-    args = parser.parse_args()
-
     logging.basicConfig(
         level=getattr(
             logging, os.environ.get("LOG_LEVEL", "INFO").upper(), logging.INFO
         )
     )
 
-    runner, app_name = await build_runner(enforce=args.enforce)
+    runner, app_name = await build_runner()
     await interactive_loop(runner, app_name)
 
 

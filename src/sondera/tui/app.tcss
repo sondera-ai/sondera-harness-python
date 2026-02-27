@@ -1,76 +1,220 @@
+/* Dashboard layout: single column, vertical stack */
 Screen {
-    layout: grid;
-    grid-size: 1;
-    grid-rows: 30% 70%;
+    layout: vertical;
 }
+
+/* Header: 1 row */
+DashboardHeader {
+    height: 1;
+    padding: 0 1;
+    background: $surface;
+}
+
+/* Separators */
+.dashboard-sep {
+    height: 1;
+    padding: 0 1;
+    color: $text-muted;
+}
+
+/* ========================================================= */
+/* Violations feed                                            */
+/* ========================================================= */
+
+ViolationsFeed {
+    height: auto;
+    max-height: 24;
+}
+
+ViolationsFeed #violations-header {
+    height: 1;
+    padding: 0 1;
+}
+
+ViolationsFeed #violations-container {
+    height: auto;
+    max-height: 22;
+    scrollbar-size: 0 0;
+}
+
+ViolationsFeed .violation-row {
+    height: 1;
+    padding: 0 1;
+}
+
+ViolationsFeed .violation-row.--selected {
+    background: $primary 12%;
+}
+
+ViolationsFeed .violation-detail {
+    height: 1;
+    padding: 0 1;
+    background: $primary 5%;
+}
+
+ViolationsFeed .section-label {
+    height: 1;
+    padding: 0 1;
+}
+
+ViolationsFeed .view-all-row {
+    height: 1;
+    padding: 0 1;
+}
+
+/* ========================================================= */
+/* Agents feed                                                */
+/* ========================================================= */
+
+AgentsFeed {
+    height: 1fr;
+}
+
+AgentsFeed #agents-header {
+    height: 1;
+    padding: 0 1;
+}
+
+AgentsFeed #agent-filter {
+    height: 1;
+    padding: 0 1;
+    display: none;
+    border: none;
+    background: $surface;
+    color: $primary;
+}
+
+AgentsFeed #agent-filter:focus {
+    border: none;
+}
+
+AgentsFeed #agents-container {
+    height: 1fr;
+    scrollbar-size: 0 0;
+}
+
+AgentsFeed .agent-row {
+    height: 1;
+    padding: 0 1;
+}
+
+AgentsFeed .agent-row.--selected {
+    background: $primary 12%;
+}
+
+AgentsFeed .agent-row.--problematic {
+    background: $error 8%;
+}
+
+AgentsFeed .agent-row.--selected.--problematic {
+    background: $error 15%;
+}
+
+AgentsFeed .agent-detail {
+    height: 1;
+    padding: 0 1;
+    background: $primary 5%;
+}
+
+/* Footer */
+Footer {
+    height: auto;
+}
+
+/* ========================================================= */
+/* AI Ask panel                                               */
+/* ========================================================= */
+
+AskPanel {
+    height: 2;
+}
+
+AskPanel.--has-response {
+    height: 16;
+}
+
+AskPanel .ask-rule {
+    height: 1;
+    padding: 0 1;
+    color: $text-muted;
+}
+
+AskPanel #ask-rule-top {
+    height: 0;
+    overflow: hidden;
+}
+
+AskPanel.--has-response #ask-rule-top {
+    height: 1;
+}
+
+AskPanel #ask-prompt-row {
+    height: 1;
+}
+
+AskPanel #ask-prompt-arrow {
+    width: 3;
+    height: 1;
+    padding: 0 0 0 1;
+    color: $primary;
+}
+
+AskPanel #ask-input {
+    width: 1fr;
+    height: 1;
+    border: none;
+    background: $surface;
+    padding: 0;
+    scrollbar-size: 0 0;
+}
+
+AskPanel #ask-input:focus {
+    border: none;
+}
+
+AskPanel #ask-input .text-area--cursor-line {
+    background: $surface;
+}
+
+AskPanel #ask-input .text-area--cursor {
+    background: $primary;
+    color: $surface;
+}
+
+AskPanel #ask-response-container {
+    height: 1fr;
+    padding: 0 1;
+    display: none;
+}
+
+AskPanel.--has-response #ask-response-container {
+    display: block;
+    align: left bottom;
+}
+
+AskPanel #ask-response {
+    height: auto;
+    padding: 0;
+}
+
+AskPanel #ask-status {
+    height: 1;
+    padding: 0 1;
+    display: none;
+}
+
+AskPanel.--has-response #ask-status {
+    display: block;
+}
+
+/* ========================================================= */
+/* Shared styles for pushed screens                           */
+/* ========================================================= */
 
 .panel {
     height: 1fr;
     padding: 1;
 }
-
-/* Summary panel - auto height */
-.panel:first-child {
-    height: auto;
-}
-
-/* Summary widget styles */
-Summary {
-}
-
-Summary .summary-section {
-    height: auto;
-    padding-bottom: 1;
-}
-
-Summary .section-label {
-    width: 16;
-    padding-top: 1;
-}
-
-Summary .stat {
-    width: 1fr;
-    height: auto;
-}
-
-Summary .stat-label {
-    color: $text-muted;
-}
-
-Summary Digits {
-    height: auto;
-}
-
-/* Trajectory status colors */
-Summary .stat-running {
-    color: $primary;
-}
-
-Summary .stat-suspended {
-    color: $warning;
-}
-
-Summary .stat-completed {
-    color: $success;
-}
-
-Summary .stat-pending {
-    color: $text-muted;
-}
-
-Summary .stat-failed {
-    color: $error;
-}
-
-/* Policy colors */
-Summary .stat-violations {
-    color: $error;
-}
-
-Summary .stat-approved {
-    color: $success;
-}
-
 
 .step {
     border: solid $primary;
@@ -93,146 +237,194 @@ Summary .stat-approved {
     background: $surface;
 }
 
-/* Main tabs */
-#main-tabs {
-    height: 100%;
-}
-
-#main-tabs ContentSwitcher {
-    height: 1fr;
-}
-
-#main-tabs TabPane {
-    height: 100%;
-    padding: 0;
-}
-
-RecentTrajectories {
-    height: 100%;
-}
-
-RecentTrajectories DataTable {
-    height: 100%;
-}
-
-RecentAdjudications {
-    height: 100%;
-}
-
-RecentAdjudications DataTable {
-    height: 100%;
-}
-
-AgentList {
-    height: 100%;
-    border: solid $primary;
-    background: $surface;
-}
-
-AgentList .header {
+/* Pagination bar (centered, with top padding for breathing room) */
+PaginationBar {
     height: 3;
-}
-
-AgentList .header-column {
-    width: 1fr;
-}
-
-AgentItem {
-    border: solid $primary;
-    height: 10;
-}
-
-AgentItem .column {
-    width: 1fr;
-}
-
-Sparkline {
-    width: 100%;
-    margin: 2;
+    content-align: center middle;
+    padding: 1 1 0 1;
 }
 
 ListView {
     & > ListItem {
         &.-highlight {
-            background: $block-hover-background;
+            background: $panel 40%;
         }
     }
 }
 
+/* Tree hover: distinct teal so it doesn't blend with green selection */
+Tree > .tree--cursor {
+    background: $primary 20%;
+}
+
+Tree > .tree--hover {
+    background: $panel 40%;
+}
+
+/* TrajectoryScreen */
 TrajectoryScreen {
-    layout: horizontal
+    layout: vertical;
 }
 
-#sidebar {
-    width: 0.33fr;
-    height: 100%;
-}
-
-/* AgentScreen styles */
-AgentScreen {
-    layout:horizontal ;
-}
-
-#agent-screen-content {
-    height: 1fr;
-    padding: 1;
-}
-
-#agent-card {
-    width: 0.4fr;
-    height: 100%;
-    border: solid $primary;
-    padding: 1;
-}
-
-#agent-card-container {
-    height: 100%;
-}
-
-#agent-details-grid {
-    grid-size: 2;
-    grid-columns: auto 1fr;
-    grid-rows: auto;
+#trajectory-summary {
     height: auto;
-    padding: 1;
+    max-height: 3;
+    padding: 0 1;
 }
 
-#agent-details-grid .label {
-    padding-right: 2;
-    color: $text-muted;
+DecisionMinimap {
+    height: 1;
+    padding: 0 1;
+    margin: 0 0 1 0;
 }
 
-#agent-details-grid .value {
-    padding-bottom: 1;
-}
-
-#agent-details-grid .description,
-#agent-details-grid .instruction {
-    max-height: 4;
-}
-
-.section-header {
-    padding: 1 0;
-    border-bottom: solid $primary;
-    margin-bottom: 1;
-}
-
-#tools-list {
+#trajectory-content {
     height: 1fr;
-    border: solid $secondary;
 }
 
-#agent-tabs {
+#step-list {
+    width: 0.4fr;
+    min-width: 30;
+    height: 100%;
+    border: round $secondary-background-darken-3;
+}
+
+#step-list:focus {
+    border: round $primary;
+}
+
+#step-detail {
     width: 0.6fr;
     height: 100%;
-    border: solid $primary;
+    padding: 0 1;
+    border: round $secondary-background-darken-3;
 }
 
-#agent-trajectories-table {
-    height: 100%;
+#step-detail:focus {
+    border: round $primary;
 }
 
-/* ToolCard styles */
+.step-row {
+    height: 1;
+    padding: 0 1;
+}
+
+.step-gap {
+    height: 1;
+    padding: 0 1;
+}
+
+.step-row--selected {
+    background: $primary 12%;
+}
+
+.step-row--denied {
+    background: $error 6%;
+}
+
+.step-row--denied.step-row--selected {
+    background: $error 15%;
+}
+
+.step-row.--search-match {
+    background: $primary 20%;
+}
+
+.step-row.--search-match.step-row--selected {
+    background: $primary 30%;
+}
+
+/* Decision-colored step borders (right margin for scrollbar clearance) */
+.step-allow {
+    border: solid $secondary-background-darken-3;
+    border-title-color: $foreground;
+    border-subtitle-color: $text-muted;
+    border-subtitle-align: right;
+    padding: 0 1;
+    margin: 0 1 0 0;
+}
+
+.step-deny {
+    border: solid $error;
+    border-title-color: $foreground;
+    border-subtitle-color: $text-muted;
+    border-subtitle-align: right;
+    padding: 0 1;
+    margin: 0 1 0 0;
+}
+
+.step-escalate {
+    border: solid $warning;
+    border-title-color: $foreground;
+    border-subtitle-color: $text-muted;
+    border-subtitle-align: right;
+    padding: 0 1;
+    margin: 0 1 0 0;
+}
+
+.step-prompt {
+    border: solid $prompt-blue;
+    border-title-color: $foreground;
+    border-subtitle-color: $text-muted;
+    border-subtitle-align: right;
+    padding: 0 1;
+    margin: 0 1 0 0;
+}
+
+.step-prompt-model {
+    border: solid $model-muted;
+    border-title-color: $foreground;
+    border-subtitle-color: $text-muted;
+    border-subtitle-align: right;
+    padding: 0 1;
+    margin: 0 1 0 0;
+}
+
+/* Search (trajectory screen) */
+#search-status {
+    height: 1;
+    padding: 0 1;
+    background: $surface;
+}
+
+#search-input {
+    height: 1;
+    background: $surface;
+    color: $primary;
+    padding: 0 1;
+    border: none;
+}
+
+#search-input:focus {
+    border: none;
+}
+
+/* AgentScreen */
+AgentScreen {
+    layout: vertical;
+}
+
+AgentScreen #agent-summary {
+    height: auto;
+    padding: 0 1;
+}
+
+AgentScreen TrajectoryFeed {
+    height: 1fr;
+}
+
+AgentScreen TrajectoryFeed #trajectories-container {
+    height: 1fr;
+    max-height: 100%;
+}
+
+AgentScreen PaginationBar {
+    height: 2;
+    padding: 0 1;
+}
+
+
+/* ToolCard */
 ToolCard {
     border: solid $secondary;
     height: auto;
@@ -256,205 +448,3 @@ ToolCard {
     color: $text-muted;
 }
 
-/* AdjudicationScreen styles */
-AdjudicationScreen {
-    layout: vertical;
-}
-
-.adjudication-content {
-    height: 1fr;
-    padding: 1;
-}
-
-#adjudication-left-panel {
-    width: 0.6fr;
-    height: 100%;
-}
-
-#violations-summary {
-    height: 0.45fr;
-    border: solid $primary;
-    padding: 1;
-}
-
-#violations-list {
-    height: 0.55fr;
-    border: solid $primary;
-    padding: 1;
-}
-
-#violation-panel {
-    width: 0.4fr;
-    height: 100%;
-    border: solid $primary;
-    padding: 1;
-}
-
-/* ViolationsSummary styles */
-ViolationsSummary .section-header {
-    padding: 1 0;
-    border-bottom: solid $primary;
-    margin-bottom: 1;
-}
-
-ViolationsSummary .summary-row {
-    height: auto;
-    padding: 1 0;
-}
-
-ViolationsSummary .summary-item {
-    width: 1fr;
-    height: auto;
-    padding: 0 1;
-}
-
-ViolationsSummary .summary-digit {
-    width: 100%;
-}
-
-ViolationsSummary .stat-violations {
-    color: $error;
-}
-
-ViolationsSummary .stat-escalated {
-    color: $warning;
-}
-
-ViolationsSummary .stat-allowed {
-    color: $success;
-}
-
-ViolationsSummary .digit-violations {
-    color: $error;
-}
-
-ViolationsSummary .digit-escalated {
-    color: $warning;
-}
-
-ViolationsSummary .digit-allowed {
-    color: $success;
-}
-
-ViolationsSummary .agent-label,
-ViolationsSummary .policy-label {
-    color: $text-muted;
-}
-
-ViolationsSummary .empty-message {
-    color: $text-muted;
-    padding: 1;
-}
-
-/* ViolationPanel styles */
-ViolationPanel .section-header {
-    padding: 1 0;
-    border-bottom: solid $primary;
-    margin-bottom: 1;
-}
-
-ViolationPanel .empty-message {
-    color: $text-muted;
-    padding: 2;
-    text-align: center;
-}
-
-ViolationPanel .decision-badge {
-    padding: 1;
-    text-align: center;
-    text-style: bold;
-    margin-bottom: 1;
-}
-
-ViolationPanel .decision-deny {
-    background: $error 30%;
-    color: $error;
-}
-
-ViolationPanel .decision-escalate {
-    background: $warning 30%;
-    color: $warning;
-}
-
-ViolationPanel .decision-allow {
-    background: $success 30%;
-    color: $success;
-}
-
-#violation-details-grid {
-    grid-size: 2;
-    grid-columns: auto 1fr;
-    grid-rows: auto;
-    height: auto;
-    padding: 1;
-}
-
-#violation-details-grid .label {
-    padding-right: 2;
-    color: $text-muted;
-}
-
-#violation-details-grid .value {
-    padding-bottom: 1;
-}
-
-ViolationPanel .reason-container {
-    height: auto;
-    padding: 1;
-    border: solid $secondary;
-}
-
-ViolationPanel .reason-text {
-    height: auto;
-}
-
-/* Annotation styles */
-ViolationPanel .annotations-container {
-    height: auto;
-    max-height: 20;
-}
-
-ViolationPanel .annotation-card {
-    height: auto;
-    padding: 1;
-    margin-bottom: 1;
-    border: solid $secondary;
-    background: $surface-darken-1;
-}
-
-ViolationPanel .annotation-id {
-    color: $primary;
-    padding-bottom: 1;
-}
-
-ViolationPanel .annotation-description {
-    color: $text;
-    padding-bottom: 1;
-}
-
-ViolationPanel .annotation-custom-grid {
-    grid-size: 2;
-    grid-columns: auto 1fr;
-    grid-rows: auto;
-    height: auto;
-    padding-top: 1;
-    border-top: dashed $secondary;
-}
-
-ViolationPanel .annotation-custom-grid .label {
-    padding-right: 2;
-    color: $text-muted;
-}
-
-ViolationPanel .annotation-custom-grid .value {
-    color: $text;
-}
-
-/* RecentViolations styles */
-RecentViolations {
-    height: 100%;
-}
-
-RecentViolations DataTable {
-    height: 100%;
-}

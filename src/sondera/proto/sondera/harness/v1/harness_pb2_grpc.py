@@ -4,6 +4,7 @@ import grpc
 import warnings
 
 from ...harness.v1 import harness_pb2 as sondera_dot_harness_dot_v1_dot_harness__pb2
+from ...harness.v1 import policy_pack_pb2 as sondera_dot_harness_dot_v1_dot_policy__pack__pb2
 
 GRPC_GENERATED_VERSION = '1.76.0'
 GRPC_VERSION = grpc.__version__
@@ -85,6 +86,41 @@ class HarnessServiceStub(object):
                 request_serializer=sondera_dot_harness_dot_v1_dot_harness__pb2.ListAdjudicationsRequest.SerializeToString,
                 response_deserializer=sondera_dot_harness_dot_v1_dot_harness__pb2.ListAdjudicationsResponse.FromString,
                 _registered_method=True)
+        self.ListPolicyPacks = channel.unary_unary(
+                '/sondera.harness.v1.HarnessService/ListPolicyPacks',
+                request_serializer=sondera_dot_harness_dot_v1_dot_policy__pack__pb2.ListPolicyPacksRequest.SerializeToString,
+                response_deserializer=sondera_dot_harness_dot_v1_dot_policy__pack__pb2.ListPolicyPacksResponse.FromString,
+                _registered_method=True)
+        self.GetPolicyPack = channel.unary_unary(
+                '/sondera.harness.v1.HarnessService/GetPolicyPack',
+                request_serializer=sondera_dot_harness_dot_v1_dot_policy__pack__pb2.GetPolicyPackRequest.SerializeToString,
+                response_deserializer=sondera_dot_harness_dot_v1_dot_policy__pack__pb2.GetPolicyPackResponse.FromString,
+                _registered_method=True)
+        self.GetAgentPolicyInfo = channel.unary_unary(
+                '/sondera.harness.v1.HarnessService/GetAgentPolicyInfo',
+                request_serializer=sondera_dot_harness_dot_v1_dot_policy__pack__pb2.GetAgentPolicyInfoRequest.SerializeToString,
+                response_deserializer=sondera_dot_harness_dot_v1_dot_policy__pack__pb2.GetAgentPolicyInfoResponse.FromString,
+                _registered_method=True)
+        self.ListPolicyPackVersions = channel.unary_unary(
+                '/sondera.harness.v1.HarnessService/ListPolicyPackVersions',
+                request_serializer=sondera_dot_harness_dot_v1_dot_policy__pack__pb2.ListPolicyPackVersionsRequest.SerializeToString,
+                response_deserializer=sondera_dot_harness_dot_v1_dot_policy__pack__pb2.ListPolicyPackVersionsResponse.FromString,
+                _registered_method=True)
+        self.RollbackAgent = channel.unary_unary(
+                '/sondera.harness.v1.HarnessService/RollbackAgent',
+                request_serializer=sondera_dot_harness_dot_v1_dot_policy__pack__pb2.RollbackAgentRequest.SerializeToString,
+                response_deserializer=sondera_dot_harness_dot_v1_dot_policy__pack__pb2.RollbackAgentResponse.FromString,
+                _registered_method=True)
+        self.UploadPolicyPack = channel.unary_unary(
+                '/sondera.harness.v1.HarnessService/UploadPolicyPack',
+                request_serializer=sondera_dot_harness_dot_v1_dot_policy__pack__pb2.UploadPolicyPackRequest.SerializeToString,
+                response_deserializer=sondera_dot_harness_dot_v1_dot_policy__pack__pb2.UploadPolicyPackResponse.FromString,
+                _registered_method=True)
+        self.ReloadPolicyPacks = channel.unary_unary(
+                '/sondera.harness.v1.HarnessService/ReloadPolicyPacks',
+                request_serializer=sondera_dot_harness_dot_v1_dot_policy__pack__pb2.ReloadPolicyPacksRequest.SerializeToString,
+                response_deserializer=sondera_dot_harness_dot_v1_dot_policy__pack__pb2.ReloadPolicyPacksResponse.FromString,
+                _registered_method=True)
 
 
 class HarnessServiceServicer(object):
@@ -106,7 +142,7 @@ class HarnessServiceServicer(object):
         raise NotImplementedError('Method not implemented!')
 
     def CreateTrajectory(self, request, context):
-        """Creates a new conversation trajectory for an agent.
+        """Creates a new trajectory (single turn) for an agent. Supply session_id to group turns.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -157,6 +193,57 @@ class HarnessServiceServicer(object):
 
     def ListAdjudications(self, request, context):
         """Lists adjudicated steps with optional agent filtering and pagination.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ListPolicyPacks(self, request, context):
+        """Policy Pack Management APIs
+
+        Lists available policy packs with optional filtering.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetPolicyPack(self, request, context):
+        """Gets a specific policy pack by ID and optional version.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetAgentPolicyInfo(self, request, context):
+        """Gets merged policy information for a specific agent.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ListPolicyPackVersions(self, request, context):
+        """Lists versions of a policy pack.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def RollbackAgent(self, request, context):
+        """Rolls back an agent to a specific policy pack version.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def UploadPolicyPack(self, request, context):
+        """Uploads a new policy pack version.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ReloadPolicyPacks(self, request, context):
+        """Triggers hot-reload of policy packs.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -214,6 +301,41 @@ def add_HarnessServiceServicer_to_server(servicer, server):
                     servicer.ListAdjudications,
                     request_deserializer=sondera_dot_harness_dot_v1_dot_harness__pb2.ListAdjudicationsRequest.FromString,
                     response_serializer=sondera_dot_harness_dot_v1_dot_harness__pb2.ListAdjudicationsResponse.SerializeToString,
+            ),
+            'ListPolicyPacks': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListPolicyPacks,
+                    request_deserializer=sondera_dot_harness_dot_v1_dot_policy__pack__pb2.ListPolicyPacksRequest.FromString,
+                    response_serializer=sondera_dot_harness_dot_v1_dot_policy__pack__pb2.ListPolicyPacksResponse.SerializeToString,
+            ),
+            'GetPolicyPack': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetPolicyPack,
+                    request_deserializer=sondera_dot_harness_dot_v1_dot_policy__pack__pb2.GetPolicyPackRequest.FromString,
+                    response_serializer=sondera_dot_harness_dot_v1_dot_policy__pack__pb2.GetPolicyPackResponse.SerializeToString,
+            ),
+            'GetAgentPolicyInfo': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetAgentPolicyInfo,
+                    request_deserializer=sondera_dot_harness_dot_v1_dot_policy__pack__pb2.GetAgentPolicyInfoRequest.FromString,
+                    response_serializer=sondera_dot_harness_dot_v1_dot_policy__pack__pb2.GetAgentPolicyInfoResponse.SerializeToString,
+            ),
+            'ListPolicyPackVersions': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListPolicyPackVersions,
+                    request_deserializer=sondera_dot_harness_dot_v1_dot_policy__pack__pb2.ListPolicyPackVersionsRequest.FromString,
+                    response_serializer=sondera_dot_harness_dot_v1_dot_policy__pack__pb2.ListPolicyPackVersionsResponse.SerializeToString,
+            ),
+            'RollbackAgent': grpc.unary_unary_rpc_method_handler(
+                    servicer.RollbackAgent,
+                    request_deserializer=sondera_dot_harness_dot_v1_dot_policy__pack__pb2.RollbackAgentRequest.FromString,
+                    response_serializer=sondera_dot_harness_dot_v1_dot_policy__pack__pb2.RollbackAgentResponse.SerializeToString,
+            ),
+            'UploadPolicyPack': grpc.unary_unary_rpc_method_handler(
+                    servicer.UploadPolicyPack,
+                    request_deserializer=sondera_dot_harness_dot_v1_dot_policy__pack__pb2.UploadPolicyPackRequest.FromString,
+                    response_serializer=sondera_dot_harness_dot_v1_dot_policy__pack__pb2.UploadPolicyPackResponse.SerializeToString,
+            ),
+            'ReloadPolicyPacks': grpc.unary_unary_rpc_method_handler(
+                    servicer.ReloadPolicyPacks,
+                    request_deserializer=sondera_dot_harness_dot_v1_dot_policy__pack__pb2.ReloadPolicyPacksRequest.FromString,
+                    response_serializer=sondera_dot_harness_dot_v1_dot_policy__pack__pb2.ReloadPolicyPacksResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -487,6 +609,195 @@ class HarnessService(object):
             '/sondera.harness.v1.HarnessService/ListAdjudications',
             sondera_dot_harness_dot_v1_dot_harness__pb2.ListAdjudicationsRequest.SerializeToString,
             sondera_dot_harness_dot_v1_dot_harness__pb2.ListAdjudicationsResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ListPolicyPacks(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/sondera.harness.v1.HarnessService/ListPolicyPacks',
+            sondera_dot_harness_dot_v1_dot_policy__pack__pb2.ListPolicyPacksRequest.SerializeToString,
+            sondera_dot_harness_dot_v1_dot_policy__pack__pb2.ListPolicyPacksResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetPolicyPack(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/sondera.harness.v1.HarnessService/GetPolicyPack',
+            sondera_dot_harness_dot_v1_dot_policy__pack__pb2.GetPolicyPackRequest.SerializeToString,
+            sondera_dot_harness_dot_v1_dot_policy__pack__pb2.GetPolicyPackResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetAgentPolicyInfo(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/sondera.harness.v1.HarnessService/GetAgentPolicyInfo',
+            sondera_dot_harness_dot_v1_dot_policy__pack__pb2.GetAgentPolicyInfoRequest.SerializeToString,
+            sondera_dot_harness_dot_v1_dot_policy__pack__pb2.GetAgentPolicyInfoResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ListPolicyPackVersions(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/sondera.harness.v1.HarnessService/ListPolicyPackVersions',
+            sondera_dot_harness_dot_v1_dot_policy__pack__pb2.ListPolicyPackVersionsRequest.SerializeToString,
+            sondera_dot_harness_dot_v1_dot_policy__pack__pb2.ListPolicyPackVersionsResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def RollbackAgent(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/sondera.harness.v1.HarnessService/RollbackAgent',
+            sondera_dot_harness_dot_v1_dot_policy__pack__pb2.RollbackAgentRequest.SerializeToString,
+            sondera_dot_harness_dot_v1_dot_policy__pack__pb2.RollbackAgentResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def UploadPolicyPack(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/sondera.harness.v1.HarnessService/UploadPolicyPack',
+            sondera_dot_harness_dot_v1_dot_policy__pack__pb2.UploadPolicyPackRequest.SerializeToString,
+            sondera_dot_harness_dot_v1_dot_policy__pack__pb2.UploadPolicyPackResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ReloadPolicyPacks(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/sondera.harness.v1.HarnessService/ReloadPolicyPacks',
+            sondera_dot_harness_dot_v1_dot_policy__pack__pb2.ReloadPolicyPacksRequest.SerializeToString,
+            sondera_dot_harness_dot_v1_dot_policy__pack__pb2.ReloadPolicyPacksResponse.FromString,
             options,
             channel_credentials,
             insecure,
