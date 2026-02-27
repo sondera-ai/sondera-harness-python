@@ -30,6 +30,71 @@ class TestHarnessConstructor:
         )
         assert client._sondera_api_key == "test-jwt-123"
 
+    def test_harness_accepts_custom_api_key_header(self):
+        """Test constructor accepts custom api_key_header."""
+        client = SonderaRemoteHarness(
+            sondera_harness_endpoint="localhost:50051",
+            sondera_api_key="test-api-key",
+            api_key_header="x-api-key",
+        )
+        assert client._api_key_header == "x-api-key"
+
+    def test_harness_accepts_extra_metadata(self):
+        """Test constructor accepts extra_metadata."""
+        client = SonderaRemoteHarness(
+            sondera_harness_endpoint="localhost:50051",
+            sondera_api_key="test-api-key",
+            extra_metadata=[("authorization", "Bearer proxy-token")],
+        )
+        assert client._extra_metadata == [("authorization", "Bearer proxy-token")]
+
+
+class TestMetadataGeneration:
+    """Test metadata generation with different header configurations."""
+
+    def test_default_metadata(self):
+        """Test default mode sends API key in authorization header."""
+        client = SonderaRemoteHarness(
+            sondera_harness_endpoint="localhost:50051",
+            sondera_api_key="test-api-key",
+        )
+        metadata = client._get_metadata()
+        assert metadata == [("authorization", "Bearer test-api-key")]
+
+    def test_capitalized_authorization_uses_bearer_prefix(self):
+        """Test 'Authorization' (capitalized) still sends Bearer prefix."""
+        client = SonderaRemoteHarness(
+            sondera_harness_endpoint="localhost:50051",
+            sondera_api_key="test-api-key",
+            api_key_header="Authorization",
+        )
+        metadata = client._get_metadata()
+        assert metadata == [("authorization", "Bearer test-api-key")]
+
+    def test_custom_header_sends_plain_value(self):
+        """Test custom header sends API key as plain value (no Bearer prefix)."""
+        client = SonderaRemoteHarness(
+            sondera_harness_endpoint="localhost:50051",
+            sondera_api_key="test-api-key",
+            api_key_header="x-api-key",
+        )
+        metadata = client._get_metadata()
+        assert ("x-api-key", "test-api-key") in metadata
+
+    def test_extra_metadata_appended(self):
+        """Test extra_metadata tuples are appended to the metadata list."""
+        client = SonderaRemoteHarness(
+            sondera_harness_endpoint="localhost:50051",
+            sondera_api_key="test-api-key",
+            api_key_header="x-api-key",
+            extra_metadata=[("authorization", "Bearer proxy-token")],
+        )
+        metadata = client._get_metadata()
+        assert metadata == [
+            ("x-api-key", "test-api-key"),
+            ("authorization", "Bearer proxy-token"),
+        ]
+
 
 class TestMetadataInjection:
     """Test cases for authorization metadata injection in RPC methods."""
@@ -63,7 +128,8 @@ class TestMetadataInjection:
         # Mock the gRPC stub
         mock_stub = MagicMock()
         mock_agent = primitives_pb2.Agent(id="agent-1", name="Test Agent")
-        mock_stub.GetAgent = AsyncMock(return_value=mock_agent)
+        mock_response = harness_pb2.GetAgentResponse(agent=mock_agent)
+        mock_stub.GetAgent = AsyncMock(return_value=mock_response)
 
         client = SonderaRemoteHarness(
             sondera_harness_endpoint="localhost:50051",

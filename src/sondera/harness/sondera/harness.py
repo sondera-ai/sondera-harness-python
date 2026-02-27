@@ -1,5 +1,7 @@
 """Async GRPC client for the Sondera Harness Service."""
 
+from __future__ import annotations
+
 import logging
 from datetime import UTC, datetime
 from typing import Any
@@ -22,6 +24,7 @@ from sondera.harness.sondera._grpc import (
     _convert_pb_agent_to_sdk,
     _convert_pb_trajectory_to_sdk,
     _convert_sdk_content_to_pb,
+    _convert_sdk_model_metadata_to_pb,
     _convert_sdk_role_to_pb,
     _convert_sdk_stage_to_pb,
     _convert_sdk_tool_to_pb,
@@ -36,6 +39,7 @@ from sondera.types import (
     AdjudicationRecord,
     Agent,
     Content,
+    ModelMetadata,
     Role,
     Stage,
     Trajectory,
@@ -53,7 +57,7 @@ class SonderaRemoteHarness(AbstractHarness):
 
         harness = Harness(
             sondera_harness_endpoint="localhost:50051",
-            sondera_api_key="<YOUR_SONDERA_API_KEY>",
+            sondera_api_key="<YOUR_API_TOKEN>",
             agent=Agent(
                 id="my-agent",
                 provider_id="my-provider",
@@ -82,6 +86,8 @@ class SonderaRemoteHarness(AbstractHarness):
         sondera_api_key: str | None = SETTINGS.sondera_api_token,
         sondera_harness_client_secure: bool = SETTINGS.sondera_harness_client_secure,
         sondera_harness_client_options: list[tuple] | None = None,
+        api_key_header: str = SETTINGS.sondera_api_key_header,
+        extra_metadata: list[tuple[str, str]] | None = None,
     ):
         """Initialize the harness.
 
@@ -91,6 +97,12 @@ class SonderaRemoteHarness(AbstractHarness):
             sondera_api_key: JWT token for authentication (required, must include organization_id claim)
             sondera_harness_client_secure: Whether to use a secure (TLS) connection
             sondera_harness_client_options: Optional gRPC channel options
+            api_key_header: gRPC metadata key for the API key. Default ``"authorization"``
+                sends as ``Authorization: Bearer <key>``. Set to ``"x-api-key"`` to send
+                the key as a plain value (useful when an upstream proxy consumes the
+                Authorization header).
+            extra_metadata: Additional gRPC metadata tuples to include on every call
+                (e.g., ``[("authorization", "Bearer <proxy_token>")]``).
 
         Raises:
             ConfigurationError: If sondera_api_key is None or empty
@@ -110,6 +122,8 @@ class SonderaRemoteHarness(AbstractHarness):
         self._sondera_harness_endpoint = sondera_harness_endpoint
         self._secure = sondera_harness_client_secure
         self._options = sondera_harness_client_options or []
+        self._api_key_header = api_key_header
+        self._extra_metadata = extra_metadata or []
         # Client connection state
         self._channel: grpc.aio.Channel | None = None
         self._stub: harness_pb2_grpc.HarnessServiceStub | None = None
@@ -118,23 +132,29 @@ class SonderaRemoteHarness(AbstractHarness):
         self._trajectory_id: str | None = None
 
     def _get_metadata(self) -> list[tuple[str, str]]:
-        """Build gRPC metadata with JWT auth token.
+        """Build gRPC metadata with auth token.
 
-        The JWT token includes the organization_id claim, which is extracted by the
-        Harness service for tenant isolation.
+        When ``api_key_header`` is ``"authorization"`` (default), sends the API key
+        as ``Authorization: Bearer <key>``.  For any other header name the key is
+        sent as a plain value.  Any ``extra_metadata`` tuples are appended.
 
         Returns:
             List of metadata tuples to pass to gRPC calls
         """
-        metadata: list[tuple[str, str]] = [
-            ("authorization", f"Bearer {self._sondera_api_key}")
-        ]
+        if self._api_key_header.lower() == "authorization":
+            metadata: list[tuple[str, str]] = [
+                ("authorization", f"Bearer {self._sondera_api_key}")
+            ]
+        else:
+            metadata = [(self._api_key_header, self._sondera_api_key)]
+        metadata.extend(self._extra_metadata)
         return metadata
 
     async def initialize(
         self,
         *,
         agent: Agent | None = None,
+        session_id: str | None = None,
     ) -> None:
         """Initialize a new trajectory for the current execution."""
         await self._ensure_connected()
@@ -144,21 +164,14 @@ class SonderaRemoteHarness(AbstractHarness):
         assert self._agent is not None, (
             "Agent not provided on initialization or in constructor."
         )
-        # Get or register an agent
-        try:
-            await self._get_agent(self._agent.id)
-            logging.debug(f"Agent {self._agent.id} already exists")
-        except grpc.aio.AioRpcError as e:
-            if e.code() == grpc.StatusCode.NOT_FOUND:
-                logging.debug(f"Agent {self._agent.id} not found, registering...")
-                registered_agent = await self._register_agent(self._agent)
-                # Update agent ID to match what the server assigned
-                self._agent.id = registered_agent.id
-            else:
-                raise
+        # Register the agent. The platform returns the existing agent if
+        # already registered (deduplicates by provider_id + name).
+        registered_agent = await self._register_agent(self._agent)
+        self._agent.id = registered_agent.id
+        logging.debug(f"Agent {self._agent.id} registered")
         # Create trajectory
         logging.debug(f"Creating trajectory for agent {self._agent.id}...")
-        response = await self._create_trajectory(self._agent.id)
+        response = await self._create_trajectory(self._agent.id, session_id=session_id)
         logging.debug(f"Trajectory created for agent {self._agent.id}: {response.id}")
         self._trajectory_id = response.id
 
@@ -226,6 +239,8 @@ class SonderaRemoteHarness(AbstractHarness):
         stage: Stage,
         role: Role,
         content: Content,
+        *,
+        model_metadata: ModelMetadata | None = None,
     ) -> Adjudication:
         """Adjudicate a trajectory step using the policy engine.
 
@@ -233,6 +248,7 @@ class SonderaRemoteHarness(AbstractHarness):
             stage: The stage of the step
             role: The role of the step
             content: The content of the step
+            model_metadata: Optional metadata about the model invocation
 
         Returns:
             The adjudication result
@@ -254,7 +270,11 @@ class SonderaRemoteHarness(AbstractHarness):
             f"Adjudicating (trajectory_id: {self._trajectory_id}): {stage} {role} {content}"
         )
         adjudicated_step = await self._add_trajectory_step(
-            self._trajectory_id, pb_stage, pb_role, pb_content
+            self._trajectory_id,
+            pb_stage,
+            pb_role,
+            pb_content,
+            model_metadata=model_metadata,
         )
         # Convert protobuf adjudication to SDK type
         adjudication = _convert_pb_adjudication_to_sdk(adjudicated_step.adjudication)
@@ -316,7 +336,8 @@ class SonderaRemoteHarness(AbstractHarness):
         metadata = self._get_metadata()
 
         try:
-            return await self._stub.GetAgent(request, metadata=metadata)
+            response = await self._stub.GetAgent(request, metadata=metadata)
+            return response.agent
         except grpc.aio.AioRpcError as e:
             # Handle authentication errors
             if e.code() == grpc.StatusCode.UNAUTHENTICATED:
@@ -366,11 +387,14 @@ class SonderaRemoteHarness(AbstractHarness):
             logging.error(f"Failed to register agent: {e.code()} - {e.details()}")
             raise
 
-    async def _create_trajectory(self, agent_id: str) -> primitives_pb2.Trajectory:
+    async def _create_trajectory(
+        self, agent_id: str, *, session_id: str | None = None
+    ) -> primitives_pb2.Trajectory:
         """Create a trajectory internally.
 
         Args:
             agent_id: The agent ID
+            session_id: Optional session identifier to group trajectories
 
         Returns:
             The created trajectory
@@ -380,6 +404,8 @@ class SonderaRemoteHarness(AbstractHarness):
             grpc.RpcError: If other gRPC error occurs
         """
         request = harness_pb2.CreateTrajectoryRequest(agent_id=agent_id)
+        if session_id is not None:
+            request.session_id = session_id
         await self._ensure_connected()
         assert self._stub is not None, "Client not connected"
 
@@ -406,6 +432,8 @@ class SonderaRemoteHarness(AbstractHarness):
         stage: primitives_pb2.Stage,
         role: primitives_pb2.Role,
         content: primitives_pb2.Content,
+        *,
+        model_metadata: ModelMetadata | None = None,
     ) -> primitives_pb2.AdjudicatedStep:
         """Add a trajectory step internally.
 
@@ -414,6 +442,7 @@ class SonderaRemoteHarness(AbstractHarness):
             stage: The step stage
             role: The step role
             content: The step content
+            model_metadata: Optional model invocation metadata
 
         Returns:
             The adjudicated step
@@ -425,6 +454,10 @@ class SonderaRemoteHarness(AbstractHarness):
         request = harness_pb2.AddTrajectoryStepRequest(
             trajectory_id=trajectory_id, stage=stage, role=role, content=content
         )
+        if model_metadata is not None:
+            request.model_metadata.CopyFrom(
+                _convert_sdk_model_metadata_to_pb(model_metadata)
+            )
         await self._ensure_connected()
         assert self._stub is not None, "Client not connected"
 
@@ -492,15 +525,20 @@ class SonderaRemoteHarness(AbstractHarness):
         status: primitives_pb2.TrajectoryStatus | None = None,
         page_size: int = 100,
         page_token: str = "",
-    ) -> list[primitives_pb2.Trajectory]:
+        min_step_count: int = 0,
+        session_id: str | None = None,
+    ) -> tuple[list[primitives_pb2.Trajectory], str]:
         """List trajectories internally."""
         request = harness_pb2.ListTrajectoriesRequest(
             agent_id=agent_id or "",
+            min_step_count=min_step_count,
             page_size=page_size,
             page_token=page_token,
         )
         if status is not None:
             request.status = status
+        if session_id is not None:
+            request.session_id = session_id
         await self._ensure_connected()
         assert self._stub is not None, "Client not connected"
 
@@ -509,7 +547,7 @@ class SonderaRemoteHarness(AbstractHarness):
 
         try:
             response = await self._stub.ListTrajectories(request, metadata=metadata)
-            return list(response.trajectories)
+            return list(response.trajectories), response.next_page_token
         except grpc.aio.AioRpcError as e:
             logging.error(f"Failed to list trajectories: {e.code()} - {e.details()}")
             raise
@@ -612,7 +650,7 @@ class SonderaRemoteHarness(AbstractHarness):
         provider_id: str | None = None,
         page_size: int = 50,
         page_token: str = "",
-    ) -> list[Agent]:
+    ) -> tuple[list[Agent], str]:
         """List registered agents.
 
         Args:
@@ -621,18 +659,41 @@ class SonderaRemoteHarness(AbstractHarness):
             page_token: Token for pagination (empty string for first page)
 
         Returns:
-            List of Agent objects
+            Tuple of (list of Agent objects, next page token).
+            The next page token will be empty if there are no more results.
 
         Raises:
             AuthenticationError: If authentication fails
             grpc.RpcError: If other gRPC error occurs
         """
-        pb_agents, _ = await self._list_agents(
+        pb_agents, next_page_token = await self._list_agents(
             provider_id=provider_id,
             page_size=page_size,
             page_token=page_token,
         )
-        return [_convert_pb_agent_to_sdk(pb_agent) for pb_agent in pb_agents]
+        return [
+            _convert_pb_agent_to_sdk(pb_agent) for pb_agent in pb_agents
+        ], next_page_token
+
+    async def get_agent(self, agent_id: str) -> Agent | None:
+        """Get a single agent by ID (includes full tool definitions).
+
+        Args:
+            agent_id: The agent ID
+
+        Returns:
+            The Agent, or None if not found.
+
+        Raises:
+            AuthenticationError: If authentication fails
+        """
+        try:
+            pb_agent = await self._get_agent(agent_id)
+            return _convert_pb_agent_to_sdk(pb_agent)
+        except grpc.aio.AioRpcError as e:
+            if e.code() == grpc.StatusCode.NOT_FOUND:
+                return None
+            raise
 
     async def get_trajectory(self, trajectory_id: str) -> AdjudicatedTrajectory | None:
         """Get a trajectory by ID.
@@ -659,7 +720,9 @@ class SonderaRemoteHarness(AbstractHarness):
         status: TrajectoryStatus | None = None,
         page_size: int = 50,
         page_token: str = "",
-    ) -> list[Trajectory]:
+        min_step_count: int = 0,
+        session_id: str | None = None,
+    ) -> tuple[list[Trajectory], str]:
         """List trajectories for an agent.
 
         Args:
@@ -667,27 +730,35 @@ class SonderaRemoteHarness(AbstractHarness):
             status: Optional status to filter trajectories
             page_size: Maximum number of trajectories to return per page
             page_token: Token for pagination (empty string for first page)
+            min_step_count: Only return trajectories with at least this many steps.
+                Default 0 (no filter). Set to 1 to exclude empty sessions.
+            session_id: Optional session ID to filter trajectories by conversation.
 
         Returns:
-            List of Trajectory objects
+            Tuple of (list of Trajectory objects, next page token).
+            The next page token will be empty if there are no more results.
 
         Raises:
             grpc.RpcError: If gRPC error occurs
         """
         pb_status = _convert_sdk_trajectory_status_to_pb(status) if status else None
-        pb_trajectories = await self._list_trajectories(
+        pb_trajectories, next_page_token = await self._list_trajectories(
             agent_id=agent_id,
             status=pb_status,
+            min_step_count=min_step_count,
             page_size=page_size,
             page_token=page_token,
+            session_id=session_id,
         )
-        return [_convert_pb_trajectory_to_sdk(pb_traj) for pb_traj in pb_trajectories]
+        return [
+            _convert_pb_trajectory_to_sdk(pb_traj) for pb_traj in pb_trajectories
+        ], next_page_token
 
     async def analyze_trajectories(
         self,
         agent_id: str,
-        start_time: "datetime | None" = None,
-        end_time: "datetime | None" = None,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
         analytics: list[str] | None = None,
     ) -> dict[str, Any]:
         """Analyze trajectories for an agent (AIP-136 custom method).

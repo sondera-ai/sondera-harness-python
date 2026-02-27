@@ -134,7 +134,7 @@ def format(
     agent_name = agent_name or agent.name
     agent_id = agent_id or agent.name
 
-    if type(agent) is not AdkAgent:
+    if not isinstance(agent, AdkAgent):
         raise ValueError("Agent must be an ADK agent")
 
     # Extract instruction from various ADK instruction provider types

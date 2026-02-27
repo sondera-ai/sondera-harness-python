@@ -58,6 +58,19 @@ Pick your framework, then run one of the commands:
     pip install "sondera-harness[strands]"
     ```
 
+=== "AI Assist"
+
+    Adds AI-powered queries to the TUI dashboard. Supports any LLM provider (Gemini, OpenAI, Anthropic, Ollama, and more).
+
+    **uv (recommended):**
+    ```bash
+    uv add "sondera-harness[ai]"
+    ```
+    **pip:**
+    ```bash
+    pip install "sondera-harness[ai]"
+    ```
+
 === "Custom Agent"
 
     **uv (recommended):**
@@ -95,14 +108,14 @@ If you're using **Sondera Platform** (`SonderaRemoteHarness`), set your API cred
 
 ```bash
 export SONDERA_HARNESS_ENDPOINT="your-harness.sondera.ai:443"
-export SONDERA_API_TOKEN="<YOUR_SONDERA_API_KEY>"
+export SONDERA_API_TOKEN="<YOUR_API_TOKEN>"
 ```
 
 Or create a `.env` file or `~/.sondera/env`:
 
 ```
 SONDERA_HARNESS_ENDPOINT=your-harness.sondera.ai:443
-SONDERA_API_TOKEN=<YOUR_SONDERA_API_KEY>
+SONDERA_API_TOKEN=<YOUR_API_TOKEN>
 ```
 
 !!! note "Local evaluation doesn't need this"

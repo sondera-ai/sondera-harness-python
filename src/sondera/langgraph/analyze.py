@@ -457,8 +457,6 @@ def analyze_langchain_tools(
             sondera_tools.append(sondera_tool)
         except Exception as e:
             # Log the error but continue with other tools
-            import logging
-
             logging.warning(f"Failed to analyze tool {tool}: {e}")
             # Create a minimal tool entry
             tool_name = getattr(tool, "name", str(tool))

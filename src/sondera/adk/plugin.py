@@ -24,6 +24,7 @@ from sondera.adk.analyze import format
 from sondera.harness import Harness
 from sondera.types import (
     Decision,
+    ModelMetadata,
     PromptContent,
     Role,
     Stage,
@@ -32,6 +33,28 @@ from sondera.types import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_text(content: genai_types.Content | None) -> str:
+    """Concatenate all text and code parts from a Content object.
+
+    Extracts ``p.text``, ``p.executable_code.code``, and
+    ``p.code_execution_result.output`` so that generated code and execution
+    output are also evaluated by the policy engine.
+
+    Returns an empty string when no extractable text is found.
+    """
+    if content is None or content.parts is None:
+        return ""
+    texts: list[str] = []
+    for p in content.parts:
+        if p.text:
+            texts.append(p.text)
+        elif p.executable_code and p.executable_code.code:
+            texts.append(p.executable_code.code)
+        elif p.code_execution_result and p.code_execution_result.output:
+            texts.append(p.code_execution_result.output)
+    return "\n".join(texts)
 
 
 class SonderaHarnessPlugin(BasePlugin):
@@ -58,7 +81,7 @@ class SonderaHarnessPlugin(BasePlugin):
         # Create a harness instance
         harness = RemoteHarness(
             sondera_harness_endpoint="localhost:50051",
-            sondera_api_key="<YOUR_SONDERA_API_KEY>",
+            sondera_api_key="<YOUR_API_TOKEN>",
         )
 
         # Create the plugin with the harness
@@ -90,6 +113,7 @@ class SonderaHarnessPlugin(BasePlugin):
         super().__init__(name="sondera_harness")
         self._harness = harness
         self._log = logger_instance or logger
+        self._current_model_name: str | None = None
 
     # -------------------------------------------------------------------------
     # User Message Callback
@@ -119,12 +143,14 @@ class SonderaHarnessPlugin(BasePlugin):
             invocation_context.app_name,
             invocation_context.app_name,
         )
-        await self._harness.initialize(agent=agent)
+        # Pass ADK session ID to group trajectories by conversation
+        session_id = (
+            invocation_context.session.id if invocation_context.session else None
+        )
+        await self._harness.initialize(agent=agent, session_id=session_id)
 
-        # Extract text content from user message
-        content = None
-        if user_message.parts is not None:
-            content = user_message.parts[-1].text
+        # Extract text from all parts of the user message
+        content = _extract_text(user_message)
         if not content:
             return None
 
@@ -133,12 +159,19 @@ class SonderaHarnessPlugin(BasePlugin):
             Stage.PRE_MODEL, Role.USER, PromptContent(text=content)
         )
         self._log.info(
-            f"[SonderaHarness] User message adjudication for trajectory {self._harness.trajectory_id}"
+            "[SonderaHarness] User message adjudication for trajectory %s",
+            self._harness.trajectory_id,
         )
 
         if adjudication.decision == Decision.DENY:
             return genai_types.Content(
                 parts=[genai_types.Part(text=adjudication.reason)]
+            )
+        if adjudication.decision == Decision.ESCALATE:
+            self._log.warning(
+                "[SonderaHarness] ESCALATE: %s (trajectory %s)",
+                adjudication.reason,
+                self._harness.trajectory_id,
             )
         return None
 
@@ -161,7 +194,7 @@ class SonderaHarnessPlugin(BasePlugin):
         Returns:
             None to allow agent to proceed normally.
         """
-        self._log.debug(f"[SonderaHarness] Before agent: {agent.name}")
+        self._log.debug("[SonderaHarness] Before agent: %s", agent.name)
         return None
 
     async def after_agent_callback(
@@ -179,7 +212,7 @@ class SonderaHarnessPlugin(BasePlugin):
         Returns:
             None to use original agent response.
         """
-        self._log.debug(f"[SonderaHarness] After agent: {agent.name}")
+        self._log.debug("[SonderaHarness] After agent: %s", agent.name)
         return None
 
     # -------------------------------------------------------------------------
@@ -204,13 +237,33 @@ class SonderaHarnessPlugin(BasePlugin):
             LlmResponse if policy violation, None to proceed normally.
         """
         self._log.debug(
-            f"[SonderaHarness] Before model call for trajectory {self._harness.trajectory_id}"
+            "[SonderaHarness] Before model call for trajectory %s",
+            self._harness.trajectory_id,
         )
+
+        # Extract the last user message from the request contents
+        content = ""
+        if llm_request.contents:
+            for c in reversed(llm_request.contents):
+                if c.role == "user":
+                    content = _extract_text(c)
+                    break
+
+        # Capture model name for metadata (also store for after_model_callback)
+        self._current_model_name = llm_request.model
+        metadata = (
+            ModelMetadata(model_name=llm_request.model) if llm_request.model else None
+        )
+
         adjudication = await self._harness.adjudicate(
-            Stage.PRE_MODEL, Role.MODEL, PromptContent(text="")
+            Stage.PRE_MODEL,
+            Role.MODEL,
+            PromptContent(text=content),
+            model_metadata=metadata,
         )
         self._log.info(
-            f"[SonderaHarness] Before model adjudication for trajectory {self._harness.trajectory_id}"
+            "[SonderaHarness] Before model adjudication for trajectory %s",
+            self._harness.trajectory_id,
         )
 
         if adjudication.decision == Decision.DENY:
@@ -218,6 +271,12 @@ class SonderaHarnessPlugin(BasePlugin):
                 content=genai_types.Content(
                     parts=[genai_types.Part(text=adjudication.reason)]
                 )
+            )
+        if adjudication.decision == Decision.ESCALATE:
+            self._log.warning(
+                "[SonderaHarness] ESCALATE: %s (trajectory %s)",
+                adjudication.reason,
+                self._harness.trajectory_id,
             )
         return None
 
@@ -240,19 +299,27 @@ class SonderaHarnessPlugin(BasePlugin):
         """
         self._log.debug("[SonderaHarness] After model call")
 
-        # Extract text content from response
-        content = None
-        if llm_response.content is not None and llm_response.content.parts is not None:
-            content = llm_response.content.parts[-1].text
-
+        # Extract text from all parts of the model response
+        content = _extract_text(llm_response.content)
         if not content:
             return None
 
+        # Reuse model name captured from before_model_callback
+        metadata = (
+            ModelMetadata(model_name=self._current_model_name)
+            if self._current_model_name
+            else None
+        )
+
         adjudication = await self._harness.adjudicate(
-            Stage.POST_MODEL, Role.MODEL, PromptContent(text=content)
+            Stage.POST_MODEL,
+            Role.MODEL,
+            PromptContent(text=content),
+            model_metadata=metadata,
         )
         self._log.info(
-            f"[SonderaHarness] After model adjudication for trajectory {self._harness.trajectory_id}"
+            "[SonderaHarness] After model adjudication for trajectory %s",
+            self._harness.trajectory_id,
         )
 
         if adjudication.decision == Decision.DENY:
@@ -260,6 +327,12 @@ class SonderaHarnessPlugin(BasePlugin):
                 content=genai_types.Content(
                     parts=[genai_types.Part(text=adjudication.reason)]
                 )
+            )
+        if adjudication.decision == Decision.ESCALATE:
+            self._log.warning(
+                "[SonderaHarness] ESCALATE: %s (trajectory %s)",
+                adjudication.reason,
+                self._harness.trajectory_id,
             )
         return None
 
@@ -286,7 +359,7 @@ class SonderaHarnessPlugin(BasePlugin):
         Returns:
             Dict result if policy violation (stops tool), None to proceed.
         """
-        self._log.debug(f"[SonderaHarness] Before tool: {tool.name}")
+        self._log.debug("[SonderaHarness] Before tool: %s", tool.name)
 
         adjudication = await self._harness.adjudicate(
             Stage.PRE_TOOL,
@@ -294,11 +367,18 @@ class SonderaHarnessPlugin(BasePlugin):
             ToolRequestContent(tool_id=tool.name, args=tool_args),
         )
         self._log.info(
-            f"[SonderaHarness] Before tool adjudication for trajectory {self._harness.trajectory_id}"
+            "[SonderaHarness] Before tool adjudication for trajectory %s",
+            self._harness.trajectory_id,
         )
 
         if adjudication.decision == Decision.DENY:
             return {"error": f"Tool blocked: {adjudication.reason}"}
+        if adjudication.decision == Decision.ESCALATE:
+            self._log.warning(
+                "[SonderaHarness] ESCALATE: %s (trajectory %s)",
+                adjudication.reason,
+                self._harness.trajectory_id,
+            )
         return None
 
     async def after_tool_callback(
@@ -322,7 +402,7 @@ class SonderaHarnessPlugin(BasePlugin):
         Returns:
             Modified result dict if policy violation, None to use original.
         """
-        self._log.debug(f"[SonderaHarness] After tool: {tool.name}")
+        self._log.debug("[SonderaHarness] After tool: %s", tool.name)
 
         adjudication = await self._harness.adjudicate(
             Stage.POST_TOOL,
@@ -330,11 +410,18 @@ class SonderaHarnessPlugin(BasePlugin):
             ToolResponseContent(tool_id=tool.name, response=result),
         )
         self._log.info(
-            f"[SonderaHarness] After tool adjudication for trajectory {self._harness.trajectory_id}"
+            "[SonderaHarness] After tool adjudication for trajectory %s",
+            self._harness.trajectory_id,
         )
 
         if adjudication.decision == Decision.DENY:
             return {"error": f"Tool result blocked: {adjudication.reason}"}
+        if adjudication.decision == Decision.ESCALATE:
+            self._log.warning(
+                "[SonderaHarness] ESCALATE: %s (trajectory %s)",
+                adjudication.reason,
+                self._harness.trajectory_id,
+            )
         return None
 
     # -------------------------------------------------------------------------
@@ -356,7 +443,7 @@ class SonderaHarnessPlugin(BasePlugin):
         Returns:
             None to use original event.
         """
-        self._log.debug(f"[SonderaHarness] Event: {event.author}")
+        self._log.debug("[SonderaHarness] Event: %s", event.author)
         return None
 
     # -------------------------------------------------------------------------
@@ -376,7 +463,8 @@ class SonderaHarnessPlugin(BasePlugin):
             invocation_context: The context for the entire invocation.
         """
         self._log.info(
-            f"[SonderaHarness] Finalizing trajectory {self._harness.trajectory_id}"
+            "[SonderaHarness] Finalizing trajectory %s",
+            self._harness.trajectory_id,
         )
         await self._harness.finalize()
 

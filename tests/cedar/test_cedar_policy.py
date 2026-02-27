@@ -650,7 +650,7 @@ class TestCedarPolicyHarnessEscalate:
 
         @id("escalate-execute")
         {escalate_annotation}
-        @reason("Commands require approval")
+        @description("Commands require approval")
         forbid(principal, action == CodingAgent::Action::"execute_command", resource);
         """
         harness = CedarPolicyHarness(policy_set=policy, schema=schema)
@@ -714,12 +714,12 @@ class TestCedarPolicyHarnessEscalate:
 
         @id("escalate-1")
         @escalate("team-a")
-        @reason("Reason A")
+        @description("Reason A")
         forbid(principal, action == CodingAgent::Action::"execute_command", resource);
 
         @id("escalate-2")
         @escalate("team-b")
-        @reason("Reason B")
+        @description("Reason B")
         forbid(principal, action == CodingAgent::Action::"execute_command", resource);
         """
         harness = CedarPolicyHarness(policy_set=policy, schema=schema)

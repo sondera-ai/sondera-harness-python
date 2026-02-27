@@ -162,8 +162,10 @@ class TestSonderaHarnessMiddlewareHooks:
         state = {"messages": [HumanMessage(content="Hello")]}
         result = await mock_middleware.abefore_agent(state, Runtime())
 
-        # Should return trajectory_id from initialization
-        assert result == {"trajectory_id": "test-trajectory-123"}
+        # Should return trajectory_id and session_id from initialization
+        assert result is not None
+        assert result["trajectory_id"] == "test-trajectory-123"
+        assert result["session_id"].startswith("session-")
         mock_middleware._harness.initialize.assert_called_once()
         mock_middleware._harness.adjudicate.assert_called_once()
 
@@ -411,16 +413,22 @@ class TestSonderaHarnessMiddlewareHooks:
     async def test_aafter_agent_finalizes_trajectory(
         self, mock_middleware: SonderaHarnessMiddleware
     ):
-        """Test that aafter_agent finalizes the trajectory."""
+        """Test that aafter_agent finalizes the trajectory and preserves session_id."""
         mock_middleware._harness.adjudicate.return_value = Adjudication(
             decision=Decision.ALLOW, reason="Allowed"
         )
 
-        state = {"messages": [AIMessage(content="Final response")]}
+        state = {
+            "messages": [AIMessage(content="Final response")],
+            "session_id": "session-abc",
+        }
         result = await mock_middleware.aafter_agent(state, Runtime())
 
-        # Should return trajectory_id to preserve for next conversation
-        assert result == {"trajectory_id": "test-trajectory-123"}
+        # Should return both trajectory_id and session_id
+        assert result == {
+            "trajectory_id": "test-trajectory-123",
+            "session_id": "session-abc",
+        }
         mock_middleware._harness.finalize.assert_called_once()
 
     @pytest.mark.asyncio
@@ -443,46 +451,52 @@ class TestSonderaHarnessMiddlewareHooks:
         mock_middleware._harness.adjudicate.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_abefore_agent_resumes_existing_trajectory(
+    async def test_abefore_agent_reuses_session_id_across_turns(
         self, mock_middleware: SonderaHarnessMiddleware
     ):
-        """Test that abefore_agent resumes existing trajectory when trajectory_id is provided."""
+        """Test that abefore_agent reuses session_id from state on subsequent turns."""
         mock_middleware._harness.adjudicate.return_value = Adjudication(
             decision=Decision.ALLOW, reason="Allowed"
         )
 
         state = {
             "messages": [HumanMessage(content="Hello")],
-            "trajectory_id": "existing-trajectory-456",
+            "session_id": "session-existing-789",
         }
         result = await mock_middleware.abefore_agent(state, Runtime())
 
-        # Should resume existing trajectory, not initialize new one
-        mock_middleware._harness.resume.assert_called_once_with(
-            "existing-trajectory-456"
-        )
-        mock_middleware._harness.initialize.assert_not_called()
+        # Should initialize a new per-turn trajectory (not resume)
+        mock_middleware._harness.initialize.assert_called_once()
+        _, kwargs = mock_middleware._harness.initialize.call_args
+        assert kwargs["session_id"] == "session-existing-789"
+        mock_middleware._harness.resume.assert_not_called()
         mock_middleware._harness.adjudicate.assert_called_once()
-        # Should not return trajectory_id since it was already in state
-        assert result is None
+        # Should return same session_id and new trajectory_id
+        assert result is not None
+        assert result["session_id"] == "session-existing-789"
+        assert result["trajectory_id"] == "test-trajectory-123"
 
 
 class TestStateClass:
-    """Tests for State class with trajectory_id support."""
+    """Tests for State class with trajectory_id and session_id support."""
 
     def test_state_has_trajectory_id_field(self):
         """Test that State class supports trajectory_id field."""
-        # Should be able to create State with trajectory_id
         state = State(messages=[], trajectory_id="test-123")
         assert state["trajectory_id"] == "test-123"
         assert "messages" in state
 
-    def test_state_trajectory_id_is_not_required(self):
-        """Test that trajectory_id field is optional in State."""
-        # Should be able to create State without trajectory_id
+    def test_state_has_session_id_field(self):
+        """Test that State class supports session_id field."""
+        state = State(messages=[], session_id="session-abc")
+        assert state["session_id"] == "session-abc"
+
+    def test_state_fields_are_optional(self):
+        """Test that trajectory_id and session_id are optional in State."""
         state = State(messages=[])
         assert "messages" in state
         assert state.get("trajectory_id") is None
+        assert state.get("session_id") is None
 
 
 class TestStrategyEnum:

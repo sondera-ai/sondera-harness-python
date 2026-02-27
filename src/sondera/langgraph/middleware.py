@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import logging
+import time
+import uuid
 from collections.abc import Awaitable, Callable
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from langchain.agents import AgentState
@@ -21,14 +23,16 @@ from langgraph.runtime import Runtime
 from langgraph.types import Command
 
 try:
-    from langgraph.graph import END
+    import langgraph.graph
+
+    END: str = getattr(langgraph.graph, "END", "__end__")
 except ImportError:
-    # Fallback for older versions
-    END = "__end__"
+    END: str = "__end__"
 
 from sondera.harness import Harness
 from sondera.types import (
     Decision,
+    ModelMetadata,
     PromptContent,
     Role,
     Stage,
@@ -39,7 +43,7 @@ from sondera.types import (
 _LOGGER = logging.getLogger(__name__)
 
 
-class Strategy(str, Enum):
+class Strategy(StrEnum):
     """Strategy for handling policy violations."""
 
     BLOCK = "block"
@@ -52,6 +56,7 @@ class State(AgentState):
     """Agent state with additional Sondera Harness-related fields."""
 
     trajectory_id: str | None
+    session_id: str | None
 
 
 class SonderaHarnessMiddleware(AgentMiddleware[State]):
@@ -70,7 +75,7 @@ class SonderaHarnessMiddleware(AgentMiddleware[State]):
         from langchain.agents import create_agent
 
         # Create a harness instance
-        harness = RemoteHarness(
+        harness = SonderaRemoteHarness(
             endpoint="localhost:50051",
             organization_id="my-tenant",
             agent=Agent(
@@ -133,23 +138,22 @@ class SonderaHarnessMiddleware(AgentMiddleware[State]):
         Returns:
             None to continue, or a dict with state updates (including optional jump_to)
         """
-        trajectory_id = state.get("trajectory_id")
-        updates = {}
+        # Resolve or generate a session_id for grouping trajectories
+        session_id = state.get("session_id")
+        if not session_id or not session_id.strip():
+            session_id = f"session-{uuid.uuid4()}"
 
-        if trajectory_id and trajectory_id.strip():  # Check for non-empty string
-            # Resume an existing trajectory.
-            await self._harness.resume(trajectory_id)
-            self._log.debug(
-                f"[SonderaHarness] Resumed trajectory: {self._harness.trajectory_id}"
-            )
-        else:
-            # Initialize a new trajectory if needed.
-            if self._harness.trajectory_id is None:
-                await self._harness.initialize()
-            updates["trajectory_id"] = self._harness.trajectory_id
-            self._log.debug(
-                f"[SonderaHarness] Initialized trajectory: {self._harness.trajectory_id}"
-            )
+        # Each turn gets its own trajectory, linked by session_id
+        await self._harness.initialize(session_id=session_id)
+        updates: dict[str, Any] = {
+            "trajectory_id": self._harness.trajectory_id,
+            "session_id": session_id,
+        }
+        self._log.debug(
+            "[SonderaHarness] Initialized trajectory %s (session %s)",
+            self._harness.trajectory_id,
+            session_id,
+        )
 
         # Extract user message from state
         user_message = _extract_last_user_message(state)
@@ -195,6 +199,12 @@ class SonderaHarnessMiddleware(AgentMiddleware[State]):
                 ],
                 **updates,  # Include trajectory_id in the response
             }
+
+        if adjudication.decision == Decision.ESCALATE:
+            self._log.info(
+                f"[SonderaHarness] Escalation flagged for trajectory "
+                f"{self._harness.trajectory_id}: {adjudication.reason}"
+            )
 
         # Return trajectory_id if we just created one
         return updates if updates else None
@@ -244,9 +254,24 @@ class SonderaHarnessMiddleware(AgentMiddleware[State]):
                         result=[message],
                         structured_response=None,
                     )
+            elif pre_adjudication.decision == Decision.ESCALATE:
+                self._log.info(
+                    f"[SonderaHarness] Pre-model escalation flagged for trajectory "
+                    f"{self._harness.trajectory_id}: {pre_adjudication.reason}"
+                )
 
-        # Call the actual model
+        # Extract model name (model_name on concrete classes, get_name() as fallback)
+        model_name = getattr(request.model, "model_name", None) or (
+            request.model.get_name() if request.model else None
+        )
+
+        # Call the actual model and measure latency
+        t0 = time.monotonic()
         response: ModelResponse = await handler(request)
+        latency_ms = int((time.monotonic() - t0) * 1000)
+
+        # Build model metadata with name and latency
+        metadata = ModelMetadata(model_name=model_name, latency_ms=latency_ms)
 
         # Post-model check on each AI message in the response
         sanitized_messages: list[BaseMessage] = []
@@ -256,6 +281,7 @@ class SonderaHarnessMiddleware(AgentMiddleware[State]):
                     Stage.POST_MODEL,
                     Role.MODEL,
                     PromptContent(text=message.text),
+                    model_metadata=metadata,
                 )
                 self._log.info(
                     f"[SonderaHarness] Post-model Adjudication for trajectory {self._harness.trajectory_id}"
@@ -278,6 +304,11 @@ class SonderaHarnessMiddleware(AgentMiddleware[State]):
                             structured_response=response.structured_response,
                         )
                 else:
+                    if post_adjudication.decision == Decision.ESCALATE:
+                        self._log.info(
+                            f"[SonderaHarness] Post-model escalation flagged for trajectory "
+                            f"{self._harness.trajectory_id}: {post_adjudication.reason}"
+                        )
                     sanitized_messages.append(message)
             else:
                 self._log.debug(
@@ -351,6 +382,12 @@ class SonderaHarnessMiddleware(AgentMiddleware[State]):
                 name=tool_name,
             )
 
+        if pre_adjudication.decision == Decision.ESCALATE:
+            self._log.info(
+                f"[SonderaHarness] Pre-tool escalation flagged for {tool_name} in trajectory "
+                f"{self._harness.trajectory_id}: {pre_adjudication.reason}"
+            )
+
         # Execute the actual tool
         result = await handler(request)
 
@@ -394,6 +431,12 @@ class SonderaHarnessMiddleware(AgentMiddleware[State]):
                     name=tool_name,
                 )
 
+            if post_adjudication.decision == Decision.ESCALATE:
+                self._log.info(
+                    f"[SonderaHarness] Post-tool escalation flagged for {tool_name} in trajectory "
+                    f"{self._harness.trajectory_id}: {post_adjudication.reason}"
+                )
+
         return result
 
     async def aafter_agent(
@@ -410,11 +453,21 @@ class SonderaHarnessMiddleware(AgentMiddleware[State]):
         """
         # Finalize the trajectory
         trajectory_id = self._harness.trajectory_id
+        session_id = state.get("session_id")
         await self._harness.finalize()
-        self._log.info(f"[SonderaHarness] Trajectory finalized: {trajectory_id}")
+        self._log.info(
+            "[SonderaHarness] Trajectory %s finalized (session %s)",
+            trajectory_id,
+            session_id,
+        )
 
-        # Preserve trajectory_id in final state for next conversation
-        return {"trajectory_id": trajectory_id} if trajectory_id else None
+        # Preserve session_id for the next turn; trajectory_id is per-turn
+        updates: dict[str, Any] = {}
+        if trajectory_id:
+            updates["trajectory_id"] = trajectory_id
+        if session_id:
+            updates["session_id"] = session_id
+        return updates if updates else None
 
 
 def _extract_last_user_message(state: AgentState) -> BaseMessage | None:

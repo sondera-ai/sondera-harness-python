@@ -62,14 +62,14 @@ Platform evaluation sends requests to Sondera (cloud, self-hosted, or VPC). Poli
 
 ```bash
 export SONDERA_HARNESS_ENDPOINT="your-harness.sondera.ai:443"
-export SONDERA_API_TOKEN="<YOUR_SONDERA_API_KEY>"
+export SONDERA_API_TOKEN="<YOUR_API_TOKEN>"
 ```
 
 Or create a `.env` file or `~/.sondera/env`:
 
 ```
 SONDERA_HARNESS_ENDPOINT=your-harness.sondera.ai:443
-SONDERA_API_TOKEN=<YOUR_SONDERA_API_KEY>
+SONDERA_API_TOKEN=<YOUR_API_TOKEN>
 ```
 
 ### Setup

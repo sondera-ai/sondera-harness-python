@@ -5,7 +5,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
 
 
@@ -123,21 +123,26 @@ class TrajectoryStep(Model):
     role: Role
     """ Role of the step.
     """
-    state: dict[str, Any] = Field(default_factory=dict)
-    """ State of the step.
-    """
     stage: Stage
     """ Stage of the step.
     """
     created_at: datetime = Field(default_factory=datetime.now)
     """ Created at timestamp.
     """
-    context: Any | None = None
-    """ Context of the step.
-    """
     content: Any
     """ Content of the step.
     """
+
+
+class DecisionSummary(Model):
+    """Summary of adjudication decisions for a trajectory."""
+
+    allow_count: int = 0
+    """Number of steps with ALLOW decision."""
+    deny_count: int = 0
+    """Number of steps with DENY decision."""
+    escalate_count: int = 0
+    """Number of steps with ESCALATE decision."""
 
 
 class Trajectory(Model):
@@ -164,6 +169,13 @@ class Trajectory(Model):
     """ Ended at timestamp.
     """
     steps: list[TrajectoryStep] = Field(default_factory=list)
+    raw_step_count: int | None = Field(default=None)
+    """Server-reported step count from list responses. None when not reported."""
+    decision_summary: DecisionSummary | None = Field(default=None)
+    """Server-reported decision counts from list responses. None when not reported."""
+    session_id: str | None = Field(default=None)
+    """Groups trajectories belonging to the same conversation session.
+    All trajectories with the same session_id form an ordered sequence of turns."""
 
     @property
     def duration(self) -> float | None:
@@ -174,8 +186,57 @@ class Trajectory(Model):
 
     @property
     def step_count(self) -> int:
-        """Get the total number of steps."""
-        return len(self.steps)
+        """Get the total number of steps.
+
+        Returns len(steps) when steps are loaded (get_trajectory),
+        otherwise the server-reported raw_step_count from list_trajectories.
+        """
+        if self.steps:
+            return len(self.steps)
+        if self.raw_step_count is not None:
+            return self.raw_step_count
+        return 0
+
+    @property
+    def deny_count(self) -> int:
+        """Count of denied steps. Uses decision_summary when available."""
+        if self.decision_summary is not None:
+            return self.decision_summary.deny_count
+        return sum(
+            1
+            for step in self.steps
+            if (adj := getattr(step, "adjudication", None)) is not None
+            and adj.decision == Decision.DENY
+        )
+
+    @property
+    def escalate_count(self) -> int:
+        """Count of escalated steps. Uses decision_summary when available."""
+        if self.decision_summary is not None:
+            return self.decision_summary.escalate_count
+        return sum(
+            1
+            for step in self.steps
+            if (adj := getattr(step, "adjudication", None)) is not None
+            and adj.decision == Decision.ESCALATE
+        )
+
+    @property
+    def allow_count(self) -> int:
+        """Count of allowed steps. Uses decision_summary when available."""
+        if self.decision_summary is not None:
+            return self.decision_summary.allow_count
+        return sum(
+            1
+            for step in self.steps
+            if (adj := getattr(step, "adjudication", None)) is not None
+            and adj.decision == Decision.ALLOW
+        )
+
+    @property
+    def has_violations(self) -> bool:
+        """Check if trajectory has any denied or escalated steps."""
+        return self.deny_count > 0 or self.escalate_count > 0
 
     @property
     def is_completed(self) -> bool:
@@ -237,7 +298,7 @@ class PolicyMetadata(Model):
     id: str
     """Unique identifier of the policy."""
     description: str
-    """Human-readable description from the policy's @reason annotation."""
+    """Human-readable description from the policy's @description annotation."""
     escalate: bool = False
     """Whether this policy requires escalation to a human or other oracle to decide the final verdict."""
     escalate_arg: str = ""
@@ -255,7 +316,7 @@ class Adjudication(Model):
     """Reason for the adjudication decision."""
     policies: list[PolicyMetadata] = Field(default_factory=list)
     """Policies that determined this decision. Each entry contains the policy's
-    id, description (from @reason annotation), escalation info, and custom metadata."""
+    id, description (from @description annotation), escalation info, and custom metadata."""
 
 
 class AdjudicatedStep(Model):
@@ -282,6 +343,38 @@ class AdjudicatedTrajectory(Trajectory):
 
     steps: list[AdjudicatedStep] = Field(default_factory=list)  # type: ignore[assignment]
     """Steps of the adjudicated trajectory."""
+
+    @model_validator(mode="after")
+    def _compute_decision_summary(self) -> "AdjudicatedTrajectory":
+        """Auto-compute decision_summary from steps when the server doesn't provide one."""
+        if self.decision_summary is None and self.steps:
+            self.decision_summary = DecisionSummary(
+                allow_count=sum(
+                    1 for s in self.steps if s.adjudication.decision == Decision.ALLOW
+                ),
+                deny_count=sum(
+                    1 for s in self.steps if s.adjudication.decision == Decision.DENY
+                ),
+                escalate_count=sum(
+                    1
+                    for s in self.steps
+                    if s.adjudication.decision == Decision.ESCALATE
+                ),
+            )
+        return self
+
+
+class ModelMetadata(Model):
+    """Metadata about a model invocation for a trajectory step."""
+
+    model_name: str | None = None
+    """Name or identifier of the model (e.g., "gpt-4o", "gemini-2.5-flash")."""
+    input_tokens: int | None = None
+    """Number of input tokens consumed."""
+    output_tokens: int | None = None
+    """Number of output tokens generated."""
+    latency_ms: int | None = None
+    """Latency in milliseconds for the model call."""
 
 
 class PromptContent(Model):
@@ -332,4 +425,8 @@ class AdjudicationRecord(Model):
     step_id: str = Field(description="ID of the step that was adjudicated")
     adjudication: Adjudication = Field(
         description="The adjudication decision and reason"
+    )
+    step_index: int | None = Field(
+        default=None,
+        description="0-based position of the adjudicated step within the trajectory",
     )

@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 
-from sondera.types import Adjudication, Agent, Content, Role, Stage
+from sondera.types import Adjudication, Agent, Content, ModelMetadata, Role, Stage
 
 
 class Harness(ABC):
@@ -40,7 +40,12 @@ class Harness(ABC):
         ...
 
     @abstractmethod
-    async def initialize(self, *, agent: Agent | None = None) -> None:
+    async def initialize(
+        self,
+        *,
+        agent: Agent | None = None,
+        session_id: str | None = None,
+    ) -> None:
         """Initialize a new trajectory for the current execution.
 
         This method should:
@@ -51,6 +56,9 @@ class Harness(ABC):
         Args:
             agent: Optional agent to use for this trajectory. If provided, overrides
                    any agent set during construction.
+            session_id: Optional session identifier to group trajectories belonging
+                   to the same conversation. All trajectories with the same session_id
+                   form an ordered sequence of turns.
 
         Raises:
             ValueError: If no agent is provided and none was set during construction
@@ -79,6 +87,8 @@ class Harness(ABC):
         stage: Stage,
         role: Role,
         content: Content,
+        *,
+        model_metadata: ModelMetadata | None = None,
     ) -> Adjudication:
         """Adjudicate a trajectory step using the policy engine.
 
@@ -91,6 +101,9 @@ class Harness(ABC):
             role: The role of the actor (USER, MODEL, TOOL, SYSTEM)
             content: The content to evaluate (PromptContent, ToolRequestContent,
                      or ToolResponseContent)
+            model_metadata: Optional metadata about the model invocation
+                   (model name, token counts, latency). Typically provided
+                   for PRE_MODEL and POST_MODEL stages.
 
         Returns:
             Adjudication containing the decision and reason

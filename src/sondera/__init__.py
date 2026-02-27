@@ -67,6 +67,8 @@ from sondera.types import (
     Agent,
     Content,
     Decision,
+    DecisionSummary,
+    ModelMetadata,
     Parameter,
     PolicyEngineMode,
     PolicyMetadata,
@@ -98,6 +100,8 @@ __all__ = [
     "Trajectory",
     "TrajectoryStep",
     "TrajectoryStatus",
+    "DecisionSummary",
+    "ModelMetadata",
     "Stage",
     "Role",
     # Content types

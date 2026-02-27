@@ -74,9 +74,6 @@ venv.bak/
 # Ruff
 .ruff_cache/
 
-# uv
-uv.lock
-
 # OS
 .DS_Store
 Thumbs.db
@@ -84,7 +81,3 @@ Thumbs.db
 # Documentation build output
 site/
 docs/book/
-
-# Claude Code (local per-developer)
-CLAUDE.md
-.playwright-mcp/

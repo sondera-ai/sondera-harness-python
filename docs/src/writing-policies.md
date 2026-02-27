@@ -606,7 +606,7 @@ Use the `@escalate` annotation to flag actions that require approval before proc
 // Require approval for production deployments
 @id("production-approval-required")
 @escalate("ops-team")
-@reason("Production deployments require ops team approval")
+@description("Production deployments require ops team approval")
 forbid(principal, action == My_Agent::Action::"Deploy", resource)
 when {
   context has environment &&
@@ -616,7 +616,7 @@ when {
 // Require approval for customer-facing communications
 @id("customer-email-approval")
 @escalate("customer-success")
-@reason("Customer emails require review before sending")
+@description("Customer emails require review before sending")
 forbid(principal, action == My_Agent::Action::"SendEmail", resource)
 when {
   context has parameters &&
@@ -627,7 +627,7 @@ when {
 // Require approval for data deletion
 @id("deletion-approval")
 @escalate
-@reason("Data deletion requires approval")
+@description("Data deletion requires approval")
 forbid(principal, action == My_Agent::Action::"DeleteRecord", resource);
 ```
 
@@ -636,7 +636,7 @@ forbid(principal, action == My_Agent::Action::"DeleteRecord", resource);
 - `@escalate` is only valid on `forbid` policies
 - The optional argument (e.g., `@escalate("ops-team")`) is available as `annotation.escalate_arg` for routing
 - If ANY `forbid` without `@escalate` matches, the result is DENY (hard deny wins)
-- Use `@reason` to provide a human-readable explanation
+- Use `@description` to provide a human-readable explanation
 
 See [Decisions](concepts/decisions.md#how-escalate-works) for how to handle `Decision.ESCALATE` in your code.
 
