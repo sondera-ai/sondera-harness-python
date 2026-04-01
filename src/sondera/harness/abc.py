@@ -2,16 +2,12 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Any
 
-from sondera.types import (
-    AdjudicatedTrajectory,
-    Adjudication,
-    AdjudicationRecord,
+from sondera.types import (  # noqa: F401
+    Adjudicated,
     Agent,
-    Content,
-    ModelMetadata,
-    Role,
-    Stage,
+    Event,
     Trajectory,
+    TrajectoryEventStream,
     TrajectoryStatus,
 )
 
@@ -21,17 +17,23 @@ class Harness(ABC):
 
     This ABC defines the core contract for harness implementations that integrate
     with the Sondera Platform for agent governance, trajectory management, and
-    real-time step adjudication.
+    real-time event adjudication.
+
+    The interface uses the Trajectory Event Model directly.  Callers build
+    ``Event`` objects wrapping typed payloads (``ToolCall``, ``Prompt``,
+    ``Thought``, etc.) and receive ``Adjudicated`` verdicts.
 
     Subclasses must implement:
         - resume: Resume an existing trajectory for continued execution
         - initialize: Set up a new trajectory for agent execution
         - finalize: Complete and save the current trajectory
-        - adjudicate: Evaluate a trajectory step against policies
+        - adjudicate: Submit a single event for policy evaluation
+        - adjudicates: Submit a batch of events for policy evaluation
 
     Attributes:
         trajectory_id: The current active trajectory ID (None if no active trajectory)
-        agent: The agent being governed (may be None until initialize is called)
+        agent: The ``Agent`` identity being governed
+               (may be None until initialize is called)
     """
 
     _trajectory_id: str | None
@@ -48,8 +50,21 @@ class Harness(ABC):
         return self._agent
 
     @abstractmethod
-    async def resume(self, trajectory_id, *, agent: Agent | None = None) -> None:
-        """Resume an existing trajectory for the given agent."""
+    async def resume(self, trajectory_id: str, *, agent: Agent | None = None) -> None:
+        """Resume an existing trajectory for continued execution.
+
+        Sends a ``Resumed`` lifecycle event and sets the active trajectory.
+
+        Args:
+            trajectory_id: The ID of the trajectory to resume.
+            agent: Optional agent override. If provided, replaces the agent
+                   set during construction.
+
+        Raises:
+            RuntimeError: If there is already an active trajectory.
+            TrajectoryError: If the trajectory does not exist or belongs
+                   to a different agent.
+        """
         ...
 
     @abstractmethod
@@ -80,13 +95,17 @@ class Harness(ABC):
         ...
 
     @abstractmethod
-    async def finalize(self) -> None:
+    async def finalize(self, *, summary: str | None = None) -> None:
         """Finalize the current trajectory and save artifacts.
 
         This method should:
         1. Mark the trajectory as completed
         2. Persist any remaining trajectory data
         3. Clear the active trajectory state
+
+        Args:
+            summary: Optional free-text summary of the completed trajectory turn
+                     forwarded to the ``Completed`` lifecycle event.
 
         Raises:
             ValueError: If no active trajectory exists (initialize not called)
@@ -95,35 +114,67 @@ class Harness(ABC):
         ...
 
     @abstractmethod
-    async def adjudicate(
-        self,
-        stage: Stage,
-        role: Role,
-        content: Content,
-        *,
-        model_metadata: ModelMetadata | None = None,
-    ) -> Adjudication:
-        """Adjudicate a trajectory step using the policy engine.
+    async def fail(self, *, reason: str) -> None:
+        """Mark the current trajectory as failed due to an unexpected error.
 
-        Evaluates the given step against configured policies and returns
-        an adjudication decision (ALLOW, DENY, or ESCALATE).
+        Sends a ``Failed`` lifecycle event and clears the active trajectory.
+        Call this instead of ``finalize`` when the agent encountered an
+        unhandled exception so the platform can distinguish clean completions
+        from error terminations.
 
         Args:
-            stage: The execution stage (PRE_RUN, PRE_MODEL, POST_MODEL,
-                   PRE_TOOL, POST_TOOL, POST_RUN)
-            role: The role of the actor (USER, MODEL, TOOL, SYSTEM)
-            content: The content to evaluate (PromptContent, ToolRequestContent,
-                     or ToolResponseContent)
-            model_metadata: Optional metadata about the model invocation
-                   (model name, token counts, latency). Typically provided
-                   for PRE_MODEL and POST_MODEL stages.
-
-        Returns:
-            Adjudication containing the decision and reason
+            reason: Human-readable description of the failure cause.
 
         Raises:
-            RuntimeError: If no active trajectory exists (initialize not called)
-            ValueError: If the content type is not supported
+            ValueError: If no active trajectory exists (initialize not called).
+        """
+        ...
+
+    @abstractmethod
+    async def adjudicate(
+        self,
+        event: Event,
+    ) -> Adjudicated:
+        """Adjudicate a trajectory event against configured policies.
+
+        Submits the event to the policy engine and returns an ``Adjudicated``
+        verdict containing the decision (Allow, Deny, or Escalate), an
+        optional human-readable reason, and policy metadata.
+
+        The caller is responsible for constructing the ``Event`` with the
+        appropriate payload (``ToolCall``, ``Prompt``, ``Thought``, etc.),
+        ``Agent``, and ``trajectory_id``.
+
+        Args:
+            event: An ``Event`` wrapping a typed payload and trajectory metadata.
+
+        Returns:
+            ``Adjudicated`` containing the decision, reason, and policy metadata.
+
+        Raises:
+            RuntimeError: If no active trajectory exists (initialize not called).
+        """
+        ...
+
+    @abstractmethod
+    async def adjudicates(
+        self,
+        events: list[Event],
+    ) -> list[Adjudicated]:
+        """Adjudicate a batch of events against configured policies.
+
+        Submits each event to the policy engine and returns one ``Adjudicated``
+        verdict per input event, preserving order.
+
+        Args:
+            events: A list of ``Event`` objects to evaluate.
+
+        Returns:
+            A list of ``Adjudicated`` verdicts, one per input event,
+            in the same order as the input.
+
+        Raises:
+            RuntimeError: If no active trajectory exists (initialize not called).
         """
         ...
 
@@ -147,13 +198,17 @@ class Harness(ABC):
         status: TrajectoryStatus | None = None,
         page_size: int = 50,
         page_token: str = "",
-        min_step_count: int = 0,
         session_id: str | None = None,
     ) -> tuple[list[Trajectory], str]: ...
 
     @abstractmethod
-    async def get_trajectory(self, trajectory_id: str) -> AdjudicatedTrajectory | None:
-        """Return trajectory with fully hydrated AdjudicatedSteps."""
+    async def get_trajectory(self, trajectory_id: str) -> Trajectory | None:
+        """Return a trajectory by ID with its events.
+
+        Returns:
+            ``Trajectory`` with events populated,
+            or ``None`` if the trajectory does not exist.
+        """
         ...
 
     @abstractmethod
@@ -162,8 +217,16 @@ class Harness(ABC):
         agent_id: str | None = None,
         page_size: int = 50,
         page_token: str = "",
-    ) -> tuple[list[AdjudicationRecord], str]:
-        """Only deny/escalate records."""
+    ) -> tuple[list[Event], str]:
+        """List adjudication events (deny/escalate only).
+
+        Returns full ``Event`` objects (not bare ``Adjudicated`` payloads)
+        so callers can access trajectory_id, agent, and other context.
+
+        Returns:
+            Tuple of (list of ``Event`` wrapping ``Adjudicated`` payloads,
+            next page token).
+        """
         ...
 
     @abstractmethod
@@ -175,4 +238,26 @@ class Harness(ABC):
         analytics: list[str] | None = None,
     ) -> dict[str, Any]:
         """Supported analytics: ``trajectory_count``."""
+        ...
+
+    @abstractmethod
+    async def stream_trajectories(
+        self,
+        filter: str = "",
+    ) -> TrajectoryEventStream:
+        """Open a server-streaming subscription for new trajectory events.
+
+        Returns a :class:`TrajectoryEventStream` async iterator that yields
+        :class:`TrajectoryEventNotification` objects as they arrive.
+
+        Args:
+            filter: Optional filter expression
+                    (e.g., ``'agent = "agents/claude-code"'``).
+
+        Returns:
+            A :class:`TrajectoryEventStream` async iterator.
+
+        Raises:
+            NotImplementedError: If the implementation does not support streaming.
+        """
         ...

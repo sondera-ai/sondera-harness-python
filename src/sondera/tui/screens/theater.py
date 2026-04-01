@@ -18,12 +18,13 @@ from textual.screen import Screen
 from textual.widget import Widget
 from textual.widgets import Button, Footer, Header, Static
 
+from sondera.tui.events import EventStep, correlate_events, parse_ts
 from sondera.tui.theater.events import PlaybackComplete, PlaybackReset, StepEvent
 from sondera.tui.theater.player import TrajectoryPlayer
 from sondera.tui.theater.plugin import TheaterPlugin
 from sondera.tui.theater.plugins import AVAILABLE_PLUGINS, EKGPlugin
 from sondera.tui.theater.widgets import AnimationCanvas, VisualizationPalette
-from sondera.types import AdjudicatedTrajectory, Decision, Role
+from sondera.types import Decision, Trajectory
 
 
 class FocusableStepLog(ScrollableContainer):
@@ -668,10 +669,11 @@ class TrajectoryTheater(Screen):
     def __init__(self, trajectory_file: Path | None = None) -> None:
         super().__init__()
         self._trajectory_file = trajectory_file
-        self._trajectories: list[AdjudicatedTrajectory] = []
-        self._grouped: dict[str, list[AdjudicatedTrajectory]] = {}
+        self._trajectories: list[Trajectory] = []
+        self._grouped: dict[str, list[Trajectory]] = {}
         self._player: TrajectoryPlayer | None = None
-        self._current_traj: AdjudicatedTrajectory | None = None
+        self._current_traj: Trajectory | None = None
+        self._current_steps: list[EventStep] = []
         self._selected_traj_id: str | None = None
         self._expanded_agents: set[str] = set()
         self._widget_data: dict[int, dict] = {}
@@ -840,11 +842,11 @@ class TrajectoryTheater(Screen):
             self.notify("No trajectories found", severity="warning")
             return
 
-        self._trajectories.sort(key=lambda t: t.created_at, reverse=True)
+        self._trajectories.sort(key=lambda t: parse_ts(t.create_time), reverse=True)
 
         self._grouped = defaultdict(list)
         for traj in self._trajectories:
-            self._grouped[traj.agent_id].append(traj)
+            self._grouped[traj.agent].append(traj)
 
         self._expanded_agents = set(self._grouped.keys())
         self._build_trajectory_list()
@@ -866,7 +868,7 @@ class TrajectoryTheater(Screen):
             trajectories = self._grouped[agent_id]
             is_expanded = agent_id in self._expanded_agents
 
-            has_selection = any(t.id == self._selected_traj_id for t in trajectories)
+            has_selection = any(t.name == self._selected_traj_id for t in trajectories)
 
             arrow = "▼" if is_expanded else "▶"
             name = agent_id[:22] + "…" if len(agent_id) > 22 else agent_id
@@ -882,22 +884,26 @@ class TrajectoryTheater(Screen):
 
             if is_expanded:
                 for traj in trajectories:
-                    date = traj.created_at.strftime("%b %d %H:%M")
-                    steps = len(traj.steps)
-                    item_text = f"  {date} [{steps}]"
+                    date = parse_ts(traj.create_time).strftime("%b %d %H:%M")
+                    steps = correlate_events(traj.events or [])
+                    item_text = f"  {date} [{len(steps)}]"
 
                     item_classes = "traj-item"
-                    if traj.id == self._selected_traj_id:
+                    if traj.name == self._selected_traj_id:
                         item_classes += " selected"
 
                     item = Static(item_text, classes=item_classes)
-                    self._widget_data[id(item)] = {"type": "traj", "traj_id": traj.id}
+                    self._widget_data[id(item)] = {
+                        "type": "traj",
+                        "traj_id": traj.name,
+                    }
                     traj_list.mount(item)
 
-    def _select_trajectory(self, traj: AdjudicatedTrajectory) -> None:
+    def _select_trajectory(self, traj: Trajectory) -> None:
         """Select a trajectory for playback."""
         self._current_traj = traj
-        self._selected_traj_id = traj.id
+        self._current_steps = correlate_events(traj.events or [])
+        self._selected_traj_id = traj.name
         self._step_history = []
         self._step_widgets = {}
         self._selected_log_step = 0  # Reset to first step
@@ -917,33 +923,34 @@ class TrajectoryTheater(Screen):
 
         self._loading_trajectory = False
 
-        date_str = traj.created_at.strftime("%Y-%m-%d %H:%M")
-        self.query_one("#header-agent", Static).update(f"[bold]{traj.agent_id}[/]")
+        date_str = parse_ts(traj.create_time).strftime("%Y-%m-%d %H:%M")
+        self.query_one("#header-agent", Static).update(f"[bold]{traj.agent}[/]")
         self.query_one("#header-info", Static).update(
-            f"{date_str}  1/{len(traj.steps)}"
+            f"{date_str}  1/{len(self._current_steps)}"
         )
 
-        self._update_timeline(0, len(traj.steps))
+        self._update_timeline(0, len(self._current_steps))
         self._update_selection_highlight()
 
         # Highlight first step
-        if traj.steps:
+        if self._current_steps:
             self._highlight_step(0)
 
-    def _load_all_steps(self, traj: AdjudicatedTrajectory) -> None:
+    def _load_all_steps(self, traj: Trajectory) -> None:
         """Load all steps from a trajectory into the log and animation."""
-        for i, step in enumerate(traj.steps):
+        steps = correlate_events(traj.events or [])
+        for i, step in enumerate(steps):
             event = StepEvent(
                 step_index=i,
-                total_steps=len(traj.steps),
-                stage=step.step.stage,
-                role=step.step.role,
-                decision=step.adjudication.decision,
-                reason=step.adjudication.reason,
-                content=step.step.content,
-                timestamp=step.step.created_at,
+                total_steps=len(steps),
+                stage=step.stage,
+                role=step.role,
+                decision=step.decision,
+                reason=step.reason,
+                content=step.payload,
+                timestamp=step.timestamp,
                 delta_ms=0,
-                policy_ids=[p.id for p in step.adjudication.policies],
+                policy_ids=[p.policy_id for p in step.policies if p.policy_id],
             )
             self._step_history.append(event)
             self._add_step_to_log(event, highlight=False)
@@ -972,24 +979,26 @@ class TrajectoryTheater(Screen):
                     child.remove_class("current")
 
         # Role with single letter marker (matches visualization)
-        role_markers = {Role.USER: "U", Role.MODEL: "M", Role.TOOL: "T"}
-        role_names = {Role.USER: "USER", Role.MODEL: "MODEL", Role.TOOL: "TOOL"}
+        role_markers = {"user": "U", "model": "M", "tool": "T"}
+        role_names = {"user": "USER", "model": "MODEL", "tool": "TOOL"}
         role_marker = role_markers.get(event.role, "?")
         role_name = role_names.get(event.role, "?")
-        role_class = event.role.value
+        role_class = event.role
 
         # Format decision with full word
-        dec_info = {
-            Decision.ALLOW: ("✓", "ALLOW"),
-            Decision.DENY: ("✗", "DENY"),
-            Decision.ESCALATE: ("⚠", "ESCALATE"),
-        }
-        dec_symbol, dec_text = dec_info.get(event.decision, ("?", "?"))
-        dec_class = event.decision.value
+        if event.decision == Decision.Deny:
+            dec_symbol, dec_text = "✗", "DENY"
+        elif event.decision == Decision.Escalate:
+            dec_symbol, dec_text = "⚠", "ESCALATE"
+        elif event.decision == Decision.Allow:
+            dec_symbol, dec_text = "✓", "ALLOW"
+        else:
+            dec_symbol, dec_text = "?", "?"
+        dec_class = str(event.decision)
 
         # Format content - show rule reason and policy IDs for DENY/ESCALATE
         content = self._format_content(event)
-        if event.decision == Decision.DENY:
+        if event.decision == Decision.Deny:
             # Show reason and policy IDs prominently before content
             reason_text = event.reason or "blocked"
             if event.policy_ids:
@@ -997,7 +1006,7 @@ class TrajectoryTheater(Screen):
                 display_content = f"[bold #BF616A]«{reason_text}»[/] [dim #BF616A]({policies})[/] {content}"
             else:
                 display_content = f"[bold #BF616A]«{reason_text}»[/] {content}"
-        elif event.decision == Decision.ESCALATE:
+        elif event.decision == Decision.Escalate:
             reason_text = event.reason or "escalated"
             if event.policy_ids:
                 policies = ", ".join(event.policy_ids)
@@ -1078,7 +1087,7 @@ class TrajectoryTheater(Screen):
                 agent_id = data["agent_id"]
                 trajectories = self._grouped.get(agent_id, [])
                 has_selection = any(
-                    t.id == self._selected_traj_id for t in trajectories
+                    t.name == self._selected_traj_id for t in trajectories
                 )
                 if has_selection:
                     child.add_class("has-selection")
@@ -1109,7 +1118,7 @@ class TrajectoryTheater(Screen):
     def on_timeline_scrubber_seeked(self, event: TimelineScrubber.Seeked) -> None:
         """Handle scrubber drag to seek."""
         if self._player and self._current_traj:
-            total = len(self._current_traj.steps)
+            total = len(self._current_steps)
             step = int(event.progress * (total - 1))
             step = max(0, min(step, total - 1))
             self.seek_to_step(step)
@@ -1126,7 +1135,7 @@ class TrajectoryTheater(Screen):
         """Handle keyboard navigation in the step log."""
         if not self._current_traj:
             return
-        total = len(self._current_traj.steps)
+        total = len(self._current_steps)
         if total == 0:
             return
 
@@ -1177,9 +1186,9 @@ class TrajectoryTheater(Screen):
             return
 
         if data["type"] == "traj":
-            traj_id = data["traj_id"]
+            target_traj_id = data["traj_id"]
             for traj in self._trajectories:
-                if traj.id == traj_id:
+                if traj.name == target_traj_id:
                     self._select_trajectory(traj)
                     if self._player:
                         self._player.play()
@@ -1196,7 +1205,9 @@ class TrajectoryTheater(Screen):
     def on_step_event(self, event: StepEvent) -> None:
         """Handle step playback."""
         if self._current_traj:
-            date_str = self._current_traj.created_at.strftime("%Y-%m-%d %H:%M")
+            date_str = parse_ts(self._current_traj.create_time).strftime(
+                "%Y-%m-%d %H:%M"
+            )
             self.query_one("#header-info", Static).update(
                 f"{date_str}  {event.step_index + 1}/{event.total_steps}"
             )
@@ -1237,15 +1248,15 @@ class TrajectoryTheater(Screen):
                             if "text" in first:
                                 return str(first["text"])[:120].replace("\n", " ")
                         return str(first)[:120]
-                    return f"[{role.value} - no content]"
+                    return f"[{role} - no content]"
                 # Handle text as string
                 if isinstance(text, str) and text.strip():
                     return text[:120].replace("\n", " ")
                 # Empty text - show stage info
-                stage = event.stage.value if hasattr(event, "stage") else ""
-                if role == Role.MODEL:
+                stage = event.stage if hasattr(event, "stage") else ""
+                if role == "model":
                     return f"[{stage}]" if stage else "[thinking...]"
-                return f"[{role.value}]"
+                return f"[{role}]"
 
             elif ctype == "tool_request":
                 tool = content.get("tool_id", "?")
@@ -1266,7 +1277,7 @@ class TrajectoryTheater(Screen):
                         return val[:120].replace("\n", " ")
                     if val:
                         return str(val)[:120]
-            return f"[{role.value}]"
+            return f"[{role}]"
 
         # Handle object content (Pydantic models)
         ctype = getattr(content, "content_type", "")
@@ -1279,10 +1290,10 @@ class TrajectoryTheater(Screen):
                 return str(first)[:120]
             if isinstance(text, str) and text.strip():
                 return text[:120].replace("\n", " ")
-            stage = event.stage.value if hasattr(event, "stage") else ""
-            if role == Role.MODEL:
+            stage = event.stage if hasattr(event, "stage") else ""
+            if role == "model":
                 return f"[{stage}]" if stage else "[thinking...]"
-            return f"[{role.value}]"
+            return f"[{role}]"
         elif ctype == "tool_request":
             tool = getattr(content, "tool_id", "?")
             args = getattr(content, "args", {})
@@ -1293,7 +1304,7 @@ class TrajectoryTheater(Screen):
             resp = str(getattr(content, "response", ""))[:60]
             return f"← {tool}: {resp}"
 
-        return str(content)[:120] if str(content).strip() else f"[{role.value}]"
+        return str(content)[:120] if str(content).strip() else f"[{role}]"
 
     def on_playback_reset(self, event: PlaybackReset) -> None:
         """Handle reset - but don't clear if we're loading a trajectory."""
@@ -1311,11 +1322,13 @@ class TrajectoryTheater(Screen):
                 self._current_plugin.on_reset()
             self._load_all_steps(self._current_traj)
 
-            date_str = self._current_traj.created_at.strftime("%Y-%m-%d %H:%M")
-            self.query_one("#header-info", Static).update(
-                f"{date_str}  1/{len(self._current_traj.steps)}"
+            date_str = parse_ts(self._current_traj.create_time).strftime(
+                "%Y-%m-%d %H:%M"
             )
-            self._update_timeline(0, len(self._current_traj.steps))
+            self.query_one("#header-info", Static).update(
+                f"{date_str}  1/{len(self._current_steps)}"
+            )
+            self._update_timeline(0, len(self._current_steps))
             self._highlight_step(0)
 
         self._update_play_button(False)
@@ -1325,7 +1338,7 @@ class TrajectoryTheater(Screen):
         self._update_play_button(False)
 
         if self._current_traj:
-            total = len(self._current_traj.steps)
+            total = len(self._current_steps)
             self._update_timeline(total - 1, total)
 
         # Loop with a small delay so user sees completed state
@@ -1463,7 +1476,7 @@ class TrajectoryTheater(Screen):
         """Move selection down in the step log."""
         if not self._current_traj or not self._step_widgets:
             return
-        total = len(self._current_traj.steps)
+        total = len(self._current_steps)
         if self._selected_log_step < total - 1:
             self._selected_log_step += 1
             self._select_log_step(self._selected_log_step)
@@ -1488,8 +1501,10 @@ class TrajectoryTheater(Screen):
 
         # Update header info
         if self._current_traj:
-            total = len(self._current_traj.steps)
-            date_str = self._current_traj.created_at.strftime("%Y-%m-%d %H:%M")
+            total = len(self._current_steps)
+            date_str = parse_ts(self._current_traj.create_time).strftime(
+                "%Y-%m-%d %H:%M"
+            )
             self.query_one("#header-info", Static).update(
                 f"{date_str}  {step_index + 1}/{total}"
             )
@@ -1504,7 +1519,7 @@ class TrajectoryTheater(Screen):
     def action_go_to_end(self) -> None:
         """Go to the last step."""
         if self._player and self._current_traj:
-            total = len(self._current_traj.steps)
+            total = len(self._current_steps)
             if total > 0:
                 self.seek_to_step(total - 1)
 
@@ -1513,7 +1528,7 @@ class TrajectoryTheater(Screen):
         if not self._trajectories or not self._selected_traj_id:
             return
         for i, traj in enumerate(self._trajectories):
-            if traj.id == self._selected_traj_id:
+            if traj.name == self._selected_traj_id:
                 if i < len(self._trajectories) - 1:
                     self._select_trajectory(self._trajectories[i + 1])
                 break
@@ -1523,7 +1538,7 @@ class TrajectoryTheater(Screen):
         if not self._trajectories or not self._selected_traj_id:
             return
         for i, traj in enumerate(self._trajectories):
-            if traj.id == self._selected_traj_id:
+            if traj.name == self._selected_traj_id:
                 if i > 0:
                     self._select_trajectory(self._trajectories[i - 1])
                 break
@@ -1541,6 +1556,6 @@ class TrajectoryTheater(Screen):
         if (
             self._player
             and self._current_traj
-            and 0 <= step_index < len(self._current_traj.steps)
+            and 0 <= step_index < len(self._current_steps)
         ):
             self._player.seek(step_index)

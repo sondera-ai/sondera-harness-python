@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-04-07
+
+### Added
+
+- `sondera auth login` command for browser-based authentication
+- `session_id` support across all framework integrations (LangGraph, ADK, Strands)
+- `TrajectoryStorage` file-based implementation
+- Additional top-level SDK exports including `Mode`, `Steering`, `Scanned`, signature guardrail result types, and agent card types
+- New SDK fields including `Agent.platform`, `Completed.summary`, and escalation metadata on `PolicyMetadata`
+- Scanned event correlation and LLM-based analysis context
+- Live `stream_trajectories` replacing poll-based TUI refresh
+- Trajectory Theater for playback visualization
+- AI Assist panel, config modal, and Flying Agents screensaver in TUI
+- Dashboard redesign with violations-first UX
+- Pagination and adjudication UX improvements in TUI
+- OpenClaw integration guide
+- Colab notebooks
+
+### Changed
+
+- `sondera` and `sondera.types` now re-export `sondera_harness_client` types
+- Remote harness and framework integrations now use the trajectory event model
+- Updated the LangGraph integration API
+- Renamed `@reason` Cedar annotation to `@description`
+- Renamed `PolicyAnnotation` to `PolicyMetadata`
+- Migrated documentation from mdBook to MkDocs
+- Standardized trajectory and agent status terminology in TUI
+
+### Removed
+
+- Standalone `Adjudication` result type; use `Adjudicated`
+- Generated protobuf modules under `sondera.proto`
+- `is_denied`, `is_allowed`, and `is_escalated` helpers (use `Decision` enum directly)
+
+### Fixed
+
+- TUI: deduplicate adjudication records in dashboard counts
+
 ## [0.6.0] - 2025-01-12
 
 ### Added

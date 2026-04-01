@@ -5,6 +5,7 @@ import json
 from langchain_core.tools import BaseTool, tool
 from pydantic import BaseModel, Field
 
+from sondera import Agent, Tool
 from sondera.langgraph.analyze import (
     _analyze_langchain_tool,
     _build_json_schema_from_function,
@@ -15,7 +16,18 @@ from sondera.langgraph.analyze import (
     analyze_langchain_tools,
     create_agent_from_langchain_tools,
 )
-from sondera.types import Agent, Tool
+
+
+def _tools(agent: Agent) -> list[Tool]:
+    """Get tools from agent card."""
+    return agent.card.react_card.tools if agent.card and agent.card.react_card else []
+
+
+def _instruction(agent: Agent) -> str | None:
+    """Get system instruction from agent card."""
+    if agent.card and agent.card.react_card:
+        return agent.card.react_card.system_instruction
+    return None
 
 
 class TestAnalyzeLangChainTool:
@@ -43,12 +55,12 @@ class TestAnalyzeLangChainTool:
 
         # Check location parameter
         location_param = next(p for p in result.parameters if p.name == "location")
-        assert location_param.type == "str"
+        assert location_param.param_type == "str"
         assert "location" in location_param.description.lower()
 
         # Check units parameter
         units_param = next(p for p in result.parameters if p.name == "units")
-        assert units_param.type == "str"
+        assert units_param.param_type == "str"
         assert "units" in units_param.description.lower()
 
     def test_analyze_tool_with_complex_types(self):
@@ -79,7 +91,7 @@ class TestAnalyzeLangChainTool:
         max_results_param = next(
             p for p in result.parameters if p.name == "max_results"
         )
-        assert max_results_param.type == "int"
+        assert max_results_param.param_type == "int"
 
     def test_analyze_tool_without_docstring(self):
         """Test analyzing a tool without docstring."""
@@ -97,7 +109,7 @@ class TestAnalyzeLangChainTool:
 
         param = result.parameters[0]
         assert param.name == "param"
-        assert param.type == "str"
+        assert param.param_type == "str"
 
     def test_analyze_tool_with_optional_types(self):
         """Test analyzing a tool with Optional type hints."""
@@ -121,16 +133,16 @@ class TestAnalyzeLangChainTool:
         required_param = next(
             p for p in result.parameters if p.name == "required_param"
         )
-        assert required_param.type == "str"
+        assert required_param.param_type == "str"
 
         optional_param = next(
             p for p in result.parameters if p.name == "optional_param"
         )
         # Accept both old-style (Union/Optional) and new-style (X | None) type syntax
         assert (
-            "Union" in optional_param.type
-            or "Optional" in optional_param.type
-            or "|" in optional_param.type
+            "Union" in optional_param.param_type
+            or "Optional" in optional_param.param_type
+            or "|" in optional_param.param_type
         )
 
 
@@ -160,9 +172,9 @@ class TestAnalyzeLangChainTools:
         )
 
         assert isinstance(result, Agent)
-        assert len(result.tools) == 2
-        assert result.tools[0].name == "tool1"
-        assert result.tools[1].name == "tool2"
+        assert len(_tools(result)) == 2
+        assert _tools(result)[0].name == "tool1"
+        assert _tools(result)[1].name == "tool2"
 
     def test_analyze_empty_tools_list(self):
         """Test analyzing empty tools list."""
@@ -174,7 +186,7 @@ class TestAnalyzeLangChainTools:
             provider_id="langchain",
         )
         assert isinstance(result, Agent)
-        assert len(result.tools) == 0
+        assert len(_tools(result)) == 0
 
 
 class TestCreateAgentFromLangChainTools:
@@ -198,15 +210,13 @@ class TestCreateAgentFromLangChainTools:
 
         assert isinstance(agent, Agent)
         assert agent.id == "test-agent"
-        assert agent.name == "Test Agent"
-        assert agent.description == "Test agent description"
-        assert agent.provider_id == "langchain"
+        assert agent.provider == "langchain"
         assert (
-            agent.instruction
+            _instruction(agent)
             == "Use the available tools to assist users effectively and safely."
         )
-        assert len(agent.tools) == 1
-        assert agent.tools[0].name == "test_tool"
+        assert len(_tools(agent)) == 1
+        assert _tools(agent)[0].name == "test_tool"
 
     def test_create_agent_with_manual_instruction(self):
         """Test agent creation with manual instruction."""
@@ -226,7 +236,7 @@ class TestCreateAgentFromLangChainTools:
             provider_id="langchain",
         )
 
-        assert agent.instruction == manual_instruction
+        assert _instruction(agent) == manual_instruction
 
     def test_create_agent_with_system_prompt_func(self):
         """Test agent creation with system prompt function."""
@@ -249,7 +259,7 @@ class TestCreateAgentFromLangChainTools:
         )
 
         assert (
-            agent.instruction
+            _instruction(agent)
             == "You are a helpful test assistant. Use the available tools to help users."
         )
 
@@ -276,7 +286,7 @@ class TestCreateAgentFromLangChainTools:
         )
 
         # Manual instruction should take precedence
-        assert agent.instruction == manual_instruction
+        assert _instruction(agent) == manual_instruction
 
     def test_create_agent_with_system_prompt_func_exception(self):
         """Test agent creation when system prompt function raises exception."""
@@ -300,7 +310,7 @@ class TestCreateAgentFromLangChainTools:
 
         # Should fall back to default instruction
         assert (
-            agent.instruction
+            _instruction(agent)
             == "Use the available tools to assist users effectively and safely."
         )
 
@@ -330,16 +340,16 @@ class TestCreateAgentFromLangChainTools:
             provider_id="langchain",
         )
 
-        assert len(agent.tools) == 3
-        assert agent.tools[0].name == "tool1"
-        assert agent.tools[1].name == "tool2"
-        assert agent.tools[2].name == "tool3"
+        assert len(_tools(agent)) == 3
+        assert _tools(agent)[0].name == "tool1"
+        assert _tools(agent)[1].name == "tool2"
+        assert _tools(agent)[2].name == "tool3"
 
         # Check that tool3 has the optional parameter
-        tool3_params = agent.tools[2].parameters
+        tool3_params = _tools(agent)[2].parameters
         assert len(tool3_params) == 2
         optional_param = next(p for p in tool3_params if p.name == "optional")
-        assert optional_param.type == "str"
+        assert optional_param.param_type == "str"
 
     def test_create_agent_with_empty_tools_list(self):
         """Test agent creation with empty tools list."""
@@ -351,9 +361,9 @@ class TestCreateAgentFromLangChainTools:
             provider_id="langchain",
         )
 
-        assert len(agent.tools) == 0
+        assert len(_tools(agent)) == 0
         assert (
-            agent.instruction
+            _instruction(agent)
             == "Use the available tools to assist users effectively and safely."
         )
 
@@ -381,7 +391,7 @@ class TestCreateAgentFromLangChainTools:
             provider_id="langchain",
         )
 
-        analyzed_tool = agent.tools[0]
+        analyzed_tool = _tools(agent)[0]
         assert analyzed_tool.source is not None
         assert len(analyzed_tool.source.code) > 0
         assert "weather_data" in analyzed_tool.source.code
@@ -408,7 +418,7 @@ class TestCreateAgentFromLangChainTools:
 
         # Should fall back to default instruction
         assert (
-            agent.instruction
+            _instruction(agent)
             == "Use the available tools to assist users effectively and safely."
         )
 
@@ -590,7 +600,7 @@ class TestJsonSchemaExtraction:
         )
 
         # Both tools should have JSON schemas
-        for tool_obj in agent.tools:
+        for tool_obj in _tools(agent):
             assert tool_obj.parameters_json_schema is not None
             # Verify it's valid JSON
             params_schema = json.loads(tool_obj.parameters_json_schema)

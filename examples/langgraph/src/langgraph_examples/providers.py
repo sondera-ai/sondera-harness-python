@@ -30,7 +30,7 @@ except ImportError:
 
 DEFAULT_MODELS: dict[Provider, str] = {
     "openai": "gpt-4o-mini",
-    "anthropic": "claude-3-7-sonnet-20250219",
+    "anthropic": "claude-sonnet-4-6",
     "google": "gemini-2.5-flash",
     "ollama": "llama3.1",
 }

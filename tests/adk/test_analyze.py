@@ -14,8 +14,13 @@ pytest.importorskip("google.adk", reason="google-adk package not installed")
 
 from google.adk import Agent as AdkAgent
 
+from sondera import Agent, Tool
 from sondera.adk.analyze import format
-from sondera.types import Agent, Tool
+
+
+def _tools(agent: Agent) -> list[Tool]:
+    """Get tools from agent card."""
+    return agent.card.react_card.tools if agent.card and agent.card.react_card else []
 
 
 def test_format_agent_with_base_tool_json_schemas():
@@ -49,12 +54,12 @@ def test_format_agent_with_base_tool_json_schemas():
     # Verify the result
     assert isinstance(result, Agent)
     assert result.id == "test-agent-1"
-    assert result.name == "Test Agent"
-    assert result.provider_id == "google"
-    assert len(result.tools) == 1
+    assert result.provider == "google-adk"
+    tools = _tools(result)
+    assert len(tools) == 1
 
     # Verify the tool has JSON schemas
-    tool = result.tools[0]
+    tool = tools[0]
     assert isinstance(tool, Tool)
     assert tool.name == "search_tool"
     assert "Search for information" in tool.description
@@ -91,7 +96,7 @@ def test_format_agent_with_base_tool_no_response_schema():
     result = format(adk_agent, agent_name="Test Agent", agent_id="test-agent-2")
 
     # Verify the result
-    tool = result.tools[0]
+    tool = _tools(result)[0]
     assert tool.parameters_json_schema is not None
     # Response schema may or may not be present depending on ADK version
     # The important thing is that parameters_json_schema is present
@@ -136,17 +141,18 @@ def test_format_agent_with_multiple_base_tools():
     )
 
     # Verify both tools have JSON schemas
-    assert len(result.tools) == 2
-    assert result.tools[0].parameters_json_schema is not None
-    assert result.tools[1].parameters_json_schema is not None
+    tools = _tools(result)
+    assert len(tools) == 2
+    assert tools[0].parameters_json_schema is not None
+    assert tools[1].parameters_json_schema is not None
 
     # Verify tool names
-    assert result.tools[0].name == "tool1"
-    assert result.tools[1].name == "tool2"
+    assert tools[0].name == "tool1"
+    assert tools[1].name == "tool2"
 
     # Verify parameters JSON schemas
-    params1_schema = json.loads(result.tools[0].parameters_json_schema)
+    params1_schema = json.loads(tools[0].parameters_json_schema)
     assert "x" in params1_schema["properties"]
 
-    params2_schema = json.loads(result.tools[1].parameters_json_schema)
+    params2_schema = json.loads(tools[1].parameters_json_schema)
     assert "y" in params2_schema["properties"]

@@ -128,7 +128,6 @@ async def build_agent(
         )
     ]
     model = make_model(provider=provider, model=model_name)
-    await harness.initialize()
 
     return create_agent(
         model=model,

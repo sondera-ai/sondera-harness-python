@@ -5,10 +5,18 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 
+from sondera import (
+    Adjudicated,
+    Agent,
+    Decision,
+    Event,
+    Mode,
+    Prompt,
+    Thought,
+)
 from sondera.harness import Harness
 from sondera.langgraph.exceptions import GuardrailViolationError
 from sondera.langgraph.graph import SonderaGraph
-from sondera.types import Adjudication, Agent, Decision
 
 
 @pytest.fixture
@@ -16,17 +24,14 @@ def mock_harness() -> MagicMock:
     """Create a mock harness for testing."""
     harness = MagicMock(spec=Harness)
     harness.adjudicate = AsyncMock(
-        return_value=Adjudication(decision=Decision.ALLOW, reason="Allowed")
+        return_value=Adjudicated(Decision.Allow, reason="Allowed")
     )
     harness.finalize = AsyncMock()
+    harness.fail = AsyncMock()
     harness.initialize = AsyncMock()
     harness.agent = Agent(
         id="test-agent",
-        provider_id="langgraph",
-        name="Test Agent",
-        description="Agent for graph testing",
-        instruction="Be helpful",
-        tools=[],
+        provider="langgraph",
     )
     harness.trajectory_id = "test-trajectory-123"
     return harness
@@ -167,8 +172,8 @@ class TestAinvoke:
     ):
         """Mock DENY adjudication, verify GuardrailViolationError."""
         mock_harness.adjudicate = AsyncMock(
-            return_value=Adjudication(
-                decision=Decision.DENY, reason="Blocked by policy"
+            return_value=Adjudicated(
+                Decision.Deny, mode=Mode.Govern, reason="Blocked by policy"
             )
         )
 
@@ -190,8 +195,8 @@ class TestAinvoke:
     ):
         """DENY with enforce=False should not raise."""
         mock_harness.adjudicate = AsyncMock(
-            return_value=Adjudication(
-                decision=Decision.DENY, reason="Blocked by policy"
+            return_value=Adjudicated(
+                Decision.Deny, mode=Mode.Govern, reason="Blocked by policy"
             )
         )
 
@@ -211,7 +216,7 @@ class TestAinvoke:
     async def test_initial_message_recording(
         self, mock_compiled_graph: MagicMock, mock_harness: MagicMock
     ):
-        """Verify PRE_MODEL step recorded for HumanMessage input."""
+        """Verify user Prompt event recorded for HumanMessage input."""
 
         async def mock_astream(input, config=None, stream_mode=None, **kwargs):
             yield ("values", {"messages": []})
@@ -221,18 +226,18 @@ class TestAinvoke:
         sg = SonderaGraph(mock_compiled_graph, harness=mock_harness)
         await sg.ainvoke({"messages": [HumanMessage(content="Hello")]})
 
-        # First adjudicate call should be for the user input (PRE_MODEL)
-        from sondera.types import Role, Stage
-
+        # First adjudicate call should be a Prompt.user event
         first_call = mock_harness.adjudicate.call_args_list[0]
-        assert first_call.kwargs["stage"] == Stage.PRE_MODEL
-        assert first_call.kwargs["role"] == Role.USER
+        event = first_call.args[0]
+        assert isinstance(event, Event)
+        assert isinstance(event.event, Prompt)
+        assert event.event.content == "Hello"
 
     @pytest.mark.asyncio
     async def test_final_message_recording(
         self, mock_compiled_graph: MagicMock, mock_harness: MagicMock
     ):
-        """Verify POST_MODEL step recorded for AIMessage output."""
+        """Verify Thought event recorded for AIMessage output."""
         final_state = {"messages": [AIMessage(content="Final answer")]}
 
         async def mock_astream(input, config=None, stream_mode=None, **kwargs):
@@ -243,11 +248,11 @@ class TestAinvoke:
         sg = SonderaGraph(mock_compiled_graph, harness=mock_harness)
         await sg.ainvoke({"data": "input"})
 
-        from sondera.types import Role, Stage
-
         last_call = mock_harness.adjudicate.call_args_list[-1]
-        assert last_call.kwargs["stage"] == Stage.POST_MODEL
-        assert last_call.kwargs["role"] == Role.MODEL
+        event = last_call.args[0]
+        assert isinstance(event, Event)
+        assert isinstance(event.event, Thought)
+        assert event.event.thought == "Final answer"
 
     @pytest.mark.asyncio
     async def test_ainvoke_forwards_kwargs(
@@ -417,6 +422,123 @@ class TestDelegationMethods:
         assert result == ["s1", "s2"]
 
 
+class TestFailPath:
+    """Tests that unhandled exceptions mark the trajectory as failed."""
+
+    @pytest.mark.asyncio
+    async def test_ainvoke_unexpected_exception_calls_fail(
+        self, mock_compiled_graph: MagicMock, mock_harness: MagicMock
+    ):
+        """An unexpected exception during ainvoke should call harness.fail(), not finalize."""
+
+        async def mock_astream(input, config=None, stream_mode=None, **kwargs):
+            yield ("updates", {"node": {"data": "x"}})
+            raise RuntimeError("unexpected boom")
+
+        mock_compiled_graph.astream = mock_astream
+        sg = SonderaGraph(mock_compiled_graph, harness=mock_harness)
+
+        with pytest.raises(RuntimeError, match="unexpected boom"):
+            await sg.ainvoke({"data": "input"})
+
+        mock_harness.fail.assert_awaited_once()
+        call_kwargs = mock_harness.fail.call_args.kwargs
+        assert "unexpected boom" in call_kwargs["reason"]
+        mock_harness.finalize.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_ainvoke_guardrail_violation_calls_finalize_not_fail(
+        self, mock_compiled_graph: MagicMock, mock_harness: MagicMock
+    ):
+        """A GuardrailViolationError should call finalize (not fail) and re-raise."""
+        mock_harness.adjudicate = AsyncMock(
+            return_value=Adjudicated(Decision.Deny, mode=Mode.Govern, reason="Blocked")
+        )
+
+        async def mock_astream(input, config=None, stream_mode=None, **kwargs):
+            yield ("updates", {"node": {"data": "sensitive"}})
+            yield ("values", {"data": "sensitive"})
+
+        mock_compiled_graph.astream = mock_astream
+        sg = SonderaGraph(mock_compiled_graph, harness=mock_harness)
+
+        from sondera.langgraph.exceptions import GuardrailViolationError
+
+        with pytest.raises(GuardrailViolationError):
+            await sg.ainvoke({"data": "input"})
+
+        mock_harness.finalize.assert_awaited_once()
+        mock_harness.fail.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_astream_unexpected_exception_calls_fail(
+        self, mock_compiled_graph: MagicMock, mock_harness: MagicMock
+    ):
+        """An unexpected exception during astream should call harness.fail()."""
+
+        async def mock_astream(input, config=None, stream_mode=None, **kwargs):
+            yield {"node": {"x": 1}}
+            raise ValueError("stream error")
+
+        mock_compiled_graph.astream = mock_astream
+        sg = SonderaGraph(mock_compiled_graph, harness=mock_harness)
+
+        with pytest.raises(ValueError, match="stream error"):
+            async for _ in sg.astream({"data": "input"}, stream_mode="updates"):
+                pass
+
+        mock_harness.fail.assert_awaited_once()
+        call_kwargs = mock_harness.fail.call_args.kwargs
+        assert "stream error" in call_kwargs["reason"]
+        mock_harness.finalize.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_astream_no_trajectory_id_skips_fail(
+        self, mock_compiled_graph: MagicMock, mock_harness: MagicMock
+    ):
+        """If trajectory_id is None when exception occurs, fail() should not be called."""
+        mock_harness.trajectory_id = None
+
+        async def mock_astream(input, config=None, stream_mode=None, **kwargs):
+            # yield is required to make this an async generator (not a coroutine)
+            raise RuntimeError("crash before any trajectory")
+            yield  # noqa: F401 — unreachable, but makes this an async generator
+
+        mock_compiled_graph.astream = mock_astream
+        sg = SonderaGraph(mock_compiled_graph, harness=mock_harness)
+
+        with pytest.raises(RuntimeError):
+            async for _ in sg.astream({}):
+                pass
+
+        mock_harness.fail.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_astream_generator_exit_calls_finalize(
+        self, mock_compiled_graph: MagicMock, mock_harness: MagicMock
+    ):
+        """Abandoning the astream iterator early should finalize the trajectory."""
+
+        async def mock_astream(input, config=None, stream_mode=None, **kwargs):
+            yield {"a": 1}
+            yield {"b": 2}
+            yield {"c": 3}
+
+        mock_compiled_graph.astream = mock_astream
+        sg = SonderaGraph(mock_compiled_graph, harness=mock_harness)
+
+        # Explicitly close the iterator via aclose() to trigger GeneratorExit.
+        # Using ``async for … break`` doesn't reliably await the cleanup
+        # coroutine in all asyncio/pytest-asyncio environments.
+        ait = sg.astream({})
+        chunk = await ait.__anext__()
+        assert chunk == {"a": 1}
+        await ait.aclose()
+
+        mock_harness.finalize.assert_awaited_once()
+        mock_harness.fail.assert_not_awaited()
+
+
 class TestInvoke:
     """Tests for synchronous invoke wrapper."""
 
@@ -435,3 +557,98 @@ class TestInvoke:
         assert result == {"result": "ok"}
         mock_harness.initialize.assert_awaited_once()
         mock_harness.finalize.assert_awaited_once()
+
+
+class TestSessionId:
+    """Tests for session_id propagation in SonderaGraph."""
+
+    @pytest.mark.asyncio
+    async def test_ainvoke_passes_session_id(
+        self, mock_compiled_graph: MagicMock, mock_harness: MagicMock
+    ):
+        """Verify session_id is forwarded to harness.initialize."""
+
+        async def mock_astream(input, config=None, stream_mode=None, **kwargs):
+            yield ("values", {"result": "ok"})
+
+        mock_compiled_graph.astream = mock_astream
+
+        sg = SonderaGraph(mock_compiled_graph, harness=mock_harness)
+        await sg.ainvoke({"input": "data"}, session_id="sess-abc")
+        mock_harness.initialize.assert_awaited_once_with(
+            agent=mock_harness.agent, session_id="sess-abc"
+        )
+
+    @pytest.mark.asyncio
+    async def test_constructor_session_id_used_as_default(
+        self, mock_compiled_graph: MagicMock, mock_harness: MagicMock
+    ):
+        """Verify constructor session_id is used when per-call session_id is not provided."""
+
+        async def mock_astream(input, config=None, stream_mode=None, **kwargs):
+            yield ("values", {"result": "ok"})
+
+        mock_compiled_graph.astream = mock_astream
+
+        sg = SonderaGraph(
+            mock_compiled_graph, harness=mock_harness, session_id="sess-default"
+        )
+        await sg.ainvoke({"input": "data"})
+        mock_harness.initialize.assert_awaited_once_with(
+            agent=mock_harness.agent, session_id="sess-default"
+        )
+
+    @pytest.mark.asyncio
+    async def test_per_call_session_id_overrides_constructor(
+        self, mock_compiled_graph: MagicMock, mock_harness: MagicMock
+    ):
+        """Verify per-call session_id takes precedence over constructor."""
+
+        async def mock_astream(input, config=None, stream_mode=None, **kwargs):
+            yield ("values", {"result": "ok"})
+
+        mock_compiled_graph.astream = mock_astream
+
+        sg = SonderaGraph(
+            mock_compiled_graph, harness=mock_harness, session_id="sess-default"
+        )
+        await sg.ainvoke({"input": "data"}, session_id="sess-override")
+        mock_harness.initialize.assert_awaited_once_with(
+            agent=mock_harness.agent, session_id="sess-override"
+        )
+
+    @pytest.mark.asyncio
+    async def test_astream_passes_session_id(
+        self, mock_compiled_graph: MagicMock, mock_harness: MagicMock
+    ):
+        """Verify session_id is forwarded through astream."""
+
+        async def mock_astream(input, config=None, stream_mode=None, **kwargs):
+            yield {"result": "ok"}
+
+        mock_compiled_graph.astream = mock_astream
+
+        sg = SonderaGraph(mock_compiled_graph, harness=mock_harness)
+        chunks = []
+        async for chunk in sg.astream({"input": "data"}, session_id="sess-stream"):
+            chunks.append(chunk)
+        mock_harness.initialize.assert_awaited_once_with(
+            agent=mock_harness.agent, session_id="sess-stream"
+        )
+
+    @pytest.mark.asyncio
+    async def test_no_session_id_passes_none(
+        self, mock_compiled_graph: MagicMock, mock_harness: MagicMock
+    ):
+        """Verify None is passed when no session_id is provided anywhere."""
+
+        async def mock_astream(input, config=None, stream_mode=None, **kwargs):
+            yield ("values", {"result": "ok"})
+
+        mock_compiled_graph.astream = mock_astream
+
+        sg = SonderaGraph(mock_compiled_graph, harness=mock_harness)
+        await sg.ainvoke({"input": "data"})
+        mock_harness.initialize.assert_awaited_once_with(
+            agent=mock_harness.agent, session_id=None
+        )

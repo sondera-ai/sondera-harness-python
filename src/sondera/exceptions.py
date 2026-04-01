@@ -2,11 +2,6 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from sondera.types import Adjudication, Stage
-
 
 class SonderaError(Exception):
     """Base exception for all Sondera SDK errors."""
@@ -79,21 +74,15 @@ class PolicyViolationError(PolicyError):
     """Raised when a policy violation blocks execution.
 
     Attributes:
-        stage: The execution stage where the violation occurred
         reason: The policy violation reason
-        adjudication: The full adjudication result
     """
 
     def __init__(
         self,
-        stage: Stage,
         reason: str,
-        adjudication: Adjudication | None = None,
     ):
-        self.stage = stage
         self.reason = reason
-        self.adjudication = adjudication
-        super().__init__(f"Policy violation at {stage.value}: {reason}")
+        super().__init__(f"Policy violation: {reason}")
 
 
 class PolicyEvaluationError(PolicyError):

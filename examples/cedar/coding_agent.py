@@ -5,14 +5,7 @@ from archetypes.coding.naive import agent
 from loguru import logger
 
 from cedar import PolicySet, Schema
-from sondera import (
-    CedarPolicyHarness,
-    Decision,
-    PromptContent,
-    Role,
-    Stage,
-    ToolRequestContent,
-)
+from sondera import CedarPolicyHarness, Decision, Event, Prompt, ToolCall
 from sondera.harness.cedar.schema import agent_to_cedar_schema
 
 logger.remove()
@@ -134,113 +127,134 @@ when {
 """)
 
 
+def _event(harness, payload):
+    return Event(
+        agent=harness.agent,
+        trajectory_id=harness.trajectory_id,
+        event=payload,
+    )
+
+
 async def main():
     harness = CedarPolicyHarness(policy_set=policy_set, schema=base_schema)
     await harness.initialize(agent=agent)
 
     result = await harness.adjudicate(
-        Stage.PRE_MODEL, Role.USER, PromptContent(text="Hello world!")
+        _event(harness, Prompt(role="user", content="Hello world!"))
     )
     logger.success(f"User prompt. Decision: {result.decision}")
-    assert result.decision == Decision.ALLOW
+    assert result.decision == Decision.Allow
 
     result = await harness.adjudicate(
-        Stage.PRE_TOOL,
-        Role.MODEL,
-        ToolRequestContent(
-            tool_id="Read", args={"file_path": "/Users/maisel/code/main.py"}
-        ),
+        _event(
+            harness,
+            ToolCall(
+                tool="Read", arguments={"file_path": "/Users/user/project/main.py"}
+            ),
+        )
     )
     logger.success(f"Reading a file. ({result.decision})")
-    assert result.decision == Decision.ALLOW
+    assert result.decision == Decision.Allow
 
     result = await harness.adjudicate(
-        Stage.PRE_TOOL,
-        Role.MODEL,
-        ToolRequestContent(
-            tool_id="Write",
-            args={"file_path": "/Users/maisel/code/.env", "content": "API_KEY=secret"},
-        ),
+        _event(
+            harness,
+            ToolCall(
+                tool="Write",
+                arguments={
+                    "file_path": "/Users/user/project/.env",
+                    "content": "API_KEY=secret",
+                },
+            ),
+        )
     )
     logger.error(f"Writing to .env file (should be forbidden). ({result.decision})")
-    assert result.decision == Decision.DENY
+    assert result.decision == Decision.Deny
 
     result = await harness.adjudicate(
-        Stage.PRE_TOOL,
-        Role.MODEL,
-        ToolRequestContent(
-            tool_id="Write",
-            args={
-                "file_path": "/Users/maisel/code/tests/test_feature.py",
-                "content": "def test_example(): pass",
-            },
-        ),
+        _event(
+            harness,
+            ToolCall(
+                tool="Write",
+                arguments={
+                    "file_path": "/Users/user/project/tests/test_feature.py",
+                    "content": "def test_example(): pass",
+                },
+            ),
+        )
     )
     logger.success(f"Writing to test file. ({result.decision})")
-    assert result.decision == Decision.ALLOW
+    assert result.decision == Decision.Allow
 
     result = await harness.adjudicate(
-        Stage.PRE_TOOL,
-        Role.MODEL,
-        ToolRequestContent(tool_id="Bash", args={"command": "rm -rf /"}),
+        _event(
+            harness,
+            ToolCall(tool="Bash", arguments={"command": "rm -rf /"}),
+        )
     )
     logger.error(f"Dangerous bash command (should be forbidden). ({result.decision})")
-    assert result.decision == Decision.DENY
+    assert result.decision == Decision.Deny
 
     result = await harness.adjudicate(
-        Stage.PRE_TOOL,
-        Role.MODEL,
-        ToolRequestContent(tool_id="Bash", args={"command": "git status"}),
+        _event(
+            harness,
+            ToolCall(tool="Bash", arguments={"command": "git status"}),
+        )
     )
     logger.success(f"Safe bash command (git). ({result.decision})")
-    assert result.decision == Decision.ALLOW
+    assert result.decision == Decision.Allow
 
     result = await harness.adjudicate(
-        Stage.PRE_TOOL,
-        Role.MODEL,
-        ToolRequestContent(
-            tool_id="Edit",
-            args={
-                "file_path": "/Users/maisel/.ssh/id_rsa",
-                "old_string": "old",
-                "new_string": "new",
-            },
-        ),
+        _event(
+            harness,
+            ToolCall(
+                tool="Edit",
+                arguments={
+                    "file_path": "/Users/user/.ssh/id_rsa",
+                    "old_string": "old",
+                    "new_string": "new",
+                },
+            ),
+        )
     )
     logger.error(f"Editing SSH key (should be forbidden). ({result.decision})")
-    assert result.decision == Decision.DENY
+    assert result.decision == Decision.Deny
 
     result = await harness.adjudicate(
-        Stage.PRE_TOOL,
-        Role.MODEL,
-        ToolRequestContent(tool_id="Glob", args={"pattern": "**/*.py"}),
+        _event(
+            harness,
+            ToolCall(tool="Glob", arguments={"pattern": "**/*.py"}),
+        )
     )
     logger.success(f"Glob search. ({result.decision})")
-    assert result.decision == Decision.ALLOW
+    assert result.decision == Decision.Allow
 
     result = await harness.adjudicate(
-        Stage.PRE_TOOL,
-        Role.MODEL,
-        ToolRequestContent(
-            tool_id="WebSearch", args={"query": "Python API documentation"}
-        ),
+        _event(
+            harness,
+            ToolCall(
+                tool="WebSearch",
+                arguments={"query": "Python API documentation"},
+            ),
+        )
     )
     logger.success(f"WebSearch for documentation. ({result.decision})")
-    assert result.decision == Decision.ALLOW
+    assert result.decision == Decision.Allow
 
     result = await harness.adjudicate(
-        Stage.PRE_TOOL,
-        Role.MODEL,
-        ToolRequestContent(
-            tool_id="WebFetch",
-            args={
-                "url": "https://pastebin.com/raw/abc123",
-                "prompt": "Get the content",
-            },
-        ),
+        _event(
+            harness,
+            ToolCall(
+                tool="WebFetch",
+                arguments={
+                    "url": "https://pastebin.com/raw/abc123",
+                    "prompt": "Get the content",
+                },
+            ),
+        )
     )
     logger.error(f"WebFetch from pastebin (should be forbidden). ({result.decision})")
-    assert result.decision == Decision.DENY
+    assert result.decision == Decision.Deny
 
     logger.info(
         "Writing output schema and policy files: coding.cedarschema, coding.cedar"

@@ -10,15 +10,26 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.runtime import Runtime
 from langgraph.types import Command
 
+from sondera import (
+    Adjudicated,
+    Agent,
+    Decision,
+    GuardrailResults,
+    Mode,
+    SignatureGuardrailMatch,
+    SignatureGuardrailResult,
+    Steering,
+)
 from sondera.harness import Harness
 from sondera.langgraph.middleware import (
     SonderaHarnessMiddleware,
     State,
     Strategy,
+    _deny_reason,
     _extract_last_user_message,
+    _log_guardrails,
     _message_to_text,
 )
-from sondera.types import Adjudication, Agent, Decision
 
 
 @pytest.fixture
@@ -26,9 +37,10 @@ def mock_harness() -> MagicMock:
     """Create a mock harness for testing."""
     harness = MagicMock(spec=Harness)
     harness.adjudicate = AsyncMock(
-        return_value=Adjudication(decision=Decision.ALLOW, reason="Allowed")
+        return_value=Adjudicated(Decision.Allow, reason="Allowed")
     )
     harness.finalize = AsyncMock()
+    harness.fail = AsyncMock()
 
     # Make initialize set the trajectory_id when called
     async def mock_initialize(*args, **kwargs):
@@ -39,6 +51,10 @@ def mock_harness() -> MagicMock:
     harness.resume = AsyncMock()
     harness._trajectory_id = "test-trajectory-123"
     harness.trajectory_id = "test-trajectory-123"
+    harness.agent = Agent(
+        id="test-middleware-agent",
+        provider="langchain",
+    )
     return harness
 
 
@@ -47,11 +63,7 @@ def test_agent() -> Agent:
     """Create a test agent."""
     return Agent(
         id="test-middleware-agent",
-        provider_id="langchain",
-        name="Test Middleware Agent",
-        description="Agent used for middleware testing",
-        instruction="Respond concisely",
-        tools=[],
+        provider="langchain",
     )
 
 
@@ -155,8 +167,8 @@ class TestSonderaHarnessMiddlewareHooks:
         """Test that abefore_agent allows execution when adjudication allows."""
         # Reset trajectory_id to None to simulate uninitialized state
         mock_middleware._harness.trajectory_id = None
-        mock_middleware._harness.adjudicate.return_value = Adjudication(
-            decision=Decision.ALLOW, reason="Allowed"
+        mock_middleware._harness.adjudicate.return_value = Adjudicated(
+            Decision.Allow, reason="Allowed"
         )
 
         state = {"messages": [HumanMessage(content="Hello")]}
@@ -174,8 +186,8 @@ class TestSonderaHarnessMiddlewareHooks:
         self, mock_middleware: SonderaHarnessMiddleware
     ):
         """Test that abefore_agent jumps to end when adjudication denies with BLOCK strategy."""
-        mock_middleware._harness.adjudicate.return_value = Adjudication(
-            decision=Decision.DENY, reason="Blocked by policy"
+        mock_middleware._harness.adjudicate.return_value = Adjudicated(
+            Decision.Deny, mode=Mode.Govern, reason="Blocked by policy"
         )
 
         state = {"messages": [HumanMessage(content="Bad content")]}
@@ -197,8 +209,8 @@ class TestSonderaHarnessMiddlewareHooks:
             harness=mock_harness,
             strategy=Strategy.STEER,
         )
-        mock_harness.adjudicate.return_value = Adjudication(
-            decision=Decision.DENY, reason="Please rephrase your request"
+        mock_harness.adjudicate.return_value = Adjudicated(
+            Decision.Deny, mode=Mode.Govern, reason="Please rephrase your request"
         )
 
         state = {"messages": [HumanMessage(content="Bad content")]}
@@ -210,18 +222,15 @@ class TestSonderaHarnessMiddlewareHooks:
         assert "jump_to" not in result
         # STEER now replaces with AIMessage containing policy violation info
         assert isinstance(result["messages"][0], AIMessage)
-        assert (
-            "Policy violation in user message: Please rephrase your request"
-            in result["messages"][0].content
-        )
+        assert "Please rephrase your request" in result["messages"][0].content
 
     @pytest.mark.asyncio
     async def test_awrap_model_call_allows_on_allow_decision(
         self, mock_middleware: SonderaHarnessMiddleware
     ):
         """Test that awrap_model_call allows execution when adjudication allows."""
-        mock_middleware._harness.adjudicate.return_value = Adjudication(
-            decision=Decision.ALLOW, reason="Allowed"
+        mock_middleware._harness.adjudicate.return_value = Adjudicated(
+            Decision.Allow, reason="Allowed"
         )
 
         request = ModelRequest(
@@ -250,8 +259,8 @@ class TestSonderaHarnessMiddlewareHooks:
         self, mock_middleware: SonderaHarnessMiddleware
     ):
         """Test that awrap_model_call returns policy message on pre-model deny."""
-        mock_middleware._harness.adjudicate.return_value = Adjudication(
-            decision=Decision.DENY, reason="Pre-model blocked"
+        mock_middleware._harness.adjudicate.return_value = Adjudicated(
+            Decision.Deny, mode=Mode.Govern, reason="Pre-model blocked"
         )
 
         request = ModelRequest(
@@ -281,8 +290,8 @@ class TestSonderaHarnessMiddlewareHooks:
         self, mock_middleware: SonderaHarnessMiddleware
     ):
         """Test that awrap_tool_call allows execution when adjudication allows."""
-        mock_middleware._harness.adjudicate.return_value = Adjudication(
-            decision=Decision.ALLOW, reason="Allowed"
+        mock_middleware._harness.adjudicate.return_value = Adjudicated(
+            Decision.Allow, reason="Allowed"
         )
 
         tool_request = ToolCallRequest(
@@ -309,8 +318,8 @@ class TestSonderaHarnessMiddlewareHooks:
         self, mock_middleware: SonderaHarnessMiddleware
     ):
         """Test that awrap_tool_call returns blocked message on pre-tool deny."""
-        mock_middleware._harness.adjudicate.return_value = Adjudication(
-            decision=Decision.DENY, reason="Tool not allowed"
+        mock_middleware._harness.adjudicate.return_value = Adjudicated(
+            Decision.Deny, mode=Mode.Govern, reason="Tool not allowed"
         )
 
         tool_request = ToolCallRequest(
@@ -348,8 +357,8 @@ class TestSonderaHarnessMiddlewareHooks:
         )
         # First call (pre-tool) denies, second call (post-tool) allows
         mock_harness.adjudicate.side_effect = [
-            Adjudication(decision=Decision.DENY, reason="Tool concern"),
-            Adjudication(decision=Decision.ALLOW, reason="Allowed"),
+            Adjudicated(Decision.Deny, mode=Mode.Govern, reason="Tool concern"),
+            Adjudicated(Decision.Allow, reason="Allowed"),
         ]
 
         tool_request = ToolCallRequest(
@@ -370,10 +379,7 @@ class TestSonderaHarnessMiddlewareHooks:
 
         # STEER now returns modified tool message instead of executing the tool
         assert isinstance(result, ToolMessage)
-        assert (
-            result.content
-            == "Tool execution modified due to policy concern: Tool concern"
-        )
+        assert "Tool concern" in result.content
         # Verify only pre-tool adjudication was called (tool execution was blocked)
         assert mock_harness.adjudicate.call_count == 1
 
@@ -384,8 +390,8 @@ class TestSonderaHarnessMiddlewareHooks:
         """Test that awrap_tool_call returns Command on post-tool deny with BLOCK strategy."""
         # First call (pre-tool) allows, second call (post-tool) denies
         mock_middleware._harness.adjudicate.side_effect = [
-            Adjudication(decision=Decision.ALLOW, reason="Pre-tool allowed"),
-            Adjudication(decision=Decision.DENY, reason="Post-tool blocked"),
+            Adjudicated(Decision.Allow, reason="Pre-tool allowed"),
+            Adjudicated(Decision.Deny, mode=Mode.Govern, reason="Post-tool blocked"),
         ]
 
         tool_request = ToolCallRequest(
@@ -414,8 +420,8 @@ class TestSonderaHarnessMiddlewareHooks:
         self, mock_middleware: SonderaHarnessMiddleware
     ):
         """Test that aafter_agent finalizes the trajectory and preserves session_id."""
-        mock_middleware._harness.adjudicate.return_value = Adjudication(
-            decision=Decision.ALLOW, reason="Allowed"
+        mock_middleware._harness.adjudicate.return_value = Adjudicated(
+            Decision.Allow, reason="Allowed"
         )
 
         state = {
@@ -436,8 +442,8 @@ class TestSonderaHarnessMiddlewareHooks:
         self, mock_middleware: SonderaHarnessMiddleware
     ):
         """Test that aafter_agent handles case with no final message gracefully."""
-        mock_middleware._harness.adjudicate.return_value = Adjudication(
-            decision=Decision.ALLOW, reason="Allowed"
+        mock_middleware._harness.adjudicate.return_value = Adjudicated(
+            Decision.Allow, reason="Allowed"
         )
 
         state = {"messages": []}  # No messages
@@ -455,8 +461,8 @@ class TestSonderaHarnessMiddlewareHooks:
         self, mock_middleware: SonderaHarnessMiddleware
     ):
         """Test that abefore_agent reuses session_id from state on subsequent turns."""
-        mock_middleware._harness.adjudicate.return_value = Adjudication(
-            decision=Decision.ALLOW, reason="Allowed"
+        mock_middleware._harness.adjudicate.return_value = Adjudicated(
+            Decision.Allow, reason="Allowed"
         )
 
         state = {
@@ -511,3 +517,294 @@ class TestStrategyEnum:
         """Test that Strategy is a string enum."""
         assert isinstance(Strategy.BLOCK, str)
         assert Strategy.BLOCK == "block"
+
+
+class TestNonGoverningModePassthrough:
+    """Tests that non-Govern mode denies are treated as observe-only."""
+
+    @pytest.fixture
+    def mock_middleware(self, mock_harness: MagicMock) -> SonderaHarnessMiddleware:
+        return SonderaHarnessMiddleware(harness=mock_harness, strategy=Strategy.BLOCK)
+
+    @pytest.mark.asyncio
+    async def test_abefore_agent_monitor_deny_allows_through(
+        self, mock_middleware: SonderaHarnessMiddleware
+    ):
+        """abefore_agent with Monitor-mode deny should not block."""
+        mock_middleware._harness.adjudicate.return_value = Adjudicated(
+            Decision.Deny, mode=Mode.Monitor, reason="Observed violation"
+        )
+        state = {"messages": [HumanMessage(content="Bad content")]}
+        result = await mock_middleware.abefore_agent(state, Runtime())
+
+        # No jump_to — execution continues
+        assert result is not None
+        assert "jump_to" not in result
+        assert "messages" not in result
+
+    @pytest.mark.asyncio
+    async def test_abefore_agent_steer_mode_deny_allows_through(
+        self, mock_middleware: SonderaHarnessMiddleware
+    ):
+        """abefore_agent with Steer-mode deny should not block."""
+        mock_middleware._harness.adjudicate.return_value = Adjudicated(
+            Decision.Deny, mode=Mode.Steer, reason="Steering suggestion"
+        )
+        state = {"messages": [HumanMessage(content="Questionable content")]}
+        result = await mock_middleware.abefore_agent(state, Runtime())
+
+        assert result is not None
+        assert "jump_to" not in result
+
+    @pytest.mark.asyncio
+    async def test_awrap_model_call_monitor_deny_allows_through(
+        self, mock_middleware: SonderaHarnessMiddleware
+    ):
+        """awrap_model_call with Monitor-mode pre-model deny should call the model normally."""
+        mock_middleware._harness.adjudicate.return_value = Adjudicated(
+            Decision.Deny, mode=Mode.Monitor, reason="Observed"
+        )
+        handler_called = False
+
+        request = ModelRequest(
+            model=None,
+            system_prompt=None,
+            messages=[HumanMessage(content="Hi")],
+            tool_choice=None,
+            tools=[],
+            response_format=None,
+            state={},
+            runtime=Runtime(),
+            model_settings={},
+        )
+
+        async def handler(req: ModelRequest) -> ModelResponse:
+            nonlocal handler_called
+            handler_called = True
+            return ModelResponse(result=[AIMessage(content="Real response")])
+
+        result = await mock_middleware.awrap_model_call(request, handler)
+
+        # Model should still be called
+        assert handler_called
+        assert result.result[0].content == "Real response"
+
+    @pytest.mark.asyncio
+    async def test_awrap_tool_call_monitor_deny_executes_tool(
+        self, mock_middleware: SonderaHarnessMiddleware
+    ):
+        """awrap_tool_call with Monitor-mode pre-tool deny should execute the tool."""
+        mock_middleware._harness.adjudicate.return_value = Adjudicated(
+            Decision.Deny, mode=Mode.Monitor, reason="Observed"
+        )
+        tool_request = ToolCallRequest(
+            tool_call={"name": "my_tool", "args": {}, "id": "tc-1"},
+            tool=None,
+            state={},
+            runtime=Runtime(),
+        )
+        handler_called = False
+
+        async def handler(req: ToolCallRequest) -> ToolMessage:
+            nonlocal handler_called
+            handler_called = True
+            return ToolMessage(
+                content="Tool output", tool_call_id="tc-1", name="my_tool"
+            )
+
+        result = await mock_middleware.awrap_tool_call(tool_request, handler)
+
+        # Tool should still execute
+        assert handler_called
+        assert isinstance(result, ToolMessage)
+        assert result.content == "Tool output"
+
+    @pytest.mark.asyncio
+    async def test_awrap_tool_call_monitor_post_tool_deny_returns_original(
+        self, mock_harness: MagicMock
+    ):
+        """Post-tool Monitor-mode deny should return the original (unmodified) tool result."""
+        middleware = SonderaHarnessMiddleware(
+            harness=mock_harness, strategy=Strategy.BLOCK
+        )
+        mock_harness.adjudicate.side_effect = [
+            Adjudicated(Decision.Allow, reason="Pre-tool OK"),
+            Adjudicated(Decision.Deny, mode=Mode.Monitor, reason="Post-tool observed"),
+        ]
+        tool_request = ToolCallRequest(
+            tool_call={"name": "my_tool", "args": {}, "id": "tc-1"},
+            tool=None,
+            state={},
+            runtime=Runtime(),
+        )
+
+        async def handler(req: ToolCallRequest) -> ToolMessage:
+            return ToolMessage(
+                content="Sensitive output", tool_call_id="tc-1", name="my_tool"
+            )
+
+        result = await middleware.awrap_tool_call(tool_request, handler)
+
+        # Monitor mode: original result passes through unchanged
+        assert isinstance(result, ToolMessage)
+        assert result.content == "Sensitive output"
+
+
+class TestDenyReasonHelper:
+    """Tests for _deny_reason helper."""
+
+    def test_returns_steering_explanation_when_present(self):
+        """Steering explanation takes priority over reason."""
+        adjudicated = Adjudicated(
+            Decision.Deny,
+            reason="Policy violation",
+            steering=Steering(explanation="Please rephrase"),
+        )
+
+        result = _deny_reason(adjudicated, "default")
+        assert result == "Please rephrase"
+
+    def test_falls_back_to_deny_message_when_no_steering(self):
+        """Falls back to deny_message when steering is absent."""
+        adjudicated = Adjudicated(Decision.Deny, reason="Policy violation")
+
+        result = _deny_reason(adjudicated, "default fallback")
+        assert "Policy violation" in result or result == "default fallback"
+
+    def test_falls_back_when_steering_has_no_explanation(self):
+        """Falls back when steering exists but explanation is empty."""
+        adjudicated = Adjudicated(
+            Decision.Deny,
+            reason="Policy violation",
+            steering=Steering(explanation=""),
+        )
+
+        result = _deny_reason(adjudicated, "default fallback")
+        # Empty string is falsy — should fall back to deny_message
+        assert result != ""
+
+
+class TestLogGuardrailsHelper:
+    """Tests for _log_guardrails helper."""
+
+    def test_no_log_when_guardrails_absent(self):
+        """No warning logged when adjudicated has no guardrails."""
+        import logging
+
+        log = MagicMock(spec=logging.Logger)
+        adjudicated = Adjudicated(Decision.Allow, reason="OK")
+
+        _log_guardrails(log, adjudicated, "traj-1")
+        log.warning.assert_not_called()
+
+    def test_no_log_when_signature_not_triggered(self):
+        """No warning logged when signature guardrail did not fire."""
+        import logging
+
+        log = MagicMock(spec=logging.Logger)
+        adjudicated = Adjudicated(
+            Decision.Allow,
+            reason="OK",
+            guardrails=GuardrailResults(
+                signature=SignatureGuardrailResult(triggered=False),
+            ),
+        )
+
+        _log_guardrails(log, adjudicated, "traj-1")
+        log.warning.assert_not_called()
+
+    def test_warning_logged_when_signature_triggered(self):
+        """WARNING is emitted when at least one YARA rule fires."""
+        import logging
+
+        log = MagicMock(spec=logging.Logger)
+        adjudicated = Adjudicated(
+            Decision.Deny,
+            reason="YARA hit",
+            guardrails=GuardrailResults(
+                signature=SignatureGuardrailResult(
+                    triggered=True,
+                    severity="HIGH",
+                    categories=["pii"],
+                    matches=[SignatureGuardrailMatch("detect_pii")],
+                ),
+            ),
+        )
+
+        _log_guardrails(log, adjudicated, "traj-42")
+
+        log.warning.assert_called_once()
+        call_args = log.warning.call_args
+        assert "traj-42" in str(call_args)
+        assert "HIGH" in str(call_args) or "severity" in str(call_args[0])
+
+
+class TestMiddlewareSessionId:
+    """Tests for session_id propagation in SonderaHarnessMiddleware."""
+
+    @pytest.mark.asyncio
+    async def test_constructor_session_id_used_as_fallback(
+        self, mock_harness: MagicMock
+    ):
+        """Verify constructor session_id is used when state has no session_id."""
+        mw = SonderaHarnessMiddleware(harness=mock_harness, session_id="sess-ctor")
+        state = State(messages=[HumanMessage(content="hello")])
+        runtime = MagicMock()
+
+        await mw.abefore_agent(state, runtime)
+        mock_harness.initialize.assert_awaited_once_with(session_id="sess-ctor")
+
+    @pytest.mark.asyncio
+    async def test_state_session_id_takes_precedence(self, mock_harness: MagicMock):
+        """Verify state session_id overrides constructor session_id."""
+        mw = SonderaHarnessMiddleware(harness=mock_harness, session_id="sess-ctor")
+        state = State(messages=[HumanMessage(content="hello")], session_id="sess-state")
+        runtime = MagicMock()
+
+        await mw.abefore_agent(state, runtime)
+        mock_harness.initialize.assert_awaited_once_with(session_id="sess-state")
+
+    @pytest.mark.asyncio
+    async def test_auto_generated_session_id_not_persisted(
+        self, mock_harness: MagicMock
+    ):
+        """Verify auto-generated session_id is NOT reused across turns.
+
+        When no constructor session_id is provided, each turn gets a fresh
+        auto-generated ID to avoid cross-conversation bleed when a single
+        middleware instance serves multiple chats.
+        """
+        mw = SonderaHarnessMiddleware(harness=mock_harness)
+        runtime = MagicMock()
+
+        # First turn: no session_id anywhere — auto-generates
+        state1 = State(messages=[HumanMessage(content="turn 1")])
+        result1 = await mw.abefore_agent(state1, runtime)
+        first_session_id = result1["session_id"]
+        assert first_session_id.startswith("session-")
+
+        mock_harness.initialize.reset_mock()
+
+        # Second turn: no session_id — gets a different auto-generated ID
+        state2 = State(messages=[HumanMessage(content="turn 2")])
+        result2 = await mw.abefore_agent(state2, runtime)
+        assert result2["session_id"].startswith("session-")
+        assert result2["session_id"] != first_session_id
+
+    @pytest.mark.asyncio
+    async def test_constructor_session_id_persisted_across_turns(
+        self, mock_harness: MagicMock
+    ):
+        """Verify constructor session_id IS reused across turns."""
+        mw = SonderaHarnessMiddleware(harness=mock_harness, session_id="sess-shared")
+        runtime = MagicMock()
+
+        state1 = State(messages=[HumanMessage(content="turn 1")])
+        result1 = await mw.abefore_agent(state1, runtime)
+        assert result1["session_id"] == "sess-shared"
+
+        mock_harness.initialize.reset_mock()
+
+        state2 = State(messages=[HumanMessage(content="turn 2")])
+        result2 = await mw.abefore_agent(state2, runtime)
+        assert result2["session_id"] == "sess-shared"

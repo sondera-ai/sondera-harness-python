@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=40.8.0", "grpcio-tools>=1.76.0"]
+requires = ["setuptools>=40.8.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "sondera-harness"
-version = "0.8.1"
+version = "0.9.0"
 description = "Sondera Harness SDK for Python - Agent governance and policy enforcement"
 readme = "README.md"
 requires-python = ">=3.12,<3.15"
@@ -29,10 +29,10 @@ dependencies = [
     "cedar-python[mcp]>=0.1.1",
     "click>=8.0.0",
     "click-default-group>=1.2.4",
-    "grpcio>=1.76.0",
     "httpx>=0.27.0",
     "pydantic>=2.12.0",
     "pydantic-settings>=2.12.0",
+    "sondera-harness-client",
     "textual>=6.11.0",
 ]
 
@@ -72,7 +72,6 @@ dev = [
     "textual-dev>=1.8.0",
     "ruff>=0.15.0",
     "pyright",
-    "grpcio-tools>=1.76.0",
     "pre-commit>=4.0.0",
     "detect-secrets>=1.5.0",
 ]
@@ -87,9 +86,7 @@ examples = [
 [tool.ruff]
 line-length = 88
 src = ["src", "tests"]
-exclude = [
-    "src/sondera/proto",      # Generated protobuf files
-]
+exclude = []
 
 [tool.ruff.lint]
 select = [
@@ -115,11 +112,10 @@ ignore = [
 "examples/**" = ["S101"]  # assert is fine in example code
 "docs/**" = ["S101"]  # assert is fine in documentation notebooks
 "scripts/**" = ["S603", "S607"]  # subprocess calls in build scripts
-"setup.py" = ["S603"]  # subprocess call to generate protos during build
 "src/sondera/harness/**" = ["S101"]  # type-narrowing asserts after _ensure_connected()
 "src/sondera/tui/**" = ["S110", "S112"]  # try-except-pass/continue for widget queries that may not be mounted
 "src/sondera/adk/analyze.py" = ["S110"]  # try-except-pass in type introspection
-"src/sondera/langgraph/analyze.py" = ["S110"]  # try-except-pass in type introspection
+"src/sondera/langgraph/**" = ["S101", "S110"]  # type-narrowing asserts, try-except-pass in type introspection
 "src/sondera/strands/analyze.py" = ["S110"]  # try-except-pass in type introspection
 "tests/*" = ["S101", "S108"]  # assert and temp file paths are fine in tests
 
@@ -140,7 +136,6 @@ exclude = [
     "**/.*",
     "build",
     "dist",
-    "src/sondera/proto",  # Generated protobuf files
     "tests",
     "examples/cedar",  # Not in workspace, has external deps
     "examples/github_copilot",  # Not in workspace, has external deps
@@ -173,7 +168,10 @@ extraPaths = ["src", "examples/archetypes/src"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
-addopts = "-v"
+addopts = "-v -m 'not integration'"
+markers = [
+    "integration: requires a running Sondera Harness service (SONDERA_HARNESS_ENDPOINT, SONDERA_API_TOKEN)",
+]
 
 [tool.uv.workspace]
 members = [

@@ -119,13 +119,7 @@ class AgentsFeed(Widget):
         if not self._filter_text:
             return list(self.agents)
         q = self._filter_text.lower()
-        return [
-            a
-            for a in self.agents
-            if q in (a.agent.name or "").lower()
-            or q in a.agent.id.lower()
-            or q in (a.agent.description or "").lower()
-        ]
+        return [a for a in self.agents if q in a.agent.id.lower()]
 
     def on_focus(self, _event) -> None:
         self._has_focus = True
@@ -268,7 +262,7 @@ class AgentsFeed(Widget):
         """Render a single agent status row."""
         c = get_theme_colors(self.app)
         text = Text()
-        name = a.agent.name or a.agent.id[:18]
+        name = a.agent.id
         name_width = 26
         display_name = (
             name[: name_width - 1] + "\u2026" if len(name) > name_width else name

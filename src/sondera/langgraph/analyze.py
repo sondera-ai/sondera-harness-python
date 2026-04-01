@@ -9,7 +9,7 @@ from typing import Any, get_type_hints
 
 from langchain_core.tools import BaseTool
 
-from sondera.types import Agent, Parameter, SourceCode, Tool
+from sondera.types import Agent, AgentCard, Parameter, ReActAgentCard, SourceCode, Tool
 
 logger = logging.getLogger(__name__)
 
@@ -221,7 +221,7 @@ def _get_function_source(func: Callable) -> tuple[str, str]:
 
 
 def _analyze_function_parameters(func: Callable) -> list[Parameter]:
-    """Analyze function parameters and return Sondera format Parameters."""
+    """Analyze function parameters and return Parameter list."""
     parameters = []
     sig = inspect.signature(func)
 
@@ -261,7 +261,7 @@ def _analyze_function_parameters(func: Callable) -> list[Parameter]:
                         break
 
         parameters.append(
-            Parameter(name=param_name, description=description, type=param_type)
+            Parameter(name=param_name, description=description, param_type=param_type)
         )
 
     return parameters
@@ -292,7 +292,7 @@ def _get_function_return_type(func: Callable) -> str:
 
 
 def _analyze_langchain_tool(tool: Any) -> Tool:
-    """Analyze a LangChain tool and convert it to Sondera Tool format."""
+    """Analyze a LangChain tool and convert it to a Tool definition."""
     # Extract JSON schemas for the tool (works for all tool types)
     parameters_json_schema, response_json_schema = _extract_tool_json_schemas(tool)
 
@@ -357,7 +357,7 @@ def _analyze_langchain_tool(tool: Any) -> Tool:
                             Parameter(
                                 name=field_name,
                                 description=description,
-                                type=param_type,
+                                param_type=param_type,
                             )
                         )
                 # Pydantic v2 style - has model_fields dict with FieldInfo objects
@@ -379,7 +379,7 @@ def _analyze_langchain_tool(tool: Any) -> Tool:
                             Parameter(
                                 name=field_name,
                                 description=description,
-                                type=param_type,
+                                param_type=param_type,
                             )
                         )
 
@@ -433,7 +433,7 @@ def analyze_langchain_tools(
     agent_instruction: str | None = None,
     provider_id: str = "langchain",
 ) -> Agent:
-    """Analyze LangChain tools and generate a Sondera Agent object.
+    """Analyze LangChain tools and generate an Agent object.
 
     Args:
         tools: List of LangChain tools (functions decorated with @tool or BaseTool instances)
@@ -474,11 +474,13 @@ def analyze_langchain_tools(
 
     return Agent(
         id=agent_id,
-        provider_id=provider_id,
-        name=agent_name,
-        description=agent_description,
-        instruction=agent_instruction,
-        tools=sondera_tools,
+        provider=provider_id,
+        card=AgentCard.react(
+            ReActAgentCard(
+                system_instruction=agent_instruction,
+                tools=sondera_tools,
+            )
+        ),
     )
 
 
@@ -491,9 +493,9 @@ def create_agent_from_langchain_tools(
     provider_id: str = "langchain",
     system_prompt_func: Callable[[], str] | None = None,
 ) -> Agent:
-    """Convenience function to create a Sondera Agent from LangChain tools.
+    """Convenience function to create an Agent from LangChain tools.
 
-    This function automatically analyzes LangChain tools and creates a Sondera Agent.
+    This function automatically analyzes LangChain tools and creates an Agent.
     It can also extract system instructions from a provided system prompt function.
 
     Args:
@@ -506,7 +508,7 @@ def create_agent_from_langchain_tools(
         system_prompt_func: Optional function that returns system prompt/instructions
 
     Returns:
-        Agent: Configured Sondera Agent with automatically analyzed tools
+        Agent: Configured Agent with automatically analyzed tools
     """
 
     # Extract system instruction from system_prompt_func if provided and agent_instruction is None

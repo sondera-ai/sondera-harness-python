@@ -6,7 +6,7 @@ from typing import Any
 
 from textual.message import Message
 
-from sondera.types import Decision, Role, Stage
+from sondera.types import Decision
 
 
 @dataclass
@@ -24,14 +24,14 @@ class StepEvent(Message):
     total_steps: int
     """Total number of steps in the trajectory."""
 
-    stage: Stage
-    """Agent loop stage (PRE_MODEL, POST_MODEL, PRE_TOOL, POST_TOOL, etc.)."""
+    stage: str
+    """Agent loop stage (pre_model, post_model, pre_tool, post_tool, etc.)."""
 
-    role: Role
-    """Actor role (USER, MODEL, TOOL, SYSTEM)."""
+    role: str
+    """Actor role (user, model, tool, system)."""
 
     decision: Decision
-    """Policy decision for this step (ALLOW, DENY, ESCALATE)."""
+    """Policy decision for this step (Allow, Deny, Escalate)."""
 
     reason: str
     """Reason for the adjudication decision."""
@@ -68,17 +68,17 @@ class StepEvent(Message):
     @property
     def is_tool_call(self) -> bool:
         """True if this step involves a tool."""
-        return self.role == Role.TOOL
+        return self.role == "tool"
 
     @property
     def is_denied(self) -> bool:
         """True if this step was denied by policy."""
-        return self.decision == Decision.DENY
+        return self.decision == Decision.Deny
 
     @property
     def is_escalated(self) -> bool:
         """True if this step requires escalation."""
-        return self.decision == Decision.ESCALATE
+        return self.decision == Decision.Escalate
 
 
 @dataclass

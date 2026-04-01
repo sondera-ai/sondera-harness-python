@@ -214,11 +214,10 @@ adj_step.message                 # "Allow: reason" or "Deny: reason"
 ```python
 from sondera import TrajectoryStatus
 
-TrajectoryStatus.PENDING    # Created but not started
-TrajectoryStatus.RUNNING    # Currently executing
-TrajectoryStatus.COMPLETED  # Finished successfully
-TrajectoryStatus.SUSPENDED  # Paused mid-execution (use resume() to continue)
-TrajectoryStatus.FAILED     # Finished with error
+TrajectoryStatus.Pending    # Created but not started
+TrajectoryStatus.Running    # Currently executing
+TrajectoryStatus.Completed  # Finished successfully
+TrajectoryStatus.Failed     # Finished with error
 ```
 
 ---

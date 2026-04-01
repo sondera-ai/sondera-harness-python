@@ -24,9 +24,9 @@ from typing import Any, TypedDict
 
 from langgraph.graph import END, StateGraph
 
+from sondera import Agent, AgentCard, ReActAgentCard
 from sondera.harness import SonderaRemoteHarness
 from sondera.langgraph import SonderaGraph
-from sondera.types import Agent
 
 
 class WorkflowState(TypedDict, total=False):
@@ -60,11 +60,12 @@ async def main() -> None:
     harness = SonderaRemoteHarness(
         agent=Agent(
             id="quickstart-graph-agent",
-            provider_id="langgraph",
-            name="Quickstart Graph Agent",
-            description="A simple graph demonstrating SonderaGraph wrapper",
-            instruction="Process queries deterministically",
-            tools=[],
+            provider="langgraph",
+            card=AgentCard.react(
+                ReActAgentCard(
+                    system_instruction="Process queries deterministically",
+                )
+            ),
         ),
     )
 

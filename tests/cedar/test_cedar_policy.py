@@ -1,89 +1,131 @@
 """Tests for CedarPolicyHarness with a simple coding agent."""
 
+import json
+
 import pytest
 
+from sondera import (
+    Agent,
+    AgentCard,
+    Decision,
+    Event,
+    Parameter,
+    Prompt,
+    PromptRole,
+    ReActAgentCard,
+    Tool,
+    ToolCall,
+    ToolOutput,
+)
 from sondera.harness.cedar.harness import CedarPolicyHarness
 from sondera.harness.cedar.schema import agent_to_cedar_schema
-from sondera.types import (
-    Agent,
-    Decision,
-    Parameter,
-    PolicyMetadata,
-    Role,
-    Stage,
-    Tool,
-    ToolRequestContent,
-    ToolResponseContent,
-)
 
 
 @pytest.fixture
 def coding_agent() -> Agent:
     """Create a simple coding agent with several tools."""
     return Agent(
-        id="coding-agent-1",
-        provider_id="openai",
-        name="CodingAgent",
-        description="An AI coding assistant",
-        instruction="Help users write and execute code",
-        tools=[
-            Tool(
-                id="read_file",
-                name="read_file",
-                description="Read contents of a file",
-                parameters=[
-                    Parameter(
-                        name="path", description="File path to read", type="string"
-                    )
+        id="CodingAgent",
+        provider="openai",
+        card=AgentCard.react(
+            ReActAgentCard(
+                system_instruction="Help users write and execute code",
+                tools=[
+                    Tool(
+                        name="read_file",
+                        description="Read contents of a file",
+                        parameters=[
+                            Parameter(
+                                name="path",
+                                description="File path to read",
+                                param_type="string",
+                            )
+                        ],
+                        parameters_json_schema='{"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}',
+                        response_json_schema='{"type": "object", "properties": {"content": {"type": "string"}, "size": {"type": "integer"}}}',
+                    ),
+                    Tool(
+                        name="write_file",
+                        description="Write contents to a file",
+                        parameters=[
+                            Parameter(
+                                name="path",
+                                description="File path to write",
+                                param_type="string",
+                            ),
+                            Parameter(
+                                name="content",
+                                description="Content to write",
+                                param_type="string",
+                            ),
+                        ],
+                        parameters_json_schema='{"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}}, "required": ["path", "content"]}',
+                    ),
+                    Tool(
+                        name="execute_command",
+                        description="Execute a shell command",
+                        parameters=[
+                            Parameter(
+                                name="command",
+                                description="Command to execute",
+                                param_type="string",
+                            ),
+                            Parameter(
+                                name="timeout",
+                                description="Timeout in seconds",
+                                param_type="integer",
+                            ),
+                        ],
+                        parameters_json_schema='{"type": "object", "properties": {"command": {"type": "string"}, "timeout": {"type": "integer"}}, "required": ["command"]}',
+                    ),
+                    Tool(
+                        name="search_code",
+                        description="Search for code patterns",
+                        parameters=[
+                            Parameter(
+                                name="pattern",
+                                description="Search pattern",
+                                param_type="string",
+                            ),
+                            Parameter(
+                                name="directory",
+                                description="Directory to search",
+                                param_type="string",
+                            ),
+                        ],
+                        parameters_json_schema='{"type": "object", "properties": {"pattern": {"type": "string"}, "directory": {"type": "string"}}, "required": ["pattern"]}',
+                    ),
                 ],
-                parameters_json_schema='{"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}',
-                response_json_schema='{"type": "object", "properties": {"content": {"type": "string"}, "size": {"type": "integer"}}}',
-            ),
-            Tool(
-                id="write_file",
-                name="write_file",
-                description="Write contents to a file",
-                parameters=[
-                    Parameter(
-                        name="path", description="File path to write", type="string"
-                    ),
-                    Parameter(
-                        name="content", description="Content to write", type="string"
-                    ),
-                ],
-                parameters_json_schema='{"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}}, "required": ["path", "content"]}',
-            ),
-            Tool(
-                id="execute_command",
-                name="execute_command",
-                description="Execute a shell command",
-                parameters=[
-                    Parameter(
-                        name="command", description="Command to execute", type="string"
-                    ),
-                    Parameter(
-                        name="timeout", description="Timeout in seconds", type="integer"
-                    ),
-                ],
-                parameters_json_schema='{"type": "object", "properties": {"command": {"type": "string"}, "timeout": {"type": "integer"}}, "required": ["command"]}',
-            ),
-            Tool(
-                id="search_code",
-                name="search_code",
-                description="Search for code patterns",
-                parameters=[
-                    Parameter(
-                        name="pattern", description="Search pattern", type="string"
-                    ),
-                    Parameter(
-                        name="directory",
-                        description="Directory to search",
-                        type="string",
-                    ),
-                ],
-                parameters_json_schema='{"type": "object", "properties": {"pattern": {"type": "string"}, "directory": {"type": "string"}}, "required": ["pattern"]}',
-            ),
-        ],
+            )
+        ),
+    )
+
+
+def _tool_call_event(harness, tool_name: str, arguments: dict) -> Event:
+    """Helper to build a ToolCall event."""
+    return Event(
+        agent=harness.agent,
+        trajectory_id=harness.trajectory_id,
+        event=ToolCall(tool=tool_name, arguments=arguments),
+    )
+
+
+def _tool_output_event(harness, tool_name: str, response: dict | str) -> Event:
+    """Helper to build a ToolOutput event."""
+    output = response if isinstance(response, str) else json.dumps(response)
+    return Event(
+        agent=harness.agent,
+        trajectory_id=harness.trajectory_id,
+        event=ToolOutput.from_success(tool_name, output),
+    )
+
+
+def _prompt_event(harness, role: PromptRole, text: str) -> Event:
+    """Helper to build a Prompt event."""
+    return Event(
+        agent=harness.agent,
+        trajectory_id=harness.trajectory_id,
+        event=Prompt(role=role, content=text),
     )
 
 
@@ -181,11 +223,7 @@ class TestCedarPolicyHarnessLifecycle:
         tid = harness.trajectory_id
         assert tid is not None
         await harness.adjudicate(
-            stage=Stage.PRE_TOOL,
-            role=Role.MODEL,
-            content=ToolRequestContent(
-                tool_id="read_file", args={"path": "/tmp/test.txt"}
-            ),
+            _tool_call_event(harness, "read_file", {"path": "/tmp/test.txt"})
         )
         await harness.finalize()
 
@@ -232,6 +270,73 @@ class TestCedarPolicyHarnessLifecycle:
         with pytest.raises(ValueError, match="No active trajectory"):
             await harness.finalize()
 
+    @pytest.mark.asyncio
+    async def test_fail_marks_trajectory_failed_and_clears(self, coding_agent):
+        """fail() should write a Failed status and clear the active trajectory."""
+        from unittest.mock import MagicMock
+
+        from sondera.harness.trajectory.abc import TrajectoryStorage
+        from sondera.types import TrajectoryStatus
+
+        mock_storage = MagicMock(spec=TrajectoryStorage)
+        schema = agent_to_cedar_schema(coding_agent)
+        harness = CedarPolicyHarness(
+            policy_set='@id("allow-all") permit(principal, action, resource);',
+            schema=schema,
+            storage=mock_storage,
+        )
+
+        await harness.initialize(agent=coding_agent)
+        tid = harness._trajectory_id
+        assert tid is not None
+
+        await harness.fail(reason="test failure")
+
+        assert harness._trajectory_id is None
+        assert harness._trajectory_step_count == 0
+        mock_storage.finalize_trajectory.assert_called_once_with(
+            coding_agent.id,
+            tid,
+            status=TrajectoryStatus.Failed,
+        )
+
+    @pytest.mark.asyncio
+    async def test_fail_raises_without_active_trajectory(self, coding_agent):
+        """fail() without an active trajectory should raise ValueError."""
+        schema = agent_to_cedar_schema(coding_agent)
+        harness = CedarPolicyHarness(
+            policy_set='@id("allow-all") permit(principal, action, resource);',
+            schema=schema,
+        )
+
+        with pytest.raises(ValueError, match="No active trajectory"):
+            await harness.fail(reason="crash")
+
+    @pytest.mark.asyncio
+    async def test_fail_clears_trajectory_even_if_storage_raises(self, coding_agent):
+        """trajectory_id must be cleared even when storage.finalize_trajectory raises."""
+        from unittest.mock import MagicMock
+
+        from sondera.harness.trajectory.abc import TrajectoryStorage
+
+        mock_storage = MagicMock(spec=TrajectoryStorage)
+        mock_storage.finalize_trajectory.side_effect = OSError("disk full")
+        schema = agent_to_cedar_schema(coding_agent)
+        harness = CedarPolicyHarness(
+            policy_set='@id("allow-all") permit(principal, action, resource);',
+            schema=schema,
+            storage=mock_storage,
+        )
+
+        await harness.initialize(agent=coding_agent)
+
+        with pytest.raises(OSError, match="disk full"):
+            await harness.fail(reason="crash")
+
+        # trajectory_id must be cleared despite the storage error
+        assert harness._trajectory_id is None
+        assert harness._trajectory_step_count == 0
+
 
 class TestCedarPolicyHarnessPermitAll:
     """Tests for permit-all policy."""
@@ -251,12 +356,10 @@ class TestCedarPolicyHarnessPermitAll:
         await permit_all_harness.initialize(agent=coding_agent)
 
         result = await permit_all_harness.adjudicate(
-            Stage.PRE_TOOL,
-            Role.MODEL,
-            ToolRequestContent(tool_id="read_file", args={"path": "/etc/passwd"}),
+            _tool_call_event(permit_all_harness, "read_file", {"path": "/etc/passwd"})
         )
 
-        assert result.decision == Decision.ALLOW
+        assert result.decision == Decision.Allow
 
     @pytest.mark.asyncio
     async def test_allows_write_file(self, permit_all_harness, coding_agent):
@@ -264,15 +367,14 @@ class TestCedarPolicyHarnessPermitAll:
         await permit_all_harness.initialize(agent=coding_agent)
 
         result = await permit_all_harness.adjudicate(
-            Stage.PRE_TOOL,
-            Role.MODEL,
-            ToolRequestContent(
-                tool_id="write_file",
-                args={"path": "/tmp/test.txt", "content": "hello world"},
-            ),
+            _tool_call_event(
+                permit_all_harness,
+                "write_file",
+                {"path": "/tmp/test.txt", "content": "hello world"},
+            )
         )
 
-        assert result.decision == Decision.ALLOW
+        assert result.decision == Decision.Allow
 
     @pytest.mark.asyncio
     async def test_allows_execute_command(self, permit_all_harness, coding_agent):
@@ -280,15 +382,14 @@ class TestCedarPolicyHarnessPermitAll:
         await permit_all_harness.initialize(agent=coding_agent)
 
         result = await permit_all_harness.adjudicate(
-            Stage.PRE_TOOL,
-            Role.MODEL,
-            ToolRequestContent(
-                tool_id="execute_command",
-                args={"command": "ls -la", "timeout": 30},
-            ),
+            _tool_call_event(
+                permit_all_harness,
+                "execute_command",
+                {"command": "ls -la", "timeout": 30},
+            )
         )
 
-        assert result.decision == Decision.ALLOW
+        assert result.decision == Decision.Allow
 
     @pytest.mark.asyncio
     async def test_allows_tool_response(self, permit_all_harness, coding_agent):
@@ -296,15 +397,14 @@ class TestCedarPolicyHarnessPermitAll:
         await permit_all_harness.initialize(agent=coding_agent)
 
         result = await permit_all_harness.adjudicate(
-            Stage.POST_TOOL,
-            Role.TOOL,
-            ToolResponseContent(
-                tool_id="read_file",
-                response={"content": "file contents", "size": 100},
-            ),
+            _tool_output_event(
+                permit_all_harness,
+                "read_file",
+                {"content": "file contents", "size": 100},
+            )
         )
 
-        assert result.decision == Decision.ALLOW
+        assert result.decision == Decision.Allow
 
 
 class TestCedarPolicyHarnessDenyAll:
@@ -332,13 +432,11 @@ class TestCedarPolicyHarnessDenyAll:
             ("search_code", {"pattern": "test"}),
         ]
 
-        for tool_id, args in test_cases:
+        for tool_name, args in test_cases:
             result = await deny_all_harness.adjudicate(
-                Stage.PRE_TOOL,
-                Role.MODEL,
-                ToolRequestContent(tool_id=tool_id, args=args),
+                _tool_call_event(deny_all_harness, tool_name, args)
             )
-            assert result.decision == Decision.DENY, f"{tool_id} should be denied"
+            assert result.decision == Decision.Deny, f"{tool_name} should be denied"
 
 
 class TestCedarPolicyHarnessTypedParameters:
@@ -361,19 +459,15 @@ class TestCedarPolicyHarnessTypedParameters:
 
         # Reading /etc/passwd should be denied
         result = await harness.adjudicate(
-            Stage.PRE_TOOL,
-            Role.MODEL,
-            ToolRequestContent(tool_id="read_file", args={"path": "/etc/passwd"}),
+            _tool_call_event(harness, "read_file", {"path": "/etc/passwd"})
         )
-        assert result.decision == Decision.DENY
+        assert result.decision == Decision.Deny
 
         # Reading other files should be allowed
         result = await harness.adjudicate(
-            Stage.PRE_TOOL,
-            Role.MODEL,
-            ToolRequestContent(tool_id="read_file", args={"path": "/tmp/safe.txt"}),
+            _tool_call_event(harness, "read_file", {"path": "/tmp/safe.txt"})
         )
-        assert result.decision == Decision.ALLOW
+        assert result.decision == Decision.Allow
 
     @pytest.mark.asyncio
     async def test_deny_dangerous_commands(self, coding_agent):
@@ -396,36 +490,33 @@ class TestCedarPolicyHarnessTypedParameters:
 
         # rm -rf should be denied
         result = await harness.adjudicate(
-            Stage.PRE_TOOL,
-            Role.MODEL,
-            ToolRequestContent(
-                tool_id="execute_command",
-                args={"command": "rm -rf /", "timeout": 30},
-            ),
+            _tool_call_event(
+                harness,
+                "execute_command",
+                {"command": "rm -rf /", "timeout": 30},
+            )
         )
-        assert result.decision == Decision.DENY
+        assert result.decision == Decision.Deny
 
         # sudo should be denied
         result = await harness.adjudicate(
-            Stage.PRE_TOOL,
-            Role.MODEL,
-            ToolRequestContent(
-                tool_id="execute_command",
-                args={"command": "sudo apt install vim", "timeout": 60},
-            ),
+            _tool_call_event(
+                harness,
+                "execute_command",
+                {"command": "sudo apt install vim", "timeout": 60},
+            )
         )
-        assert result.decision == Decision.DENY
+        assert result.decision == Decision.Deny
 
         # Safe commands should be allowed
         result = await harness.adjudicate(
-            Stage.PRE_TOOL,
-            Role.MODEL,
-            ToolRequestContent(
-                tool_id="execute_command",
-                args={"command": "ls -la", "timeout": 10},
-            ),
+            _tool_call_event(
+                harness,
+                "execute_command",
+                {"command": "ls -la", "timeout": 10},
+            )
         )
-        assert result.decision == Decision.ALLOW
+        assert result.decision == Decision.Allow
 
     @pytest.mark.asyncio
     async def test_allow_only_specific_directory(self, coding_agent):
@@ -451,21 +542,15 @@ class TestCedarPolicyHarnessTypedParameters:
 
         # Reading from /workspace should be allowed
         result = await harness.adjudicate(
-            Stage.PRE_TOOL,
-            Role.MODEL,
-            ToolRequestContent(
-                tool_id="read_file", args={"path": "/workspace/src/main.py"}
-            ),
+            _tool_call_event(harness, "read_file", {"path": "/workspace/src/main.py"})
         )
-        assert result.decision == Decision.ALLOW
+        assert result.decision == Decision.Allow
 
         # Reading from outside /workspace should be denied
         result = await harness.adjudicate(
-            Stage.PRE_TOOL,
-            Role.MODEL,
-            ToolRequestContent(tool_id="read_file", args={"path": "/etc/shadow"}),
+            _tool_call_event(harness, "read_file", {"path": "/etc/shadow"})
         )
-        assert result.decision == Decision.DENY
+        assert result.decision == Decision.Deny
 
 
 class TestCedarPolicyHarnessResponseFiltering:
@@ -496,36 +581,33 @@ class TestCedarPolicyHarnessResponseFiltering:
 
         # Response with password should be denied
         result = await harness.adjudicate(
-            Stage.POST_TOOL,
-            Role.TOOL,
-            ToolResponseContent(
-                tool_id="read_file",
-                response={"content": "DB_PASSWORD=secret123", "size": 20},
-            ),
+            _tool_output_event(
+                harness,
+                "read_file",
+                {"content": "DB_PASSWORD=secret123", "size": 20},
+            )
         )
-        assert result.decision == Decision.DENY
+        assert result.decision == Decision.Deny
 
         # Response with api_key should be denied
         result = await harness.adjudicate(
-            Stage.POST_TOOL,
-            Role.TOOL,
-            ToolResponseContent(
-                tool_id="read_file",
-                response={"content": "api_key=abc123", "size": 15},
-            ),
+            _tool_output_event(
+                harness,
+                "read_file",
+                {"content": "api_key=abc123", "size": 15},
+            )
         )
-        assert result.decision == Decision.DENY
+        assert result.decision == Decision.Deny
 
         # Safe response should be allowed
         result = await harness.adjudicate(
-            Stage.POST_TOOL,
-            Role.TOOL,
-            ToolResponseContent(
-                tool_id="read_file",
-                response={"content": "Hello World", "size": 11},
-            ),
+            _tool_output_event(
+                harness,
+                "read_file",
+                {"content": "Hello World", "size": 11},
+            )
         )
-        assert result.decision == Decision.ALLOW
+        assert result.decision == Decision.Allow
 
 
 class TestCedarPolicyHarnessNonToolContent:
@@ -535,47 +617,29 @@ class TestCedarPolicyHarnessNonToolContent:
     async def test_allows_prompt_content_with_permit_policy(self, coding_agent):
         """Test that prompt content is evaluated against policies."""
         schema = agent_to_cedar_schema(coding_agent)
-        # Policy that allows all actions
         policy = '@id("allow-all") permit(principal, action, resource);'
-        harness = CedarPolicyHarness(
-            policy_set=policy,
-            schema=schema,
-        )
+        harness = CedarPolicyHarness(policy_set=policy, schema=schema)
         await harness.initialize(agent=coding_agent)
 
-        # Prompt content should be allowed
-        from sondera.types import PromptContent
-
         result = await harness.adjudicate(
-            Stage.PRE_MODEL,
-            Role.USER,
-            PromptContent(text="Write a Python function"),
+            _prompt_event(harness, PromptRole.User, "Write a Python function")
         )
 
-        assert result.decision == Decision.ALLOW
+        assert result.decision == Decision.Allow
 
     @pytest.mark.asyncio
     async def test_denies_prompt_content_with_forbid_policy(self, coding_agent):
         """Test that prompt content can be denied by policy."""
         schema = agent_to_cedar_schema(coding_agent)
-        # Policy that denies Prompt action
         policy = '@id("deny-prompt") forbid(principal, action == CodingAgent::Action::"Prompt", resource);'
-        harness = CedarPolicyHarness(
-            policy_set=policy,
-            schema=schema,
-        )
+        harness = CedarPolicyHarness(policy_set=policy, schema=schema)
         await harness.initialize(agent=coding_agent)
 
-        # Prompt content should be denied
-        from sondera.types import PromptContent
-
         result = await harness.adjudicate(
-            Stage.PRE_MODEL,
-            Role.USER,
-            PromptContent(text="Write a Python function"),
+            _prompt_event(harness, PromptRole.User, "Write a Python function")
         )
 
-        assert result.decision == Decision.DENY
+        assert result.decision == Decision.Deny
 
 
 class TestCedarPolicyHarnessWithoutAgent:
@@ -589,16 +653,17 @@ class TestCedarPolicyHarnessWithoutAgent:
             policy_set='@id("deny-all") forbid(principal, action, resource);',
             schema=schema,
         )
-        # Don't initialize with an agent
 
         with pytest.raises(
             RuntimeError,
             match="initialize\\(\\) must be called before adjudicate\\(\\)",
         ):
             await harness.adjudicate(
-                Stage.PRE_TOOL,
-                Role.MODEL,
-                ToolRequestContent(tool_id="read_file", args={"path": "/test"}),
+                Event(
+                    agent=coding_agent,
+                    trajectory_id="fake",
+                    event=ToolCall(tool="read_file", arguments={"path": "/test"}),
+                )
             )
 
 
@@ -606,8 +671,8 @@ class TestCedarPolicyHarnessInternalErrors:
     """Tests for internal error handling."""
 
     @pytest.mark.asyncio
-    async def test_raises_runtime_error_when_policy_not_found(self, coding_agent):
-        """Test that RuntimeError is raised when a determining policy is not found."""
+    async def test_unknown_policy_id_returns_deny(self, coding_agent):
+        """Test that unknown determining policy IDs result in a default deny."""
         from unittest.mock import MagicMock
 
         schema = agent_to_cedar_schema(coding_agent)
@@ -627,15 +692,11 @@ class TestCedarPolicyHarnessInternalErrors:
         mock_authorizer.upsert_entity = MagicMock()
         harness._authorizer = mock_authorizer
 
-        with pytest.raises(
-            RuntimeError,
-            match="Policy 'non_existent_policy_id' not found in policy set",
-        ):
-            await harness.adjudicate(
-                Stage.PRE_TOOL,
-                Role.MODEL,
-                ToolRequestContent(tool_id="read_file", args={"path": "/test"}),
-            )
+        result = await harness.adjudicate(
+            _tool_call_event(harness, "read_file", {"path": "/test"})
+        )
+        # Unknown policy IDs are skipped; falls through to default deny
+        assert result.decision == Decision.Deny
 
 
 class TestCedarPolicyHarnessEscalate:
@@ -682,20 +743,16 @@ class TestCedarPolicyHarnessEscalate:
         await harness.initialize(agent=coding_agent)
 
         result = await harness.adjudicate(
-            Stage.PRE_TOOL,
-            Role.MODEL,
-            ToolRequestContent(tool_id="execute_command", args={"command": "ls"}),
+            _tool_call_event(harness, "execute_command", {"command": "ls"})
         )
 
-        assert result.decision == Decision.ESCALATE
-        assert result.policies == [
-            PolicyMetadata(
-                id="escalate-execute",
-                description="Commands require approval",
-                escalate=True,
-                escalate_arg=expected_escalate_arg,
-            )
-        ]
+        assert result.decision == Decision.Escalate
+        assert len(result.metadata) == 1
+        pm = result.metadata[0]
+        assert pm.policy_id == "escalate-execute"
+        assert pm.description == "Commands require approval"
+        assert pm.escalate is True
+        assert pm.escalate_arg == (expected_escalate_arg or None)
 
     @pytest.mark.asyncio
     async def test_mixed_escalate_and_hard_deny_returns_deny(self, coding_agent):
@@ -716,14 +773,12 @@ class TestCedarPolicyHarnessEscalate:
         await harness.initialize(agent=coding_agent)
 
         result = await harness.adjudicate(
-            Stage.PRE_TOOL,
-            Role.MODEL,
-            ToolRequestContent(tool_id="execute_command", args={"command": "ls"}),
+            _tool_call_event(harness, "execute_command", {"command": "ls"})
         )
 
-        assert result.decision == Decision.DENY
-        # policies should only contain the hard deny policy, not the escalate one
-        policy_ids = [p.id for p in result.policies]
+        assert result.decision == Decision.Deny
+        # metadata should only contain the hard deny policy, not the escalate one
+        policy_ids = [p.policy_id for p in result.metadata]
         assert "hard-deny-execute" in policy_ids
         assert "escalate-execute" not in policy_ids
 
@@ -751,27 +806,20 @@ class TestCedarPolicyHarnessEscalate:
         await harness.initialize(agent=coding_agent)
 
         result = await harness.adjudicate(
-            Stage.PRE_TOOL,
-            Role.MODEL,
-            ToolRequestContent(tool_id="execute_command", args={"command": "ls"}),
+            _tool_call_event(harness, "execute_command", {"command": "ls"})
         )
 
-        assert result.decision == Decision.ESCALATE
-        # Sort in case policy evaluation order can vary
-        assert sorted(result.policies, key=lambda p: p.id) == [
-            PolicyMetadata(
-                id="escalate-1",
-                description="Reason A",
-                escalate=True,
-                escalate_arg="team-a",
-            ),
-            PolicyMetadata(
-                id="escalate-2",
-                description="Reason B",
-                escalate=True,
-                escalate_arg="team-b",
-            ),
-        ]
+        assert result.decision == Decision.Escalate
+        sorted_metadata = sorted(result.metadata, key=lambda p: p.policy_id)
+        assert len(sorted_metadata) == 2
+        assert sorted_metadata[0].policy_id == "escalate-1"
+        assert sorted_metadata[0].description == "Reason A"
+        assert sorted_metadata[0].escalate is True
+        assert sorted_metadata[0].escalate_arg == "team-a"
+        assert sorted_metadata[1].policy_id == "escalate-2"
+        assert sorted_metadata[1].description == "Reason B"
+        assert sorted_metadata[1].escalate is True
+        assert sorted_metadata[1].escalate_arg == "team-b"
 
     @pytest.mark.asyncio
     async def test_escalate_does_not_affect_allow(self, coding_agent):
@@ -790,9 +838,7 @@ class TestCedarPolicyHarnessEscalate:
 
         # read_file should still be allowed (not affected by execute_command escalate)
         result = await harness.adjudicate(
-            Stage.PRE_TOOL,
-            Role.MODEL,
-            ToolRequestContent(tool_id="read_file", args={"path": "/tmp/test"}),
+            _tool_call_event(harness, "read_file", {"path": "/tmp/test"})
         )
 
-        assert result.decision == Decision.ALLOW
+        assert result.decision == Decision.Allow

@@ -24,9 +24,9 @@ from archetypes.healthcare import (
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langgraph.graph import END, StateGraph
 
+from sondera import Agent, AgentCard, Parameter, ReActAgentCard, Tool
 from sondera.harness import SonderaRemoteHarness
 from sondera.langgraph import SonderaGraph
-from sondera.types import Agent, Parameter, Tool
 
 
 class TrialState(TypedDict, total=False):
@@ -184,48 +184,50 @@ async def main():
     # Create Sondera agent
     sondera_agent = Agent(
         id="life-sciences-recruitment-agent",
-        provider_id="langgraph",
-        name="life-sciences-recruitment-agent",
-        description="AI agent for identifying eligible patients for clinical trials using EHR data",
-        instruction="Analyze patient records against clinical trial criteria to identify eligible candidates",
-        tools=[
-            Tool(
-                name="load_protocol",
-                description="Load clinical trial protocol by ID",
-                parameters=[
-                    Parameter(
-                        name="trial_id",
-                        description="Clinical trial identifier",
-                        type="string",
-                    )
+        provider="langgraph",
+        card=AgentCard.react(
+            ReActAgentCard(
+                system_instruction="Analyze patient records against clinical trial criteria to identify eligible candidates",
+                tools=[
+                    Tool(
+                        name="load_protocol",
+                        description="Load clinical trial protocol by ID",
+                        parameters=[
+                            Parameter(
+                                name="trial_id",
+                                description="Clinical trial identifier",
+                                param_type="string",
+                            )
+                        ],
+                        response="TrialProtocol",
+                    ),
+                    Tool(
+                        name="query_ehr",
+                        description="Query electronic health records for patient data",
+                        parameters=[
+                            Parameter(
+                                name="hospital_ids",
+                                description="List of hospital identifiers",
+                                param_type="array",
+                            )
+                        ],
+                        response="list[PatientRecord]",
+                    ),
+                    Tool(
+                        name="check_eligibility",
+                        description="Check patient eligibility against trial criteria",
+                        parameters=[],
+                        response="list[EligibilityResult]",
+                    ),
+                    Tool(
+                        name="generate_report",
+                        description="Generate recruitment report with eligible patients",
+                        parameters=[],
+                        response="string",
+                    ),
                 ],
-                response="TrialProtocol",
-            ),
-            Tool(
-                name="query_ehr",
-                description="Query electronic health records for patient data",
-                parameters=[
-                    Parameter(
-                        name="hospital_ids",
-                        description="List of hospital identifiers",
-                        type="array",
-                    )
-                ],
-                response="list[PatientRecord]",
-            ),
-            Tool(
-                name="check_eligibility",
-                description="Check patient eligibility against trial criteria",
-                parameters=[],
-                response="list[EligibilityResult]",
-            ),
-            Tool(
-                name="generate_report",
-                description="Generate recruitment report with eligible patients",
-                parameters=[],
-                response="string",
-            ),
-        ],
+            )
+        ),
     )
     harness = SonderaRemoteHarness(agent=sondera_agent)
     graph = build_recruitment_graph(protocol_store, ehr)

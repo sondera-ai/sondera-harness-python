@@ -12,27 +12,31 @@ Directory layout::
 import json
 import logging
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 from sondera.types import (
-    AdjudicatedStep,
-    AdjudicatedTrajectory,
-    AdjudicationRecord,
+    Adjudicated,
     Agent,
     Decision,
+    Event,
     Trajectory,
     TrajectoryStatus,
 )
 
-from .abc import TrajectoryStorage
+from .abc import (
+    AdjudicatedStep,
+    AdjudicatedTrajectory,
+    AdjudicationRecord,
+    TrajectoryStorage,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class FileTrajectoryStorage(TrajectoryStorage):
     def __init__(self, root: str | Path = Path(".sondera/trajectories")) -> None:
-        self._root = Path(root)
+        self._root = Path(root).expanduser().resolve(strict=False)
 
     # -- Paths ----------------------------------------------------------------
 
@@ -44,11 +48,39 @@ class FileTrajectoryStorage(TrajectoryStorage):
     def _adjudications_path(self) -> Path:
         return self._root / "adjudications.json"
 
+    @staticmethod
+    def _validate_path_component(value: str, field_name: str) -> str:
+        if not value:
+            raise ValueError(f"{field_name} must be a non-empty path component")
+
+        for path_cls in (PurePosixPath, PureWindowsPath):
+            path = path_cls(value)
+            if path.anchor or len(path.parts) != 1 or path.parts[0] in {".", ".."}:
+                raise ValueError(f"{field_name} must be a single path component")
+
+        return value
+
+    def _resolve_storage_path(self, *parts: str) -> Path:
+        path = self._root.joinpath(*parts).resolve(strict=False)
+        if not path.is_relative_to(self._root):
+            raise ValueError("Storage path escapes trajectory root")
+        return path
+
     def _agent_dir(self, agent_id: str) -> Path:
-        return self._root / agent_id
+        agent_component = self._validate_path_component(agent_id, "agent_id")
+        return self._resolve_storage_path(agent_component)
+
+    def _trajectory_filename(self, trajectory_id: str) -> str:
+        trajectory_component = self._validate_path_component(
+            trajectory_id, "trajectory_id"
+        )
+        return f"{trajectory_component}.jsonl"
 
     def _trajectory_path(self, agent_id: str, trajectory_id: str) -> Path:
-        return self._agent_dir(agent_id) / f"{trajectory_id}.jsonl"
+        agent_component = self._validate_path_component(agent_id, "agent_id")
+        return self._resolve_storage_path(
+            agent_component, self._trajectory_filename(trajectory_id)
+        )
 
     # -- Internal helpers -----------------------------------------------------
 
@@ -67,12 +99,12 @@ class FileTrajectoryStorage(TrajectoryStorage):
         if not self._agents_path.exists():
             return []
         data = json.loads(self._agents_path.read_text())
-        return [Agent.model_validate(a) for a in data]
+        return [Agent.from_dict(a) for a in data]
 
     def _write_agents(self, agents: list[Agent]) -> None:
         self._root.mkdir(parents=True, exist_ok=True)
         self._agents_path.write_text(
-            json.dumps([a.model_dump(mode="json") for a in agents], indent=2)
+            json.dumps([a.to_dict() for a in agents], indent=2)
         )
 
     def _read_adjudication_records(self) -> list[dict[str, Any]]:
@@ -84,7 +116,7 @@ class FileTrajectoryStorage(TrajectoryStorage):
         self._root.mkdir(parents=True, exist_ok=True)
         self._adjudications_path.write_text(json.dumps(records, indent=2))
 
-    def _read_trajectory_header(self, path: Path) -> Trajectory | None:
+    def _read_trajectory_header(self, path: Path) -> dict[str, Any] | None:
         """Read line 1 of a JSONL trajectory file (metadata only, no steps)."""
         if not path.exists():
             return None
@@ -92,7 +124,7 @@ class FileTrajectoryStorage(TrajectoryStorage):
             line = f.readline().strip()
             if not line:
                 return None
-            return Trajectory.model_validate(json.loads(line))
+            return json.loads(line)
 
     def _count_steps(self, path: Path) -> int:
         """Count step lines in JSONL (total lines minus header)."""
@@ -100,6 +132,16 @@ class FileTrajectoryStorage(TrajectoryStorage):
             return 0
         with path.open() as f:
             return max(sum(1 for _ in f) - 1, 0)
+
+    def _status_from_str(self, status_str: str) -> TrajectoryStatus:
+        """Convert status string to TrajectoryStatus enum."""
+        status_map = {
+            "running": TrajectoryStatus.Running,
+            "completed": TrajectoryStatus.Completed,
+            "failed": TrajectoryStatus.Failed,
+            "pending": TrajectoryStatus.Pending,
+        }
+        return status_map.get(status_str.lower(), TrajectoryStatus.Running)
 
     def _read_full_trajectory(self, path: Path) -> AdjudicatedTrajectory | None:
         """Read JSONL file into an AdjudicatedTrajectory with all steps."""
@@ -109,8 +151,24 @@ class FileTrajectoryStorage(TrajectoryStorage):
         if not lines:
             return None
         meta = json.loads(lines[0])
-        meta["steps"] = [json.loads(line) for line in lines[1:] if line.strip()]
-        return AdjudicatedTrajectory.model_validate(meta)
+        steps: list[AdjudicatedStep] = []
+        for line in lines[1:]:
+            if not line.strip():
+                continue
+            s = json.loads(line)
+            steps.append(
+                AdjudicatedStep(
+                    event=Event.from_dict(s["event"]),
+                    adjudication=Adjudicated.from_dict(s["adjudication"]),
+                )
+            )
+        return AdjudicatedTrajectory(
+            id=meta["id"],
+            agent=meta["agent_id"],
+            status=self._status_from_str(meta.get("status", "running")),
+            session_id=meta.get("session_id"),
+            steps=steps,
+        )
 
     # -- Read (TrajectoryStorage ABC) -----------------------------------------
 
@@ -122,7 +180,7 @@ class FileTrajectoryStorage(TrajectoryStorage):
     ) -> tuple[list[Agent], str]:
         agents = self._read_agents()
         if provider_id is not None:
-            agents = [a for a in agents if a.provider_id == provider_id]
+            agents = [a for a in agents if a.provider == provider_id]
         return self._paginate(agents, page_size, page_token)
 
     async def get_agent(self, agent_id: str) -> Agent | None:
@@ -137,7 +195,6 @@ class FileTrajectoryStorage(TrajectoryStorage):
         status: TrajectoryStatus | None = None,
         page_size: int = 50,
         page_token: str = "",
-        min_step_count: int = 0,
         session_id: str | None = None,
     ) -> tuple[list[Trajectory], str]:
         agent_dir = self._agent_dir(agent_id)
@@ -150,30 +207,38 @@ class FileTrajectoryStorage(TrajectoryStorage):
             key=lambda p: p.stat().st_mtime,
             reverse=True,
         ):
-            traj = self._read_trajectory_header(path)
-            if traj is None:
+            meta = self._read_trajectory_header(path)
+            if meta is None:
                 continue
-            if status is not None and traj.status != status:
+            traj_status = self._status_from_str(meta.get("status", "running"))
+            if status is not None and traj_status != status:
                 continue
-            if session_id is not None and traj.session_id != session_id:
+            if session_id is not None and meta.get("session_id") != session_id:
                 continue
-            if min_step_count > 0:
-                step_count = self._count_steps(path)
-                if step_count < min_step_count:
-                    continue
-                traj.raw_step_count = step_count
+            # Create a Trajectory object from metadata
+            traj = Trajectory(
+                name=meta["id"],
+                agent=meta.get("agent_id", agent_id),
+                status=traj_status,
+            )
             trajectories.append(traj)
 
         return self._paginate(trajectories, page_size, page_token)
 
     async def get_trajectory(self, trajectory_id: str) -> AdjudicatedTrajectory | None:
         """Scan all agent dirs for ``<trajectory_id>.jsonl``."""
+        filename = self._trajectory_filename(trajectory_id)
         if not self._root.exists():
             return None
         for agent_dir in self._root.iterdir():
             if not agent_dir.is_dir():
                 continue
-            path = agent_dir / f"{trajectory_id}.jsonl"
+            path = (agent_dir / filename).resolve(strict=False)
+            if not path.is_relative_to(self._root):
+                logger.warning(
+                    "Skipping trajectory path outside storage root: %s", path
+                )
+                continue
             result = self._read_full_trajectory(path)
             if result is not None:
                 return result
@@ -188,7 +253,12 @@ class FileTrajectoryStorage(TrajectoryStorage):
         raw = self._read_adjudication_records()
         if agent_id is not None:
             raw = [r for r in raw if r.get("agent_id") == agent_id]
-        records = [AdjudicationRecord.model_validate(r) for r in raw]
+        records = []
+        for r in raw:
+            adj_data = r.get("adjudication", {})
+            if isinstance(adj_data, dict):
+                r = {**r, "adjudication": Adjudicated.from_dict(adj_data)}
+            records.append(AdjudicationRecord.model_validate(r))
         return self._paginate(records, page_size, page_token)
 
     async def analyze_trajectories(
@@ -210,6 +280,10 @@ class FileTrajectoryStorage(TrajectoryStorage):
         result["computed_at"] = datetime.now(tz=UTC).isoformat()
         return result
 
+    def _status_to_str(self, status: TrajectoryStatus) -> str:
+        """Convert TrajectoryStatus enum to string for JSON storage."""
+        return str(status)
+
     # -- Write ----------------------------------------------------------------
 
     def save_agent(self, agent: Agent) -> None:
@@ -224,23 +298,37 @@ class FileTrajectoryStorage(TrajectoryStorage):
 
     def save_trajectory(self, trajectory: AdjudicatedTrajectory) -> None:
         """Write full trajectory to JSONL and rebuild its adjudication index."""
-        agent_dir = self._agent_dir(trajectory.agent_id)
+        agent_dir = self._agent_dir(trajectory.agent)
         agent_dir.mkdir(parents=True, exist_ok=True)
-        path = self._trajectory_path(trajectory.agent_id, trajectory.id)
+        path = self._trajectory_path(trajectory.agent, trajectory.id)
 
-        meta = trajectory.model_dump(mode="json", exclude={"steps"})
+        meta = {
+            "id": trajectory.id,
+            "agent_id": trajectory.agent,
+            "status": self._status_to_str(trajectory.status),
+            "session_id": trajectory.session_id,
+        }
         lines = [json.dumps(meta)]
         for step in trajectory.steps:
-            lines.append(json.dumps(step.model_dump(mode="json")))
+            step_data = {
+                "event": step.event.to_dict(),
+                "adjudication": step.adjudication.to_dict(),
+            }
+            lines.append(json.dumps(step_data))
         path.write_text("\n".join(lines) + "\n")
 
         self._index_adjudications(trajectory)
 
     def init_trajectory(self, trajectory: Trajectory) -> None:
-        agent_dir = self._agent_dir(trajectory.agent_id)
+        agent_dir = self._agent_dir(trajectory.agent)
         agent_dir.mkdir(parents=True, exist_ok=True)
-        path = self._trajectory_path(trajectory.agent_id, trajectory.id)
-        meta = trajectory.model_dump(mode="json", exclude={"steps"})
+        path = self._trajectory_path(trajectory.agent, trajectory.name)
+        meta = {
+            "id": trajectory.name,
+            "agent_id": trajectory.agent,
+            "status": self._status_to_str(trajectory.status),
+            "session_id": getattr(trajectory, "session_id", None),
+        }
         path.write_text(json.dumps(meta) + "\n")
 
     def append_step(
@@ -252,13 +340,23 @@ class FileTrajectoryStorage(TrajectoryStorage):
     ) -> None:
         path = self._trajectory_path(agent_id, trajectory_id)
         with path.open("a") as f:
-            f.write(json.dumps(step.model_dump(mode="json")) + "\n")
+            step_data = {
+                "event": step.event.to_dict(),
+                "adjudication": step.adjudication.to_dict(),
+            }
+            f.write(json.dumps(step_data) + "\n")
 
-        if step.adjudication.decision in (Decision.DENY, Decision.ESCALATE):
+        if step.adjudication.decision in (Decision.Deny, Decision.Escalate):
             idx = step_index if step_index is not None else self._count_steps(path) - 1
             self._append_adjudication_record(agent_id, trajectory_id, step, idx)
 
-    def finalize_trajectory(self, agent_id: str, trajectory_id: str) -> None:
+    def finalize_trajectory(
+        self,
+        agent_id: str,
+        trajectory_id: str,
+        *,
+        status: TrajectoryStatus = TrajectoryStatus.Completed,
+    ) -> None:
         path = self._trajectory_path(agent_id, trajectory_id)
         if not path.exists():
             return
@@ -266,11 +364,15 @@ class FileTrajectoryStorage(TrajectoryStorage):
         if not lines:
             return
         meta = json.loads(lines[0])
-        meta["status"] = TrajectoryStatus.COMPLETED.value
+        meta["status"] = self._status_to_str(status)
         lines[0] = json.dumps(meta)
         path.write_text("\n".join(lines) + "\n")
 
     # -- Adjudication index ---------------------------------------------------
+
+    def _adjudicated_to_dict(self, adj: Adjudicated) -> dict[str, Any]:
+        """Convert Adjudicated to dict for JSON storage."""
+        return adj.to_dict()
 
     def _append_adjudication_record(
         self,
@@ -290,7 +392,7 @@ class FileTrajectoryStorage(TrajectoryStorage):
                 "trajectory_path": traj_path,
                 "step_id": f"step-{step_index}",
                 "step_index": step_index,
-                "adjudication": step.adjudication.model_dump(mode="json"),
+                "adjudication": self._adjudicated_to_dict(step.adjudication),
             }
         )
         self._write_adjudication_records(records)
@@ -300,20 +402,20 @@ class FileTrajectoryStorage(TrajectoryStorage):
         records = self._read_adjudication_records()
         records = [r for r in records if r.get("trajectory_id") != trajectory.id]
         traj_path = str(
-            self._trajectory_path(trajectory.agent_id, trajectory.id).relative_to(
+            self._trajectory_path(trajectory.agent, trajectory.id).relative_to(
                 self._root
             )
         )
         for i, step in enumerate(trajectory.steps):
-            if step.adjudication.decision in (Decision.DENY, Decision.ESCALATE):
+            if step.adjudication.decision in (Decision.Deny, Decision.Escalate):
                 records.append(
                     {
-                        "agent_id": trajectory.agent_id,
+                        "agent_id": trajectory.agent,
                         "trajectory_id": trajectory.id,
                         "trajectory_path": traj_path,
                         "step_id": f"step-{i}",
                         "step_index": i,
-                        "adjudication": step.adjudication.model_dump(mode="json"),
+                        "adjudication": self._adjudicated_to_dict(step.adjudication),
                     }
                 )
         self._write_adjudication_records(records)

@@ -15,31 +15,23 @@ import logging
 from typing import Any
 
 import sondera.settings as _settings
-from sondera import (
-    Adjudication,
-    Agent,
-    PromptContent,
-    Role,
-    Stage,
-    ToolRequestContent,
-    ToolResponseContent,
-)
 from sondera.harness import Harness, SonderaRemoteHarness
-from sondera.tui.ai.tools import get_sdk_tools
+from sondera.types import (
+    Adjudicated,
+    Agent,
+    Event,
+    Prompt,
+    PromptRole,
+    ToolCall,
+    ToolOutput,
+)
 
 _log = logging.getLogger(__name__)
 
-# Agent definition following the custom integration pattern:
-# Agent(id="...", provider_id="...", name="...")
+# Agent definition following the custom integration pattern.
 _AI_AGENT = Agent(
     id="sondera-ai-assistant",
-    provider_id="sondera-tui",
-    name="Sondera AI Assistant",
-    description="AI governance analyst embedded in the Sondera TUI",
-    instruction=(
-        "Answer questions about agent behavior, policy violations, and governance data"
-    ),
-    tools=get_sdk_tools(),
+    provider="sondera-tui",
 )
 
 
@@ -47,15 +39,13 @@ class AskSession:
     """Manages the lifecycle of an AI Assist conversation trajectory.
 
     Each question-answer exchange creates one trajectory. Methods return
-    adjudication decisions so callers can enforce DENY/ESCALATE at each
-    stage. Exceptions are swallowed so session failures never break the
+    ``Adjudicated`` verdicts so callers can enforce Deny/Escalate at each
+    point. Exceptions are swallowed so session failures never break the
     AI flow.
 
-    Stage/Role mapping (from docs.sondera.ai/concepts/stages/):
-        PRE_MODEL  / USER  – user prompt input validation
-        POST_MODEL / MODEL – model output filtering
-        PRE_TOOL   / TOOL  – tool argument validation (block before exec)
-        POST_TOOL  / TOOL  – tool result sanitization
+    Uses the Trajectory Event Model types (``Event``, ``Prompt``, ``ToolCall``,
+    ``ToolOutput``). Each adjudicate method constructs an ``Event`` wrapping a
+    typed payload and returns the ``Adjudicated`` verdict.
 
     Usage::
 
@@ -63,12 +53,12 @@ class AskSession:
         await session.start()
 
         adj = await session.adjudicate_user_prompt("What agents have violations?")
-        if adj and adj.is_denied:
+        if adj and adj.decision == Decision.Deny:
             # policy blocked the prompt
             ...
 
         adj = await session.adjudicate_tool_request("list_agents", {})
-        if adj and adj.is_denied:
+        if adj and adj.decision == Decision.Deny:
             # don't execute the tool
             ...
 
@@ -95,7 +85,6 @@ class AskSession:
             self._harness = SonderaRemoteHarness(
                 sondera_harness_endpoint=_settings.SETTINGS.sondera_harness_endpoint,
                 sondera_api_key=_settings.SETTINGS.sondera_api_token,
-                sondera_harness_client_secure=_settings.SETTINGS.sondera_harness_client_secure,
             )
             await self._harness.initialize(agent=_AI_AGENT)
             self._active = True
@@ -105,82 +94,55 @@ class AskSession:
             self._harness = None
             self._active = False
 
-    async def adjudicate_user_prompt(self, text: str) -> Adjudication | None:
-        """Record and adjudicate user question (PRE_MODEL/USER).
+    async def _adjudicate(
+        self, payload: Prompt | ToolCall | ToolOutput, label: str
+    ) -> Adjudicated | None:
+        """Build an Event from *payload* and adjudicate it.
 
-        Returns the adjudication so the caller can block the LLM call on DENY.
-        Returns None if recording is disabled or fails.
+        Returns ``None`` if the session is inactive or on any error.
         """
         if not self._active or not self._harness:
             return None
-        try:
-            return await self._harness.adjudicate(
-                Stage.PRE_MODEL, Role.USER, PromptContent(text=text)
-            )
-        except Exception:
-            _log.debug("Failed to adjudicate user prompt", exc_info=True)
-            return None
-
-    async def adjudicate_model_response(self, text: str) -> Adjudication | None:
-        """Record and adjudicate model response (POST_MODEL/MODEL).
-
-        Returns the adjudication so the caller can redact on DENY.
-        Returns None if recording is disabled or fails.
-        """
-        if not self._active or not self._harness:
+        agent = self._harness.agent
+        tid = self._harness.trajectory_id
+        if agent is None or tid is None:
             return None
         try:
-            return await self._harness.adjudicate(
-                Stage.POST_MODEL, Role.MODEL, PromptContent(text=text)
-            )
+            event = Event(agent=agent, trajectory_id=tid, event=payload)
+            return await self._harness.adjudicate(event)
         except Exception:
-            _log.debug("Failed to adjudicate model response", exc_info=True)
+            _log.debug("Failed to adjudicate %s", label, exc_info=True)
             return None
+
+    async def adjudicate_user_prompt(self, text: str) -> Adjudicated | None:
+        """Record and adjudicate user question."""
+        return await self._adjudicate(
+            Prompt(content=text, role=PromptRole.User), "user prompt"
+        )
+
+    async def adjudicate_model_response(self, text: str) -> Adjudicated | None:
+        """Record and adjudicate model response."""
+        return await self._adjudicate(
+            Prompt(content=text, role=PromptRole.Assistant), "model response"
+        )
 
     async def adjudicate_tool_request(
         self, tool_name: str, args: dict[str, Any]
-    ) -> Adjudication | None:
-        """Record and adjudicate tool call (PRE_TOOL/TOOL).
-
-        Returns the adjudication so the caller can skip execution on DENY.
-        Returns None if recording is disabled or fails.
-        """
-        if not self._active or not self._harness:
-            return None
-        try:
-            return await self._harness.adjudicate(
-                Stage.PRE_TOOL,
-                Role.TOOL,
-                ToolRequestContent(tool_id=tool_name, args=args),
-            )
-        except Exception:
-            _log.debug(
-                "Failed to adjudicate tool request: %s", tool_name, exc_info=True
-            )
-            return None
+    ) -> Adjudicated | None:
+        """Record and adjudicate tool call."""
+        return await self._adjudicate(
+            ToolCall(tool=tool_name, arguments=args), f"tool request: {tool_name}"
+        )
 
     async def adjudicate_tool_response(
         self, tool_name: str, result: Any
-    ) -> Adjudication | None:
-        """Record and adjudicate tool result (POST_TOOL/TOOL).
-
-        Returns the adjudication so the caller can sanitize on DENY.
-        Returns None if recording is disabled or fails.
-        """
-        if not self._active or not self._harness:
-            return None
-        try:
-            response = result if isinstance(result, str) else json.dumps(result)
-            return await self._harness.adjudicate(
-                Stage.POST_TOOL,
-                Role.TOOL,
-                ToolResponseContent(tool_id=tool_name, response=response),
-            )
-        except Exception:
-            _log.debug(
-                "Failed to adjudicate tool response: %s", tool_name, exc_info=True
-            )
-            return None
+    ) -> Adjudicated | None:
+        """Record and adjudicate tool result."""
+        output = result if isinstance(result, str) else json.dumps(result)
+        return await self._adjudicate(
+            ToolOutput(call_id=tool_name, output=output, success=True),
+            f"tool response: {tool_name}",
+        )
 
     async def finish(self) -> None:
         """Finalize the trajectory. Safe to call even if start() failed."""

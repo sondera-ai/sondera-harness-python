@@ -34,20 +34,19 @@ from copilot.tools import define_tool
 from copilot.types import Tool
 from pydantic import BaseModel, Field
 
-from sondera.harness import Harness, SonderaRemoteHarness
-from sondera.types import (
+from sondera import (
     Agent,
     Decision,
+    Event,
     Parameter,
-    PromptContent,
-    Role,
-    Stage,
-    ToolRequestContent,
-    ToolResponseContent,
+    Prompt,
+    ToolCall,
+    ToolOutput,
 )
-from sondera.types import (
+from sondera import (
     Tool as SonderaTool,
 )
+from sondera.harness import Harness, SonderaRemoteHarness
 
 logger = logging.getLogger(__name__)
 
@@ -226,14 +225,14 @@ class SonderaCopilotHook:
 
     This hook integrates with Copilot SDK's event system to provide policy
     evaluation via the Sondera Harness. It subscribes to session events and
-    maps them to Sondera adjudication stages.
+    maps them to Sondera adjudication events.
 
     Event mapping:
     - session.start -> Initialize trajectory
-    - user.message -> PRE_MODEL adjudication (USER role)
-    - assistant.message -> POST_MODEL adjudication (MODEL role)
-    - tool.execution_start -> PRE_TOOL adjudication (TOOL role)
-    - tool.execution_complete -> POST_TOOL adjudication (TOOL role)
+    - user.message -> Prompt adjudication (user role)
+    - assistant.message -> Prompt adjudication (model role)
+    - tool.execution_start -> ToolCall adjudication
+    - tool.execution_complete -> ToolOutput adjudication
     - session.idle -> Optional trajectory checkpoint
 
     Note: Copilot SDK events are observation-only and cannot block mid-execution.
@@ -327,31 +326,39 @@ class SonderaCopilotHook:
                 f"[SonderaHarness] Error handling event: {e}", exc_info=True
             )
 
+    def _build_event(self, payload: Prompt | ToolCall | ToolOutput) -> Event:
+        """Build a harness Event from a payload."""
+        return Event(
+            agent=self._harness.agent,
+            trajectory_id=self._harness.trajectory_id,
+            event=payload,
+        )
+
     async def _on_session_start(self, event: SessionEvent) -> None:
         """Handle session start - initialize trajectory if not already done."""
         self._log.debug(f"[SonderaHarness] Session started: {event.data.session_id}")
 
     async def _on_user_message(self, event: SessionEvent) -> None:
-        """Handle user message - PRE_MODEL adjudication."""
+        """Handle user message - Prompt adjudication."""
         if not self._harness.trajectory_id:
             self._log.warning("[SonderaHarness] No active trajectory for user_message")
             return
 
         content = event.data.content or ""
         adjudication = await self._harness.adjudicate(
-            Stage.PRE_MODEL, Role.USER, PromptContent(text=content)
+            self._build_event(Prompt(role="user", content=content))
         )
         self._log.info(
             f"[SonderaHarness] User message adjudication for trajectory {self._harness.trajectory_id}"
         )
 
-        if adjudication.decision == Decision.DENY:
+        if adjudication.decision == Decision.Deny:
             self._log.warning(
                 f"[SonderaHarness] User message flagged: {adjudication.reason}"
             )
 
     async def _on_assistant_message(self, event: SessionEvent) -> None:
-        """Handle assistant message - POST_MODEL adjudication."""
+        """Handle assistant message - Prompt adjudication."""
         if not self._harness.trajectory_id:
             self._log.warning(
                 "[SonderaHarness] No active trajectory for assistant_message"
@@ -363,19 +370,19 @@ class SonderaCopilotHook:
             return
 
         adjudication = await self._harness.adjudicate(
-            Stage.POST_MODEL, Role.MODEL, PromptContent(text=content)
+            self._build_event(Prompt(role="assistant", content=content))
         )
         self._log.info(
             f"[SonderaHarness] Assistant message adjudication for trajectory {self._harness.trajectory_id}"
         )
 
-        if adjudication.decision == Decision.DENY:
+        if adjudication.decision == Decision.Deny:
             self._log.warning(
                 f"[SonderaHarness] Assistant message flagged: {adjudication.reason}"
             )
 
     async def _on_tool_execution_start(self, event: SessionEvent) -> None:
-        """Handle tool execution start - PRE_TOOL adjudication."""
+        """Handle tool execution start - ToolCall adjudication."""
         if not self._harness.trajectory_id:
             self._log.warning(
                 "[SonderaHarness] No active trajectory for tool_execution_start"
@@ -386,24 +393,26 @@ class SonderaCopilotHook:
         tool_args = event.data.arguments or {}
 
         adjudication = await self._harness.adjudicate(
-            Stage.PRE_TOOL,
-            Role.TOOL,
-            ToolRequestContent(
-                tool_id=tool_name,
-                args=tool_args if isinstance(tool_args, dict) else {"input": tool_args},
-            ),
+            self._build_event(
+                ToolCall(
+                    tool=tool_name,
+                    arguments=tool_args
+                    if isinstance(tool_args, dict)
+                    else {"input": tool_args},
+                )
+            )
         )
         self._log.info(
             f"[SonderaHarness] Tool execution start adjudication for trajectory {self._harness.trajectory_id}"
         )
 
-        if adjudication.decision == Decision.DENY:
+        if adjudication.decision == Decision.Deny:
             self._log.warning(
                 f"[SonderaHarness] Tool '{tool_name}' execution flagged: {adjudication.reason}"
             )
 
     async def _on_tool_execution_complete(self, event: SessionEvent) -> None:
-        """Handle tool execution complete - POST_TOOL adjudication."""
+        """Handle tool execution complete - ToolOutput adjudication."""
         if not self._harness.trajectory_id:
             self._log.warning(
                 "[SonderaHarness] No active trajectory for tool_execution_complete"
@@ -414,15 +423,13 @@ class SonderaCopilotHook:
         result = event.data.result.content if event.data.result else ""
 
         adjudication = await self._harness.adjudicate(
-            Stage.POST_TOOL,
-            Role.TOOL,
-            ToolResponseContent(tool_id=tool_name, response=result),
+            self._build_event(ToolOutput.from_success(tool_name, str(result)))
         )
         self._log.info(
             f"[SonderaHarness] Tool execution complete adjudication for trajectory {self._harness.trajectory_id}"
         )
 
-        if adjudication.decision == Decision.DENY:
+        if adjudication.decision == Decision.Deny:
             self._log.warning(
                 f"[SonderaHarness] Tool '{tool_name}' result flagged: {adjudication.reason}"
             )

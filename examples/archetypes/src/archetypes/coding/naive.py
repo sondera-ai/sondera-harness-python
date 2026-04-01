@@ -6,7 +6,7 @@ built-in capabilities for file operations, shell commands, and web access.
 
 import json
 
-from sondera import Agent, Parameter, Tool
+from sondera import Agent, AgentCard, Parameter, ReActAgentCard, Tool
 
 # File Operations
 read_tool = Tool(
@@ -16,17 +16,17 @@ read_tool = Tool(
         Parameter(
             name="file_path",
             description="The absolute path to the file to read",
-            type="string",
+            param_type="string",
         ),
         Parameter(
             name="offset",
             description="Line number to start reading from (optional)",
-            type="integer",
+            param_type="integer",
         ),
         Parameter(
             name="limit",
             description="Number of lines to read (optional)",
-            type="integer",
+            param_type="integer",
         ),
     ],
     parameters_json_schema=json.dumps(
@@ -71,12 +71,12 @@ write_tool = Tool(
         Parameter(
             name="file_path",
             description="The absolute path to the file to write",
-            type="string",
+            param_type="string",
         ),
         Parameter(
             name="content",
             description="The content to write to the file",
-            type="string",
+            param_type="string",
         ),
     ],
     parameters_json_schema=json.dumps(
@@ -116,20 +116,22 @@ edit_tool = Tool(
         Parameter(
             name="file_path",
             description="The absolute path to the file to modify",
-            type="string",
+            param_type="string",
         ),
         Parameter(
             name="old_string",
             description="The exact text to find and replace",
-            type="string",
+            param_type="string",
         ),
         Parameter(
-            name="new_string", description="The new text to replace with", type="string"
+            name="new_string",
+            description="The new text to replace with",
+            param_type="string",
         ),
         Parameter(
             name="replace_all",
             description="Replace all occurrences (default: false)",
-            type="boolean",
+            param_type="boolean",
         ),
     ],
     parameters_json_schema=json.dumps(
@@ -183,27 +185,27 @@ grep_tool = Tool(
         Parameter(
             name="pattern",
             description="The regular expression pattern to search for",
-            type="string",
+            param_type="string",
         ),
         Parameter(
             name="path",
             description="File or directory to search in (optional)",
-            type="string",
+            param_type="string",
         ),
         Parameter(
             name="glob",
             description="Glob pattern to filter files (e.g., '*.py')",
-            type="string",
+            param_type="string",
         ),
         Parameter(
             name="case_insensitive",
             description="Case insensitive search",
-            type="boolean",
+            param_type="boolean",
         ),
         Parameter(
             name="output_mode",
             description="Output mode: 'content', 'files_with_matches', or 'count'",
-            type="string",
+            param_type="string",
         ),
     ],
     parameters_json_schema=json.dumps(
@@ -259,10 +261,12 @@ glob_tool = Tool(
         Parameter(
             name="pattern",
             description="The glob pattern to match (e.g., '**/*.py')",
-            type="string",
+            param_type="string",
         ),
         Parameter(
-            name="path", description="Directory to search in (optional)", type="string"
+            name="path",
+            description="Directory to search in (optional)",
+            param_type="string",
         ),
     ],
     parameters_json_schema=json.dumps(
@@ -299,12 +303,14 @@ bash_tool = Tool(
     description="Execute a shell command in a persistent session",
     parameters=[
         Parameter(
-            name="command", description="The shell command to execute", type="string"
+            name="command",
+            description="The shell command to execute",
+            param_type="string",
         ),
         Parameter(
             name="timeout",
             description="Timeout in milliseconds (max 600000)",
-            type="integer",
+            param_type="integer",
         ),
     ],
     parameters_json_schema=json.dumps(
@@ -353,12 +359,12 @@ web_fetch_tool = Tool(
     description="Fetch content from a URL and process it with AI",
     parameters=[
         Parameter(
-            name="url", description="The URL to fetch content from", type="string"
+            name="url", description="The URL to fetch content from", param_type="string"
         ),
         Parameter(
             name="prompt",
             description="The prompt describing what information to extract",
-            type="string",
+            param_type="string",
         ),
     ],
     parameters_json_schema=json.dumps(
@@ -396,16 +402,16 @@ web_search_tool = Tool(
     name="WebSearch",
     description="Search the web with optional domain filtering",
     parameters=[
-        Parameter(name="query", description="The search query", type="string"),
+        Parameter(name="query", description="The search query", param_type="string"),
         Parameter(
             name="allowed_domains",
             description="Only include results from these domains",
-            type="array",
+            param_type="array",
         ),
         Parameter(
             name="blocked_domains",
             description="Exclude results from these domains",
-            type="array",
+            param_type="array",
         ),
     ],
     parameters_json_schema=json.dumps(
@@ -455,18 +461,20 @@ web_search_tool = Tool(
 
 agent = Agent(
     id="coding_agent",
-    provider_id="custom",
-    name="Coding Agent",
-    description="A coding assistant with Claude Code-style tools for file operations, search, shell commands, and web access.",
-    instruction="You are a helpful coding assistant with access to file operations, shell commands, and web search. Use Read before Edit to understand file contents. Prefer Edit over Write for modifying existing files.",
-    tools=[
-        read_tool,
-        write_tool,
-        edit_tool,
-        grep_tool,
-        glob_tool,
-        bash_tool,
-        web_fetch_tool,
-        web_search_tool,
-    ],
+    provider="custom",
+    card=AgentCard.react(
+        ReActAgentCard(
+            system_instruction="You are a helpful coding assistant with access to file operations, shell commands, and web search. Use Read before Edit to understand file contents. Prefer Edit over Write for modifying existing files.",
+            tools=[
+                read_tool,
+                write_tool,
+                edit_tool,
+                grep_tool,
+                glob_tool,
+                bash_tool,
+                web_fetch_tool,
+                web_search_tool,
+            ],
+        )
+    ),
 )

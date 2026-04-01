@@ -17,11 +17,11 @@ from sondera.harness import Harness
 from sondera.strands.analyze import format_strands_agent
 from sondera.types import (
     Decision,
-    PromptContent,
-    Role,
-    Stage,
-    ToolRequestContent,
-    ToolResponseContent,
+    Event,
+    Prompt,
+    PromptRole,
+    ToolCall,
+    ToolOutput,
 )
 
 logger = logging.getLogger(__name__)
@@ -78,6 +78,7 @@ class SonderaHarnessHook(HookProvider):
         self,
         harness: Harness,
         *,
+        session_id: str | None = None,
         logger_instance: logging.Logger | None = None,
     ):
         """Initialize the Strands Harness Hook.
@@ -85,9 +86,12 @@ class SonderaHarnessHook(HookProvider):
         Args:
             harness: The Sondera Harness instance to use for policy enforcement.
                      Can be RemoteHarness for production or LocalHarness for testing.
+            session_id: Optional session identifier to group trajectories across
+                multiple invocations into a single logical session.
             logger_instance: Optional custom logger instance.
         """
         self._harness = harness
+        self._session_id = session_id
         self._log = logger_instance or logger
         self._strands_agent: Any | None = None
 
@@ -123,7 +127,7 @@ class SonderaHarnessHook(HookProvider):
         try:
             self._strands_agent = event.agent
             agent = format_strands_agent(event.agent)
-            await self._harness.initialize(agent=agent)
+            await self._harness.initialize(agent=agent, session_id=self._session_id)
             self._log.debug(
                 f"[SonderaHarness] Initialized trajectory {self._harness.trajectory_id}"
             )
@@ -150,21 +154,25 @@ class SonderaHarnessHook(HookProvider):
     async def _on_before_model_call(self, event: BeforeModelCallEvent) -> None:
         """Callback for BeforeModelCallEvent - Pre-model guardrails."""
         try:
-            if not self._harness.trajectory_id:
+            if not self._harness.trajectory_id or not self._harness.agent:
                 self._log.warning(
                     "[SonderaHarness] No active trajectory for before_model_call"
                 )
                 return
 
             content = self._extract_text_from_event(event)
-            adjudication = await self._harness.adjudicate(
-                Stage.PRE_MODEL, Role.MODEL, PromptContent(text=content)
+            prompt = Prompt(role=PromptRole.User, content=content)
+            harness_event = Event(
+                agent=self._harness.agent,
+                trajectory_id=self._harness.trajectory_id,
+                event=prompt,
             )
+            adjudication = await self._harness.adjudicate(harness_event)
             self._log.info(
                 f"[SonderaHarness] Before model adjudication for trajectory {self._harness.trajectory_id}"
             )
 
-            if adjudication.decision == Decision.DENY:
+            if adjudication.decision == Decision.Deny:
                 self._log.warning(
                     f"[SonderaHarness] Model call blocked: {adjudication.reason}"
                 )
@@ -176,7 +184,7 @@ class SonderaHarnessHook(HookProvider):
     async def _on_after_model_call(self, event: AfterModelCallEvent) -> None:
         """Callback for AfterModelCallEvent - Post-model guardrails."""
         try:
-            if not self._harness.trajectory_id:
+            if not self._harness.trajectory_id or not self._harness.agent:
                 self._log.warning(
                     "[SonderaHarness] No active trajectory for after_model_call"
                 )
@@ -186,14 +194,18 @@ class SonderaHarnessHook(HookProvider):
             if not content:
                 return
 
-            adjudication = await self._harness.adjudicate(
-                Stage.POST_MODEL, Role.MODEL, PromptContent(text=content)
+            prompt = Prompt(role=PromptRole.Assistant, content=content)
+            harness_event = Event(
+                agent=self._harness.agent,
+                trajectory_id=self._harness.trajectory_id,
+                event=prompt,
             )
+            adjudication = await self._harness.adjudicate(harness_event)
             self._log.info(
                 f"[SonderaHarness] After model adjudication for trajectory {self._harness.trajectory_id}"
             )
 
-            if adjudication.decision == Decision.DENY:
+            if adjudication.decision == Decision.Deny:
                 self._log.warning(
                     f"[SonderaHarness] Model response blocked: {adjudication.reason}"
                 )
@@ -209,7 +221,7 @@ class SonderaHarnessHook(HookProvider):
     async def _on_before_tool_call(self, event: BeforeToolCallEvent) -> None:
         """Callback for BeforeToolCallEvent - Pre-tool guardrails."""
         try:
-            if not self._harness.trajectory_id:
+            if not self._harness.trajectory_id or not self._harness.agent:
                 self._log.warning(
                     "[SonderaHarness] No active trajectory for before_tool_call"
                 )
@@ -217,22 +229,26 @@ class SonderaHarnessHook(HookProvider):
 
             tool_name = event.tool_use.get("name", "unknown")
             tool_input = event.tool_use.get("input", {})
+            tool_use_id = event.tool_use.get("toolUseId", "")
 
-            adjudication = await self._harness.adjudicate(
-                Stage.PRE_TOOL,
-                Role.TOOL,
-                ToolRequestContent(
-                    tool_id=tool_name,
-                    args=tool_input
-                    if isinstance(tool_input, dict)
-                    else {"input": tool_input},
-                ),
+            tool_call = ToolCall(
+                tool=tool_name,
+                arguments=tool_input
+                if isinstance(tool_input, dict)
+                else {"input": tool_input},
+                call_id=tool_use_id,
             )
+            harness_event = Event(
+                agent=self._harness.agent,
+                trajectory_id=self._harness.trajectory_id,
+                event=tool_call,
+            )
+            adjudication = await self._harness.adjudicate(harness_event)
             self._log.info(
                 f"[SonderaHarness] Before tool adjudication for trajectory {self._harness.trajectory_id}"
             )
 
-            if adjudication.decision == Decision.DENY:
+            if adjudication.decision == Decision.Deny:
                 # Cancel the tool call using Strands' cancel_tool mechanism
                 event.cancel_tool = f"Tool blocked by policy: {adjudication.reason}"
                 self._log.warning(
@@ -246,31 +262,48 @@ class SonderaHarnessHook(HookProvider):
     async def _on_after_tool_call(self, event: AfterToolCallEvent) -> None:
         """Callback for AfterToolCallEvent - Post-tool guardrails."""
         try:
-            if not self._harness.trajectory_id:
+            if not self._harness.trajectory_id or not self._harness.agent:
                 self._log.warning(
                     "[SonderaHarness] No active trajectory for after_tool_call"
                 )
                 return
 
-            tool_name = event.tool_use.get("name", "unknown")
+            tool_use_id = event.tool_use.get("toolUseId", "")
 
-            adjudication = await self._harness.adjudicate(
-                Stage.POST_TOOL,
-                Role.TOOL,
-                ToolResponseContent(tool_id=tool_name, response=event.result),
+            # Determine success/error based on result structure
+            result = event.result
+            if isinstance(result, dict):
+                is_error = result.get("status") == "error"
+                output = str(result.get("content", result))
+            else:
+                is_error = False
+                output = str(result)
+
+            if is_error:
+                tool_output = ToolOutput.from_error(call_id=tool_use_id, error=output)
+            else:
+                tool_output = ToolOutput.from_success(
+                    call_id=tool_use_id, output=output
+                )
+
+            harness_event = Event(
+                agent=self._harness.agent,
+                trajectory_id=self._harness.trajectory_id,
+                event=tool_output,
             )
+            adjudication = await self._harness.adjudicate(harness_event)
             self._log.info(
                 f"[SonderaHarness] After tool adjudication for trajectory {self._harness.trajectory_id}"
             )
 
-            if adjudication.decision == Decision.DENY:
+            if adjudication.decision == Decision.Deny:
                 # Modify the result to indicate policy violation
                 event.result = {
                     "content": [
                         {"text": f"Tool result blocked: {adjudication.reason}"}
                     ],
                     "status": "error",
-                    "toolUseId": event.tool_use.get("toolUseId", ""),
+                    "toolUseId": tool_use_id,
                 }
                 self._log.warning(
                     f"[SonderaHarness] Tool result blocked: {adjudication.reason}"

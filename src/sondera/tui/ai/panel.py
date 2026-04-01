@@ -20,13 +20,13 @@ if TYPE_CHECKING:
     from sondera.tui.app import SonderaApp
 
 import sondera.settings as _settings
-from sondera import Decision
 from sondera.tui.colors import (
     SPINNER_CHARS,
     THINKING_INTERVAL,
     THINKING_VERBS,
     generate_glow,
 )
+from sondera.types import Decision
 
 
 @dataclass
@@ -806,7 +806,7 @@ class AskPanel(Widget):
 
         # PRE_MODEL: adjudicate user prompt before sending to LLM
         pre_model = await recorder.adjudicate_user_prompt(question)
-        if pre_model and pre_model.decision == Decision.DENY:
+        if pre_model and pre_model.decision == Decision.Deny:
             reason = pre_model.reason or "Policy denied this prompt"
             state.conversation.history.append(
                 (question, f"Blocked by policy: {reason}")
@@ -834,7 +834,7 @@ class AskPanel(Widget):
             async def _recording_executor(name: str, args: dict) -> dict:
                 # PRE_TOOL: block execution if denied
                 pre = await recorder.adjudicate_tool_request(name, args)
-                if pre and pre.decision == Decision.DENY:
+                if pre and pre.decision == Decision.Deny:
                     reason = pre.reason or "Policy denied this tool call"
                     return {"error": f"Blocked by policy: {reason}"}
 
@@ -842,7 +842,7 @@ class AskPanel(Widget):
 
                 # POST_TOOL: redact result if denied
                 post = await recorder.adjudicate_tool_response(name, result)
-                if post and post.decision == Decision.DENY:
+                if post and post.decision == Decision.Deny:
                     reason = post.reason or "Policy redacted tool result"
                     return {"redacted": True, "reason": reason}
 
@@ -898,7 +898,7 @@ class AskPanel(Widget):
 
             # POST_MODEL: adjudicate model response, redact if denied
             post_model = await recorder.adjudicate_model_response(response)
-            if post_model and post_model.decision == Decision.DENY:
+            if post_model and post_model.decision == Decision.Deny:
                 reason = post_model.reason or "Policy filtered this response"
                 response = f"[Response redacted by policy: {reason}]"
                 state.conversation.current_response = response

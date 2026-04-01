@@ -5,13 +5,13 @@ import json
 import pytest
 from cedar.schema import CedarSchema
 
+from sondera import Agent, AgentCard, Parameter, ReActAgentCard, Tool
 from sondera.harness.cedar.schema import (
     agent_to_cedar_schema,
     json_schema_to_cedar_type,
     openai_json_schema_to_cedar_type,
     tool_to_action,
 )
-from sondera.types import Agent, Parameter, Tool
 
 
 class TestJsonSchemaToCedarType:
@@ -206,7 +206,7 @@ class TestToolToAction:
             name="test_tool",
             description="A test tool",
             parameters=[
-                Parameter(name="input", description="Input value", type="string")
+                Parameter(name="input", description="Input value", param_type="string")
             ],
         )
         action = tool_to_action(tool)
@@ -221,7 +221,9 @@ class TestToolToAction:
             id="read_file",
             name="read_file",
             description="Read a file",
-            parameters=[Parameter(name="path", description="File path", type="string")],
+            parameters=[
+                Parameter(name="path", description="File path", param_type="string")
+            ],
             parameters_json_schema='{"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}',
         )
         action = tool_to_action(tool)
@@ -302,28 +304,31 @@ class TestAgentToCedarSchema:
     def simple_agent(self) -> Agent:
         """Create a simple agent for testing."""
         return Agent(
-            id="test-agent-1",
-            provider_id="test",
-            name="TestAgent",
-            description="A test agent",
-            instruction="Do testing",
-            tools=[
-                Tool(
-                    id="tool_a",
-                    name="tool_a",
-                    description="Tool A",
-                    parameters=[
-                        Parameter(name="x", description="X value", type="string")
+            id="TestAgent",
+            provider="test",
+            card=AgentCard.react(
+                ReActAgentCard(
+                    tools=[
+                        Tool(
+                            id="tool_a",
+                            name="tool_a",
+                            description="Tool A",
+                            parameters=[
+                                Parameter(
+                                    name="x", description="X value", param_type="string"
+                                )
+                            ],
+                            parameters_json_schema='{"type": "object", "properties": {"x": {"type": "string"}}}',
+                        ),
+                        Tool(
+                            id="tool_b",
+                            name="tool_b",
+                            description="Tool B",
+                            parameters=[],
+                        ),
                     ],
-                    parameters_json_schema='{"type": "object", "properties": {"x": {"type": "string"}}}',
-                ),
-                Tool(
-                    id="tool_b",
-                    name="tool_b",
-                    description="Tool B",
-                    parameters=[],
-                ),
-            ],
+                )
+            ),
         )
 
     def test_returns_cedar_schema(self, simple_agent: Agent):
@@ -331,20 +336,16 @@ class TestAgentToCedarSchema:
         schema = agent_to_cedar_schema(simple_agent)
         assert isinstance(schema, CedarSchema)
 
-    def test_namespace_from_agent_name(self, simple_agent: Agent):
-        """Test that namespace is derived from agent name."""
+    def test_namespace_from_agent_id(self, simple_agent: Agent):
+        """Test that namespace is derived from agent id."""
         schema = agent_to_cedar_schema(simple_agent)
         assert "TestAgent" in schema.root
 
-    def test_namespace_sanitizes_name(self):
-        """Test that agent names with spaces/dashes are sanitized."""
+    def test_namespace_sanitizes_id(self):
+        """Test that agent ids with spaces/dashes are sanitized."""
         agent = Agent(
-            id="test-1",
-            provider_id="test",
-            name="My Test-Agent",
-            description="Test",
-            instruction="Test",
-            tools=[],
+            id="My Test-Agent",
+            provider="test",
         )
         schema = agent_to_cedar_schema(agent)
         assert "My_Test_Agent" in schema.root
@@ -363,7 +364,7 @@ class TestAgentToCedarSchema:
         assert agent_type.shape is not None
         assert agent_type.shape.attributes is not None
         assert "name" in agent_type.shape.attributes
-        assert "provider_id" in agent_type.shape.attributes
+        assert "provider" in agent_type.shape.attributes
         assert "tools" in agent_type.shape.attributes
 
     def test_tool_entity_type_shape(self, simple_agent: Agent):
@@ -385,19 +386,20 @@ class TestAgentToCedarSchema:
     def test_action_names_sanitized(self):
         """Test that tool names with spaces/dashes are sanitized in actions."""
         agent = Agent(
-            id="test-1",
-            provider_id="test",
-            name="TestAgent",
-            description="Test",
-            instruction="Test",
-            tools=[
-                Tool(
-                    id="my-tool",
-                    name="my-special tool",
-                    description="A tool",
-                    parameters=[],
+            id="TestAgent",
+            provider="test",
+            card=AgentCard.react(
+                ReActAgentCard(
+                    tools=[
+                        Tool(
+                            id="my-tool",
+                            name="my-special tool",
+                            description="A tool",
+                            parameters=[],
+                        )
+                    ],
                 )
-            ],
+            ),
         )
         schema = agent_to_cedar_schema(agent)
         actions = schema.root["TestAgent"].actions
@@ -413,12 +415,8 @@ class TestAgentToCedarSchema:
     def test_empty_tools_list(self):
         """Test agent with no tools still has Prompt action."""
         agent = Agent(
-            id="test-1",
-            provider_id="test",
-            name="NoToolsAgent",
-            description="Test",
-            instruction="Test",
-            tools=[],
+            id="NoToolsAgent",
+            provider="test",
         )
         schema = agent_to_cedar_schema(agent)
         # Should have Prompt action even with no tools

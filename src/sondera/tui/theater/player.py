@@ -10,8 +10,9 @@ from textual.reactive import reactive
 from textual.timer import Timer
 from textual.widget import Widget
 
+from sondera.tui.events import EventStep, correlate_events
 from sondera.tui.theater.events import PlaybackComplete, PlaybackReset, StepEvent
-from sondera.types import AdjudicatedTrajectory
+from sondera.types import Trajectory, TrajectoryStatus
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -50,7 +51,7 @@ class TrajectoryPlayer(Widget):
 
     def __init__(
         self,
-        trajectory: AdjudicatedTrajectory | None = None,
+        trajectory: Trajectory | None = None,
         name: str | None = None,
         id: str | None = None,
         classes: str | None = None,
@@ -64,19 +65,20 @@ class TrajectoryPlayer(Widget):
             classes: CSS classes.
         """
         super().__init__(name=name, id=id, classes=classes)
-        self._trajectory: AdjudicatedTrajectory | None = trajectory
+        self._trajectory: Trajectory | None = trajectory
+        self._steps: list[EventStep] = []
         self._timer: Timer | None = None
         self._step_deltas: list[int] = []
 
     @property
-    def trajectory(self) -> AdjudicatedTrajectory | None:
+    def trajectory(self) -> Trajectory | None:
         """The currently loaded trajectory."""
         return self._trajectory
 
     @property
     def total_steps(self) -> int:
         """Total number of steps in the loaded trajectory."""
-        return len(self._trajectory.steps) if self._trajectory else 0
+        return len(self._steps) if self._trajectory else 0
 
     @property
     def has_trajectory(self) -> bool:
@@ -93,9 +95,7 @@ class TrajectoryPlayer(Widget):
         """Whether playback is at the beginning."""
         return self.current_step == 0
 
-    def load_trajectory(
-        self, trajectory: AdjudicatedTrajectory, emit_first: bool = False
-    ) -> None:
+    def load_trajectory(self, trajectory: Trajectory, emit_first: bool = False) -> None:
         """Load a trajectory for playback.
 
         Args:
@@ -104,6 +104,7 @@ class TrajectoryPlayer(Widget):
         """
         self.pause()
         self._trajectory = trajectory
+        self._steps = correlate_events(trajectory.events or [])
         self._compute_deltas()
         self.current_step = 0
         self.post_message(PlaybackReset())
@@ -111,7 +112,7 @@ class TrajectoryPlayer(Widget):
         if emit_first and self.total_steps > 0:
             self._emit_current_step()
 
-    def load_from_file(self, path: Path) -> list[AdjudicatedTrajectory]:
+    def load_from_file(self, path: Path) -> list[Trajectory]:
         """Load trajectories from a JSON file.
 
         Args:
@@ -129,7 +130,11 @@ class TrajectoryPlayer(Widget):
 
         trajectories = []
         for traj_data in data.get("trajectories", []):
-            trajectory = AdjudicatedTrajectory.model_validate(traj_data)
+            trajectory = Trajectory(
+                name=traj_data.get("name", ""),
+                agent=traj_data.get("agent", ""),
+                status=TrajectoryStatus.Running,
+            )
             trajectories.append(trajectory)
 
         return trajectories
@@ -137,17 +142,18 @@ class TrajectoryPlayer(Widget):
     def _compute_deltas(self) -> None:
         """Compute time deltas between steps."""
         self._step_deltas = []
-        if not self._trajectory:
+        if not self._steps:
             return
 
         prev_time: datetime | None = None
-        for step in self._trajectory.steps:
+        for step in self._steps:
+            ts = step.timestamp
             if prev_time is None:
                 self._step_deltas.append(0)
             else:
-                delta = (step.step.created_at - prev_time).total_seconds() * 1000
+                delta = (ts - prev_time).total_seconds() * 1000
                 self._step_deltas.append(int(max(0, delta)))
-            prev_time = step.step.created_at
+            prev_time = ts
 
     def play(self) -> None:
         """Start playback."""
@@ -246,10 +252,10 @@ class TrajectoryPlayer(Widget):
 
     def _emit_current_step(self) -> None:
         """Emit a StepEvent for the current step."""
-        if not self._trajectory or self.current_step >= self.total_steps:
+        if not self._steps or self.current_step >= self.total_steps:
             return
 
-        step = self._trajectory.steps[self.current_step]
+        step = self._steps[self.current_step]
         delta = (
             self._step_deltas[self.current_step]
             if self.current_step < len(self._step_deltas)
@@ -259,14 +265,14 @@ class TrajectoryPlayer(Widget):
         event = StepEvent(
             step_index=self.current_step,
             total_steps=self.total_steps,
-            stage=step.step.stage,
-            role=step.step.role,
-            decision=step.adjudication.decision,
-            reason=step.adjudication.reason,
-            content=step.step.content,
-            timestamp=step.step.created_at,
+            stage=step.stage,
+            role=step.role,
+            decision=step.decision,
+            reason=step.reason,
+            content=step.payload,
+            timestamp=step.timestamp,
             delta_ms=delta,
-            policy_ids=[p.id for p in step.adjudication.policies],
+            policy_ids=[p.policy_id for p in step.policies if p.policy_id],
         )
         self.post_message(event)
 

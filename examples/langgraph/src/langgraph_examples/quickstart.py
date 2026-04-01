@@ -23,9 +23,9 @@ import asyncio
 from langchain.agents import create_agent
 from langchain_core.tools import tool
 
+from sondera import Agent, AgentCard, ReActAgentCard
 from sondera.harness import SonderaRemoteHarness
 from sondera.langgraph import SonderaHarnessMiddleware, Strategy
-from sondera.types import Agent
 
 
 @tool
@@ -38,11 +38,12 @@ async def main() -> None:
     harness = SonderaRemoteHarness(
         agent=Agent(
             id="quickstart-agent",
-            provider_id="langgraph",
-            name="Quickstart Agent",
-            description="A simple agent demonstrating Sondera middleware",
-            instruction="Be helpful and concise",
-            tools=[],
+            provider="langgraph",
+            card=AgentCard.react(
+                ReActAgentCard(
+                    system_instruction="Be helpful and concise",
+                )
+            ),
         ),
     )
 

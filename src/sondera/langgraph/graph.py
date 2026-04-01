@@ -11,13 +11,13 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 
 from sondera.harness import Harness
 from sondera.types import (
-    Adjudication,
-    Content,
+    Adjudicated,
     Decision,
-    PromptContent,
-    Role,
-    Stage,
-    ToolResponseContent,
+    Event,
+    Mode,
+    Prompt,
+    Thought,
+    ToolOutput,
 )
 
 from .exceptions import GuardrailViolationError
@@ -65,6 +65,7 @@ class SonderaGraph:
         compiled_graph: Any,
         *,
         harness: Harness,
+        session_id: str | None = None,
         track_nodes: bool = True,
         enforce: bool = True,
     ) -> None:
@@ -73,11 +74,16 @@ class SonderaGraph:
         Args:
             compiled_graph: The LangGraph compiled graph to wrap
             harness: Sondera harness for policy enforcement
+            session_id: Optional session identifier to group trajectories across
+                multiple invocations into a single logical session. When provided,
+                all ``ainvoke``/``astream`` calls share the same session_id.
+                Can also be passed per-call to ``ainvoke``/``astream``.
             track_nodes: Whether to track node executions (default: True)
             enforce: Whether to enforce policy decisions (default: True)
         """
         self._graph = compiled_graph
         self._harness = harness
+        self._session_id = session_id
         self._track_nodes = track_nodes
         self._enforce = enforce
         self._logger = LOGGER
@@ -106,6 +112,7 @@ class SonderaGraph:
         input: dict[str, Any] | Any,
         config: dict[str, Any] | None = None,
         *,
+        session_id: str | None = None,
         context: dict[str, Any] | None = None,
         output_keys: str | list[str] | None = None,
         interrupt_before: list[str] | None = None,
@@ -117,6 +124,9 @@ class SonderaGraph:
         Args:
             input: Initial state for the graph
             config: Optional configuration dict
+            session_id: Optional session identifier. Overrides the instance-level
+                session_id for this call. All trajectories with the same session_id
+                form an ordered sequence of turns.
             context: Optional context dict (passed to underlying graph)
             output_keys: Keys to include in output
             interrupt_before: Nodes to interrupt before
@@ -126,19 +136,11 @@ class SonderaGraph:
         Returns:
             Final state after graph execution
         """
-        # Initialize trajectory
-        await self._harness.initialize(agent=self._harness.agent)
-
-        # Record initial user message if present
-        if isinstance(input, dict) and "messages" in input and input["messages"]:
-            initial_msg = input["messages"][0]
-            if isinstance(initial_msg, HumanMessage | BaseMessage):
-                await self._record_step(
-                    content=PromptContent(text=_message_to_text(initial_msg)),
-                    role=Role.USER,
-                    stage=Stage.PRE_MODEL,
-                    node="user_input",
-                )
+        # Initialize trajectory with session_id (per-call overrides instance-level)
+        effective_session_id = session_id or self._session_id
+        await self._harness.initialize(
+            agent=self._harness.agent, session_id=effective_session_id
+        )
 
         # Build shared kwargs for the underlying graph call
         graph_kwargs: dict[str, Any] = {**kwargs}
@@ -152,48 +154,74 @@ class SonderaGraph:
             graph_kwargs["interrupt_after"] = interrupt_after
 
         # Execute the graph
-        if self._track_nodes:
-            # Multi-mode streaming: "updates" for per-node tracking,
-            # "values" for the final reducer-resolved state.
-            final_state: dict[str, Any] | Any = None
-            async for mode, chunk in self._graph.astream(
-                input,
-                config=config,
-                stream_mode=["updates", "values"],
-                **graph_kwargs,
-            ):
-                if mode == "updates":
-                    if isinstance(chunk, dict):
-                        for node_name, node_state in chunk.items():
-                            await self._record_node_execution(
-                                node_name=node_name,
-                                node_state=node_state,
-                            )
-                elif mode == "values":
-                    final_state = chunk
-        else:
-            final_state = await self._graph.ainvoke(
-                input, config=config, **graph_kwargs
-            )
+        try:
+            # Record initial user message if present (inside try so a guardrail
+            # violation on the first message is still caught and trajectory cleaned up)
+            if isinstance(input, dict) and "messages" in input and input["messages"]:
+                initial_msg = input["messages"][0]
+                if isinstance(initial_msg, HumanMessage | BaseMessage):
+                    await self._record_step(
+                        event_payload=Prompt.user(_message_to_text(initial_msg)),
+                        node="user_input",
+                    )
 
-        # Record final output if present
-        if (
-            final_state
-            and isinstance(final_state, dict)
-            and "messages" in final_state
-            and final_state["messages"]
-        ):
-            final_msg = final_state["messages"][-1]
-            if isinstance(final_msg, AIMessage | BaseMessage):
-                await self._record_step(
-                    content=PromptContent(text=_message_to_text(final_msg)),
-                    role=Role.MODEL,
-                    stage=Stage.POST_MODEL,
-                    node="final_output",
+            if self._track_nodes:
+                # Multi-mode streaming: "updates" for per-node tracking,
+                # "values" for the final reducer-resolved state.
+                final_state: dict[str, Any] | Any = None
+                async for mode, chunk in self._graph.astream(
+                    input,
+                    config=config,
+                    stream_mode=["updates", "values"],
+                    **graph_kwargs,
+                ):
+                    if mode == "updates":
+                        if isinstance(chunk, dict):
+                            for node_name, node_state in chunk.items():
+                                await self._record_node_execution(
+                                    node_name=node_name,
+                                    node_state=node_state,
+                                )
+                    elif mode == "values":
+                        final_state = chunk
+            else:
+                final_state = await self._graph.ainvoke(
+                    input, config=config, **graph_kwargs
                 )
 
-        # Finalize trajectory
-        await self._harness.finalize()
+            # Record final output if present
+            if (
+                final_state
+                and isinstance(final_state, dict)
+                and "messages" in final_state
+                and final_state["messages"]
+            ):
+                final_msg = final_state["messages"][-1]
+                if isinstance(final_msg, AIMessage | BaseMessage):
+                    await self._record_step(
+                        event_payload=Thought(_message_to_text(final_msg)),
+                        node="final_output",
+                    )
+
+            # Finalize trajectory
+            await self._harness.finalize()
+        except GuardrailViolationError:
+            # Policy-enforced termination: trajectory completed (not failed)
+            try:
+                await self._harness.finalize()
+            except Exception:
+                self._logger.exception(
+                    "Failed to finalize trajectory after guardrail violation"
+                )
+            raise
+        except Exception as exc:
+            # Unexpected error: mark trajectory as failed
+            if self._harness.trajectory_id:
+                try:
+                    await self._harness.fail(reason=str(exc))
+                except Exception:
+                    self._logger.exception("Failed to mark trajectory as failed")
+            raise
 
         return final_state
 
@@ -202,6 +230,7 @@ class SonderaGraph:
         input: dict[str, Any] | Any,
         config: dict[str, Any] | None = None,
         *,
+        session_id: str | None = None,
         context: dict[str, Any] | None = None,
         output_keys: str | list[str] | None = None,
         interrupt_before: list[str] | None = None,
@@ -213,6 +242,7 @@ class SonderaGraph:
             self.ainvoke(
                 input,
                 config,
+                session_id=session_id,
                 context=context,
                 output_keys=output_keys,
                 interrupt_before=interrupt_before,
@@ -226,6 +256,7 @@ class SonderaGraph:
         input: dict[str, Any] | Any,
         config: dict[str, Any] | None = None,
         *,
+        session_id: str | None = None,
         stream_mode: str | list[str] | None = None,
         context: dict[str, Any] | None = None,
         output_keys: str | list[str] | None = None,
@@ -240,8 +271,15 @@ class SonderaGraph:
         lifecycle management (initialize / finalize) is performed.
 
         Yields chunks from the underlying graph's ``astream``.
+
+        Args:
+            session_id: Optional session identifier. Overrides the instance-level
+                session_id for this call.
         """
-        await self._harness.initialize(agent=self._harness.agent)
+        effective_session_id = session_id or self._session_id
+        await self._harness.initialize(
+            agent=self._harness.agent, session_id=effective_session_id
+        )
 
         graph_kwargs: dict[str, Any] = {**kwargs}
         if context is not None:
@@ -275,14 +313,40 @@ class SonderaGraph:
                         for node_name, node_state in chunk.items():
                             await self._record_node_execution(node_name, node_state)
                 yield chunk
-        finally:
             await self._harness.finalize()
+        except GuardrailViolationError:
+            # Policy-enforced termination: trajectory completed (not failed)
+            try:
+                await self._harness.finalize()
+            except Exception:
+                self._logger.exception(
+                    "Failed to finalize trajectory after guardrail violation"
+                )
+            raise
+        except GeneratorExit:
+            # Consumer abandoned the iterator early — still close the trajectory cleanly
+            if self._harness.trajectory_id:
+                try:
+                    await self._harness.finalize()
+                except Exception:
+                    self._logger.exception(
+                        "Failed to finalize trajectory on generator close"
+                    )
+            raise
+        except Exception as exc:
+            if self._harness.trajectory_id:
+                try:
+                    await self._harness.fail(reason=str(exc))
+                except Exception:
+                    self._logger.exception("Failed to mark trajectory as failed")
+            raise
 
     def stream(
         self,
         input: dict[str, Any] | Any,
         config: dict[str, Any] | None = None,
         *,
+        session_id: str | None = None,
         stream_mode: str | list[str] | None = None,
         context: dict[str, Any] | None = None,
         output_keys: str | list[str] | None = None,
@@ -296,6 +360,7 @@ class SonderaGraph:
             aiter = self.astream(
                 input,
                 config,
+                session_id=session_id,
                 stream_mode=stream_mode,
                 context=context,
                 output_keys=output_keys,
@@ -369,41 +434,41 @@ class SonderaGraph:
             else:
                 content = str(last_msg)
         else:
-            # For non-message nodes, summarize the state change
             content = f"Node '{node_name}' updated state"
 
         await self._record_step(
-            content=ToolResponseContent(tool_id=node_name, response=content),
-            role=Role.TOOL,  # Nodes are like tool executions
-            stage=Stage.POST_TOOL,
+            event_payload=ToolOutput.from_success(node_name, content),
             node=node_name,
         )
 
     async def _record_step(
         self,
         *,
-        content: Content,
-        role: Role,
-        stage: Stage,
+        event_payload: Any,
         node: str,
-    ) -> Adjudication:
+    ) -> Adjudicated:
         """Record and adjudicate a trajectory step."""
-        # Adjudicate with policy engine via harness
-        adjudication = await self._harness.adjudicate(
-            stage=stage,
-            role=role,
-            content=content,
+        assert self._harness.agent is not None, "Harness not initialized"
+        assert self._harness.trajectory_id is not None, "Harness not initialized"
+        event = Event(
+            agent=self._harness.agent,
+            trajectory_id=self._harness.trajectory_id,
+            event=event_payload,
         )
+        adjudicated = await self._harness.adjudicate(event)
 
-        # Enforce DENY decisions if enabled
-        if adjudication.decision is Decision.DENY and self._enforce:
+        if (
+            adjudicated.decision is Decision.Deny
+            and self._enforce
+            and adjudicated.mode == Mode.Govern
+        ):
             raise GuardrailViolationError(
-                stage=stage,
+                event_type=event.event_type,
                 node=node,
-                reason=adjudication.reason,
+                reason=adjudicated.deny_message("Policy violation"),
             )
 
-        return adjudication
+        return adjudicated
 
 
 def _message_to_text(message: BaseMessage | Any) -> str:

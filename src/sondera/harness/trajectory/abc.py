@@ -1,20 +1,62 @@
 """Abstract trajectory storage interface.
 
 Read methods are async and paginated. Write methods are sync with no-op defaults.
+
+This module uses sondera types for Agent, Trajectory, and TrajectoryStatus,
+plus local storage-specific types for adjudicated steps and records.
 """
 
 from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Any
 
+from pydantic import BaseModel, ConfigDict
+
 from sondera.types import (
-    AdjudicatedStep,
-    AdjudicatedTrajectory,
-    AdjudicationRecord,
+    Adjudicated,
     Agent,
+    Event,
     Trajectory,
     TrajectoryStatus,
 )
+
+# Event, Adjudicated, and TrajectoryStatus are PyO3 types that Pydantic
+# cannot introspect natively, so all models using them need this config.
+_pyo3_config = ConfigDict(arbitrary_types_allowed=True)
+
+
+class AdjudicatedStep(BaseModel):
+    """A trajectory step with its adjudication result (for local storage)."""
+
+    model_config = _pyo3_config
+
+    event: Event
+    adjudication: Adjudicated
+
+
+class AdjudicatedTrajectory(BaseModel):
+    """Trajectory with all adjudicated steps (for local storage queries)."""
+
+    model_config = _pyo3_config
+
+    id: str
+    agent: str  # Agent ID
+    status: TrajectoryStatus = TrajectoryStatus.Running
+    session_id: str | None = None
+    steps: list[AdjudicatedStep] = []
+
+
+class AdjudicationRecord(BaseModel):
+    """Index record for DENY/ESCALATE adjudications (for fast lookup)."""
+
+    model_config = _pyo3_config
+
+    agent_id: str
+    trajectory_id: str
+    trajectory_path: str
+    step_id: str
+    step_index: int
+    adjudication: Adjudicated
 
 
 class TrajectoryStorage(ABC):
@@ -44,7 +86,6 @@ class TrajectoryStorage(ABC):
         status: TrajectoryStatus | None = None,
         page_size: int = 50,
         page_token: str = "",
-        min_step_count: int = 0,
         session_id: str | None = None,
     ) -> tuple[list[Trajectory], str]: ...
 
@@ -91,5 +132,11 @@ class TrajectoryStorage(ABC):
     ) -> None:
         """Append step to trajectory. Indexes DENY/ESCALATE adjudications."""
 
-    def finalize_trajectory(self, agent_id: str, trajectory_id: str) -> None:  # noqa: B027
-        """Mark trajectory as COMPLETED."""
+    def finalize_trajectory(  # noqa: B027
+        self,
+        agent_id: str,
+        trajectory_id: str,
+        *,
+        status: TrajectoryStatus = TrajectoryStatus.Completed,
+    ) -> None:
+        """Mark trajectory as COMPLETED (or override with a different status)."""

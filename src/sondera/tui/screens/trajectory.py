@@ -5,7 +5,6 @@ import json
 import re
 from collections import Counter
 from dataclasses import dataclass, field
-from datetime import datetime
 from typing import Any
 
 from pygments.lexer import Lexer
@@ -18,6 +17,7 @@ from pygments.lexers import (
 from pygments.token import Token
 from pygments.util import ClassNotFound
 from rich.text import Text
+from textual import work
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, ScrollableContainer
@@ -34,14 +34,18 @@ from textual.widgets import (
 
 from sondera.tui.ai.panel import AskInput, AskPanel
 from sondera.tui.colors import ThemeColors, get_theme_colors
+from sondera.tui.events import EventStep, correlate_events
 from sondera.tui.mixins import SectionNavMixin
 from sondera.types import (
-    AdjudicatedStep,
-    AdjudicatedTrajectory,
     Decision,
-    PolicyMetadata,
-    TrajectoryStatus,
+    Event,
+    GuardrailResults,
+    Mode,
+    Steering,
+    Trajectory,
+    TrajectoryEventStream,
 )
+from sondera.types import PolicyMetadata as HarnessPolicyMetadata
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -84,46 +88,46 @@ def _clean_tool_name(tool_id: str) -> str:
     return tool_id
 
 
-_STATUS_ICON_CHARS: dict[TrajectoryStatus, str] = {
-    TrajectoryStatus.COMPLETED: "\u2713",
-    TrajectoryStatus.RUNNING: "\u25cf",
-    TrajectoryStatus.PENDING: "\u25cf",
-    TrajectoryStatus.FAILED: "\u2717",
-    TrajectoryStatus.SUSPENDED: "\u25cb",
-    TrajectoryStatus.UNKNOWN: "?",
+_STATUS_ICON_CHARS: dict[str, str] = {
+    "completed": "\u2713",
+    "running": "\u25cf",
+    "pending": "\u25cf",
+    "failed": "\u2717",
+    "suspended": "\u25cb",
+    "unknown": "?",
 }
 
 
-def _status_icon(status: TrajectoryStatus, c: ThemeColors) -> tuple[str, str]:
+def _status_icon(status: str, c: ThemeColors) -> tuple[str, str]:
     """Return (icon, color) for a trajectory status."""
     icon = _STATUS_ICON_CHARS.get(status, "?")
     color_map = {
-        TrajectoryStatus.COMPLETED: c.success,
-        TrajectoryStatus.RUNNING: c.primary,
-        TrajectoryStatus.PENDING: c.primary,
-        TrajectoryStatus.FAILED: c.error,
-        TrajectoryStatus.SUSPENDED: c.warning,
-        TrajectoryStatus.UNKNOWN: c.fg_dim,
+        "completed": c.success,
+        "running": c.primary,
+        "pending": c.primary,
+        "failed": c.error,
+        "suspended": c.warning,
+        "unknown": c.fg_dim,
     }
     return icon, color_map.get(status, c.fg_dim)
 
 
 def _decision_bright(decision: Decision, c: ThemeColors) -> str:
     """Return the bright color for a decision."""
-    return {
-        Decision.ALLOW: c.primary,
-        Decision.DENY: c.error,
-        Decision.ESCALATE: c.warning,
-    }.get(decision, c.primary)
+    if decision == Decision.Deny:
+        return c.error
+    if decision == Decision.Escalate:
+        return c.warning
+    return c.primary
 
 
 def _decision_dim(decision: Decision, c: ThemeColors) -> str:
     """Return the dim background color for a decision."""
-    return {
-        Decision.ALLOW: c.dim_allow,
-        Decision.DENY: c.dim_deny,
-        Decision.ESCALATE: c.dim_escalate,
-    }.get(decision, c.dim_allow)
+    if decision == Decision.Deny:
+        return c.dim_deny
+    if decision == Decision.Escalate:
+        return c.dim_escalate
+    return c.dim_allow
 
 
 _ROLE_LABELS: dict[str, str] = (
@@ -352,11 +356,11 @@ def _format_ms(ms: float) -> str:
 
 def _worst_decision(*decisions: Decision) -> Decision:
     """Return the most severe decision (DENY > ESCALATE > ALLOW)."""
-    if Decision.DENY in decisions:
-        return Decision.DENY
-    if Decision.ESCALATE in decisions:
-        return Decision.ESCALATE
-    return Decision.ALLOW
+    if Decision.Deny in decisions:
+        return Decision.Deny
+    if Decision.Escalate in decisions:
+        return Decision.Escalate
+    return Decision.Allow
 
 
 def _content_line_count(text: str) -> int:
@@ -384,32 +388,26 @@ def _get_tool_use_id(content: object) -> str | None:
     return None
 
 
-def _extract_file_path(content: object) -> str | None:
-    """Extract a file path from tool request or response content."""
-    args = _get(content, "args", {})
+def _get_tool_use_id_from_step(step: EventStep) -> str | None:
+    """Extract tool_use_id from an EventStep's args or response."""
+    from sondera.types import ToolCall, ToolOutput
+
+    p = step.payload
+    if isinstance(p, ToolCall) and p.call_id:
+        return p.call_id
+    if isinstance(p, ToolOutput) and p.call_id:
+        return p.call_id
+    # Fallback to generic extraction from args/response dicts
+    args = step.args
     if isinstance(args, dict):
-        # Direct file_path / path args
-        for key in ("file_path", "filePath", "path", "notebook_path"):
-            val = args.get(key)
-            if val and isinstance(val, str) and "/" in val:
-                return val
-
-        # Nested tool_input (Cursor-style agents)
-        tool_input = args.get("tool_input")
-        if isinstance(tool_input, dict):
-            for key in ("file_path", "filePath", "path"):
-                val = tool_input.get(key)
-                if val and isinstance(val, str) and "/" in val:
-                    return val
-
-    # Also check response dict for file path hints (orphan responses)
-    response = _get(content, "response", None)
-    if isinstance(response, dict):
-        for key in ("file_path", "filePath", "path"):
-            val = response.get(key)
-            if val and isinstance(val, str) and "/" in val:
-                return val
-
+        val = args.get("tool_use_id")
+        if val and isinstance(val, str):
+            return val
+    resp = step.response
+    if isinstance(resp, dict):
+        val = resp.get("tool_use_id")
+        if val and isinstance(val, str):
+            return val
     return None
 
 
@@ -426,7 +424,7 @@ class StepGroup:
     icon: str
     step_indices: list[int] = field(default_factory=list)
     primary_index: int = 0
-    decision: Decision = Decision.ALLOW
+    decision: Decision = field(default_factory=lambda: Decision.Allow)
     duration_ms: float | None = None
     tool_id: str | None = None
     tool_use_id: str | None = None
@@ -440,16 +438,27 @@ class StepGroup:
     is_repeated: bool = False
     deny_reason: str | None = None
     deny_stage: str | None = None  # "pre_tool" or "post_tool"
-    deny_policies: list[PolicyMetadata] = field(default_factory=list)
+    deny_policies: list[HarnessPolicyMetadata] = field(default_factory=list)
     is_prompt: bool = False
     prompt_text: str = ""
     role: str = "user"
     is_tool_request: bool = False
     is_tool_response: bool = False
     preview: str | None = None  # Short context for step list (e.g. Bash description)
+    scan_description: str | None = (
+        None  # Scanned: human-readable description of the event
+    )
+    scan_intent: str | None = (
+        None  # Scanned: agent intent label (investigate, implement, etc.)
+    )
+    mode: Mode | None = None  # Adjudicated: policy engine evaluation mode
+    steering: Steering | None = (
+        None  # Adjudicated: steering instructions (Steer mode only)
+    )
+    guardrails: GuardrailResults | None = None  # Adjudicated: YARA guardrail results
 
 
-def _build_step_groups(steps: list[AdjudicatedStep]) -> list[StepGroup]:
+def _build_step_groups(steps: list[EventStep]) -> list[StepGroup]:
     """Group raw adjudication steps into agent-loop actions.
 
     The platform may emit duplicate steps for the same action (e.g. two
@@ -467,12 +476,11 @@ def _build_step_groups(steps: list[AdjudicatedStep]) -> list[StepGroup]:
             continue
 
         step = steps[i]
-        role = _enum_str(_get(step.step, "role", ""))
-        content = step.step.content
-        content_type = _enum_str(_get(content, "content_type", ""))
+        role = step.role
+        content_type = step.content_type
 
         if content_type == "prompt":
-            text = str(_get(content, "text", ""))
+            text = step.text
             preview = text[:30].replace("\n", " ")
             if len(text) > 30:
                 preview += "\u2026"
@@ -481,9 +489,8 @@ def _build_step_groups(steps: list[AdjudicatedStep]) -> list[StepGroup]:
             indices = [i]
             j = i + 1
             while j < len(steps):
-                jc = steps[j].step.content
-                jct = _enum_str(_get(jc, "content_type", ""))
-                if jct == "prompt" and str(_get(jc, "text", "")) == text:
+                jct = steps[j].content_type
+                if jct == "prompt" and steps[j].text == text:
                     indices.append(j)
                     seen.add(j)
                     j += 1
@@ -496,43 +503,44 @@ def _build_step_groups(steps: list[AdjudicatedStep]) -> list[StepGroup]:
                     icon=_ROLE_ICONS.get(role, "?"),
                     step_indices=indices,
                     primary_index=indices[0],
-                    decision=step.adjudication.decision,
+                    decision=step.decision,
                     is_prompt=True,
                     prompt_text=text,
                     role=role,
+                    scan_description=step.scan_description,
+                    scan_intent=step.scan_intent,
+                    mode=step.mode,
+                    steering=step.steering,
+                    guardrails=step.guardrails,
                 )
             )
 
         elif content_type == "tool_request":
-            tool_id = str(_get(content, "tool_id", "unknown"))
-            use_id = _get_tool_use_id(content)
-            req_args = _get(content, "args", {})
+            tool_id = step.tool_id
+            use_id = _get_tool_use_id_from_step(step)
+            req_args = step.args
             indices = [i]
-            worst = step.adjudication.decision
+            worst = step.decision
             has_response = False
             parallel_found = False
 
             # Scan forward: absorb genuine duplicate requests (same
             # tool_use_id or same args), then find the matching response.
-            # Parallel calls (different tool_use_id / different args) are
-            # skipped, not absorbed.
             j = i + 1
             while j < len(steps):
                 if j in seen:
                     j += 1
                     continue
-                jc = steps[j].step.content
-                jct = _enum_str(_get(jc, "content_type", ""))
-                jtid = str(_get(jc, "tool_id", ""))
+                jct = steps[j].content_type
+                jtid = steps[j].tool_id
 
                 if jct == "tool_request" and jtid == tool_id:
-                    j_use_id = _get_tool_use_id(jc)
+                    j_use_id = _get_tool_use_id_from_step(steps[j])
                     is_duplicate = False
                     if use_id and j_use_id:
                         is_duplicate = j_use_id == use_id
                     elif not use_id and not j_use_id:
-                        # No use_id: fall back to args equality
-                        j_args = _get(jc, "args", {})
+                        j_args = steps[j].args
                         is_duplicate = (
                             isinstance(req_args, dict)
                             and isinstance(j_args, dict)
@@ -540,53 +548,41 @@ def _build_step_groups(steps: list[AdjudicatedStep]) -> list[StepGroup]:
                         )
                     if is_duplicate:
                         indices.append(j)
-                        worst = _worst_decision(worst, steps[j].adjudication.decision)
+                        worst = _worst_decision(worst, steps[j].decision)
                         seen.add(j)
                     else:
                         parallel_found = True
-                    # Either way, keep scanning for our response
                     j += 1
                 elif jct == "tool_response" and (
                     jtid == tool_id or _base_tool_id(jtid) == tool_id
                 ):
-                    j_use_id = _get_tool_use_id(jc)
+                    j_use_id = _get_tool_use_id_from_step(steps[j])
                     if use_id and j_use_id and j_use_id != use_id:
-                        # Response for a different parallel call, skip it
                         j += 1
                         continue
-                    # Matching response: absorb it
                     indices.append(j)
-                    worst = _worst_decision(worst, steps[j].adjudication.decision)
+                    worst = _worst_decision(worst, steps[j].decision)
                     seen.add(j)
                     has_response = True
-                    # The platform duplicates every step, so responses
-                    # come in consecutive pairs.  Always absorb the
-                    # platform duplicate (very next same-tool response).
-                    # When no parallel calls exist, keep absorbing all
-                    # consecutive same-tool responses (legacy behavior).
                     k = j + 1
                     while k < len(steps):
-                        kc = steps[k].step.content
-                        kct = _enum_str(_get(kc, "content_type", ""))
-                        ktid = str(_get(kc, "tool_id", ""))
+                        kct = steps[k].content_type
+                        ktid = steps[k].tool_id
                         if kct == "tool_response" and (
                             ktid == tool_id or _base_tool_id(ktid) == tool_id
                         ):
-                            k_use_id = _get_tool_use_id(kc)
+                            k_use_id = _get_tool_use_id_from_step(steps[k])
                             if use_id and k_use_id and k_use_id != use_id:
                                 break
                             indices.append(k)
                             seen.add(k)
                             k += 1
-                            # With parallel calls, only absorb the one
-                            # platform duplicate, then stop.
                             if parallel_found:
                                 break
                         else:
                             break
                     break
                 else:
-                    # Skip non-matching steps but keep looking
                     j += 1
 
             groups.append(
@@ -600,24 +596,28 @@ def _build_step_groups(steps: list[AdjudicatedStep]) -> list[StepGroup]:
                     tool_use_id=use_id,
                     is_tool_request=True,
                     is_tool_response=has_response,
+                    scan_description=step.scan_description,
+                    scan_intent=step.scan_intent,
+                    mode=step.mode,
+                    steering=step.steering,
+                    guardrails=step.guardrails,
                 )
             )
 
         elif content_type == "tool_response":
             # Orphan response (no preceding request)
-            tool_id = str(_get(content, "tool_id", "unknown"))
-            use_id = _get_tool_use_id(content)
+            tool_id = step.tool_id
+            use_id = _get_tool_use_id_from_step(step)
             indices = [i]
             # Absorb genuine duplicates (same tool_use_id)
             j = i + 1
             while j < len(steps):
-                jc = steps[j].step.content
-                jct = _enum_str(_get(jc, "content_type", ""))
-                jtid = str(_get(jc, "tool_id", ""))
+                jct = steps[j].content_type
+                jtid = steps[j].tool_id
                 if jct == "tool_response" and (
                     jtid == tool_id or _base_tool_id(jtid) == _base_tool_id(tool_id)
                 ):
-                    j_use_id = _get_tool_use_id(jc)
+                    j_use_id = _get_tool_use_id_from_step(steps[j])
                     if use_id and j_use_id and j_use_id != use_id:
                         break  # Different response, stop absorbing
                     indices.append(j)
@@ -631,10 +631,15 @@ def _build_step_groups(steps: list[AdjudicatedStep]) -> list[StepGroup]:
                     icon="\U0001f6e0",
                     step_indices=indices,
                     primary_index=indices[0],
-                    decision=step.adjudication.decision,
+                    decision=step.decision,
                     tool_id=tool_id,
                     tool_use_id=use_id,
                     is_tool_response=True,
+                    scan_description=step.scan_description,
+                    scan_intent=step.scan_intent,
+                    mode=step.mode,
+                    steering=step.steering,
+                    guardrails=step.guardrails,
                 )
             )
         else:
@@ -644,8 +649,13 @@ def _build_step_groups(steps: list[AdjudicatedStep]) -> list[StepGroup]:
                     icon=_ROLE_ICONS.get(role, "?"),
                     step_indices=[i],
                     primary_index=i,
-                    decision=step.adjudication.decision,
+                    decision=step.decision,
                     role=role,
+                    scan_description=step.scan_description,
+                    scan_intent=step.scan_intent,
+                    mode=step.mode,
+                    steering=step.steering,
+                    guardrails=step.guardrails,
                 )
             )
         i += 1
@@ -653,7 +663,7 @@ def _build_step_groups(steps: list[AdjudicatedStep]) -> list[StepGroup]:
     return groups
 
 
-def _enrich_step_groups(groups: list[StepGroup], steps: list[AdjudicatedStep]) -> None:
+def _enrich_step_groups(groups: list[StepGroup], steps: list[EventStep]) -> None:
     """Second pass: compute display indices, gap times, tool counts, etc."""
     tool_totals: Counter[str] = Counter()
     for g in groups:
@@ -676,12 +686,11 @@ def _enrich_step_groups(groups: list[StepGroup], steps: list[AdjudicatedStep]) -
         # Extract duration from the first response step in the group
         if g.is_tool_response:
             for si in g.step_indices:
-                ct = _enum_str(_get(steps[si].step.content, "content_type", ""))
-                if ct == "tool_response":
-                    response = _get(steps[si].step.content, "response", None)
-                    if isinstance(response, dict):
+                if steps[si].content_type == "tool_response":
+                    resp = steps[si].response
+                    if isinstance(resp, dict):
                         for key in ("duration", "durationMs", "duration_ms"):
-                            resp_dur = response.get(key)
+                            resp_dur = resp.get(key)
                             if resp_dur is not None and float(resp_dur) > 0:
                                 g.duration_ms = float(resp_dur)
                                 break
@@ -689,7 +698,25 @@ def _enrich_step_groups(groups: list[StepGroup], steps: list[AdjudicatedStep]) -
 
         # Extract file path from any step in the group (request or response)
         for si in g.step_indices:
-            g.file_path = _extract_file_path(steps[si].step.content)
+            s = steps[si]
+            # Try args first
+            args = s.args
+            if isinstance(args, dict):
+                for key in ("file_path", "filePath", "path", "notebook_path"):
+                    val = args.get(key)
+                    if val and isinstance(val, str) and "/" in val:
+                        g.file_path = val
+                        break
+            if g.file_path:
+                break
+            # Then response
+            resp = s.response
+            if isinstance(resp, dict):
+                for key in ("file_path", "filePath", "path"):
+                    val = resp.get(key)
+                    if val and isinstance(val, str) and "/" in val:
+                        g.file_path = val
+                        break
             if g.file_path:
                 break
 
@@ -700,8 +727,7 @@ def _enrich_step_groups(groups: list[StepGroup], steps: list[AdjudicatedStep]) -
             for si in g.step_indices:
                 if g.preview:
                     break
-                content = steps[si].step.content
-                args = _get(content, "args", {})
+                args = steps[si].args
                 if isinstance(args, dict):
                     # Prefer the actual action
                     for key in (
@@ -738,26 +764,31 @@ def _enrich_step_groups(groups: list[StepGroup], steps: list[AdjudicatedStep]) -
                         g.preview = desc[:40]
                         break
 
+        # Use Scanned description as a fallback preview when no other context was found
+        if g.tool_id and not g.file_path and not g.preview and g.scan_description:
+            desc = g.scan_description
+            g.preview = desc[:37] + "\u2026" if len(desc) > 40 else desc
+
         # For response-only groups, extract preview from the response content
         if g.tool_id and not g.file_path and not g.preview and g.is_tool_response:
             for si in g.step_indices:
-                response = _get(steps[si].step.content, "response", None)
-                if response is None:
+                resp = steps[si].response
+                if resp is None:
                     continue
-                if isinstance(response, dict):
-                    error = response.get("error")
+                if isinstance(resp, dict):
+                    error = resp.get("error")
                     if error and isinstance(error, str):
                         g.preview = f"error: {error[:30]}"
                         break
-                    mcp_text = response.get("text")
+                    mcp_text = resp.get("text")
                     if isinstance(mcp_text, str) and mcp_text.strip():
                         line = mcp_text.strip().split("\n")[0]
                         if len(line) > 40:
                             line = line[:37] + "\u2026"
                         g.preview = line
                         break
-                elif isinstance(response, str) and response.strip():
-                    line = response.strip().split("\n")[0]
+                elif isinstance(resp, str) and resp.strip():
+                    line = resp.strip().split("\n")[0]
                     if len(line) > 40:
                         line = line[:37] + "\u2026"
                     g.preview = line
@@ -775,32 +806,31 @@ def _enrich_step_groups(groups: list[StepGroup], steps: list[AdjudicatedStep]) -
         prev_file_path = g.file_path
 
         # Deny reason, stage, and policies from first denied step in group
-        if g.decision in (Decision.DENY, Decision.ESCALATE):
+        if g.decision in (Decision.Deny, Decision.Escalate):
             for si in g.step_indices:
-                adj = steps[si].adjudication
-                if adj.reason:
-                    g.deny_reason = adj.reason
-                    g.deny_policies = adj.policies
-                    stage = _enum_str(_get(steps[si].step, "stage", ""))
+                s = steps[si]
+                if s.decision in (Decision.Deny, Decision.Escalate):
+                    g.deny_reason = s.reason or s.deny_message
+                    g.deny_policies = s.policies
+                    stage = s.stage
                     if stage:
                         g.deny_stage = stage
                     break
 
         # Prompt metadata
-        ct = _enum_str(_get(steps[g.step_indices[0]].step.content, "content_type", ""))
-        if ct == "prompt":
+        first_step = steps[g.step_indices[0]]
+        if first_step.content_type == "prompt":
             g.is_prompt = True
-            g.prompt_text = str(_get(steps[g.step_indices[0]].step.content, "text", ""))
+            g.prompt_text = first_step.text
 
         # Gap time since previous group ended (end-to-start)
         if i > 0:
             prev_g = groups[i - 1]
-            prev_ts = steps[prev_g.step_indices[-1]].step.created_at
-            cur_ts = steps[g.step_indices[0]].step.created_at
-            if isinstance(prev_ts, datetime) and isinstance(cur_ts, datetime):
-                gap = (cur_ts - prev_ts).total_seconds() * 1000
-                if gap > 0:
-                    g.gap_ms = gap
+            prev_ts = steps[prev_g.step_indices[-1]].timestamp
+            cur_ts = steps[g.step_indices[0]].timestamp
+            gap = (cur_ts - prev_ts).total_seconds() * 1000
+            if gap > 0:
+                g.gap_ms = gap
 
 
 # ---------------------------------------------------------------------------
@@ -999,8 +1029,29 @@ def _format_value(value: Any, indent: int = 0, max_len: int = 200) -> str:
     return val_str
 
 
+class _EventStepContent:
+    """Adapter that exposes EventStep data as the dict-like object
+    expected by ``_render_tool_request`` and ``_render_tool_response``.
+
+    These renderers use ``_get(content, "tool_id", ...)``, ``_get(content, "args", ...)``,
+    etc. so we just need matching attributes.
+    """
+
+    def __init__(self, step: EventStep) -> None:
+        self.tool_id = step.tool_id
+        self.args = step.args
+        self.response = step.response
+        self.content_type = step.content_type
+        self.text = step.text
+
+
+def _event_step_as_content(step: EventStep) -> _EventStepContent:
+    """Convert an EventStep to the content-like object used by render helpers."""
+    return _EventStepContent(step)
+
+
 def _render_tool_request(
-    content: object, c: ThemeColors, decision: Decision = Decision.ALLOW
+    content: object, c: ThemeColors, decision: Decision = Decision.Allow
 ) -> Text:
     """Render a ToolRequestContent as formatted Rich Text."""
     tool_id = str(_get(content, "tool_id", "unknown"))
@@ -1010,7 +1061,7 @@ def _render_tool_request(
         args = {}
 
     text = Text()
-    if decision == Decision.DENY:
+    if decision == Decision.Deny:
         text.append(display_name, style=f"bold {c.error} on {c.error_bg}")
         text.append(" request", style=c.error)
     else:
@@ -1109,7 +1160,7 @@ def _render_tool_request(
 def _render_tool_response(
     content: object,
     c: ThemeColors,
-    decision: Decision = Decision.ALLOW,
+    decision: Decision = Decision.Allow,
     file_path: str | None = None,
 ) -> Text:
     """Render a ToolResponseContent as formatted Rich Text."""
@@ -1118,7 +1169,7 @@ def _render_tool_response(
     response = _get(content, "response", None)
 
     text = Text()
-    if decision == Decision.DENY:
+    if decision == Decision.Deny:
         text.append(display_name, style=f"bold {c.error} on {c.error_bg}")
         text.append(" response", style=c.error)
     else:
@@ -1304,24 +1355,21 @@ def _render_tool_response(
     return text
 
 
-def _render_step_content(
-    step: AdjudicatedStep, step_index: int, c: ThemeColors
-) -> Static:
+def _render_step_content(step: EventStep, step_index: int, c: ThemeColors) -> Static:
     """Render step content as a formatted Static widget (for standalone steps)."""
-    content = step.step.content
-    content_type = str(_get(content, "content_type", ""))
-    decision = step.adjudication.decision
+    content_type = step.content_type
+    decision = step.decision
 
     if content_type == "tool_request":
-        rich_text = _render_tool_request(content, c, decision)
+        rich_text = _render_tool_request(_event_step_as_content(step), c, decision)
     elif content_type == "tool_response":
-        rich_text = _render_tool_response(content, c, decision)
+        rich_text = _render_tool_response(_event_step_as_content(step), c, decision)
     else:
-        rich_text = Text(str(content))
+        rich_text = Text(step.text or str(step.payload))
 
-    if decision == Decision.DENY:
+    if decision == Decision.Deny:
         css_class = "step-deny"
-    elif decision == Decision.ESCALATE:
+    elif decision == Decision.Escalate:
         css_class = "step-escalate"
     else:
         css_class = "step-allow"
@@ -1335,7 +1383,7 @@ def _render_step_content(
 
 
 def _render_merged_tool_card(
-    steps: list[AdjudicatedStep],
+    steps: list[EventStep],
     group: StepGroup,
     c: ThemeColors,
 ) -> Static:
@@ -1343,9 +1391,9 @@ def _render_merged_tool_card(
     text = Text()
 
     # Inline deny/escalate reason and policy info
-    if group.decision in (Decision.DENY, Decision.ESCALATE):
-        accent = c.error if group.decision == Decision.DENY else c.warning
-        label = "DENIED" if group.decision == Decision.DENY else "ESCALATED"
+    if group.decision in (Decision.Deny, Decision.Escalate):
+        accent = c.error if group.decision == Decision.Deny else c.warning
+        label = "DENIED" if group.decision == Decision.Deny else "ESCALATED"
         if group.deny_stage:
             stage_label = {"pre_tool": "PRE_TOOL", "post_tool": "POST_TOOL"}.get(
                 group.deny_stage, group.deny_stage.upper()
@@ -1359,22 +1407,58 @@ def _render_merged_tool_card(
         text.append(" ", style="")
         # Show policy IDs inline on the badge line
         if group.deny_policies:
-            text.append("; ".join(p.id for p in group.deny_policies), style=accent)
+            text.append(
+                "; ".join(p.policy_id for p in group.deny_policies if p.policy_id),
+                style=accent,
+            )
         elif group.deny_reason:
             text.append(group.deny_reason, style=accent)
         text.append("\n")
         # Show descriptions (if any) as indented lines below
         for p in group.deny_policies:
             if p.description:
-                text.append(f"  {p.id}: ", style=f"bold {accent}")
+                text.append(f"  {p.policy_id}: ", style=f"bold {accent}")
                 text.append(p.description, style=c.fg_secondary)
                 text.append("\n")
+        # Show steering instructions (Steer mode only)
+        if (steering := group.steering) and steering.instructions:
+            text.append("  Steering: ", style=f"bold {accent}")
+            text.append(steering.explanation or "", style=c.fg_secondary)
+            text.append("\n")
+            for instruction in steering.instructions:
+                text.append(f"    • {instruction}\n", style=c.fg_secondary)
+        # Show triggered YARA guardrail matches
+        if group.guardrails and group.guardrails.signature:
+            sig = group.guardrails.signature
+            if sig.triggered:
+                text.append("  Guardrails: ", style=f"bold {accent}")
+                text.append(f"severity={sig.severity}", style=c.fg_secondary)
+                if sig.categories:
+                    text.append(f"  [{', '.join(sig.categories)}]", style=c.fg_muted)
+                text.append("\n")
+                for match in sig.matches:
+                    text.append(f"    • {match.rule}", style=c.fg_secondary)
+                    if match.namespace:
+                        text.append(f" ({match.namespace})", style=c.fg_muted)
+                    text.append("\n")
+
+    # Show Scanned context (description + intent) when available and step allowed
+    if group.decision == Decision.Allow and (
+        group.scan_description or group.scan_intent
+    ):
+        scan_parts: list[str] = []
+        if group.scan_intent:
+            scan_parts.append(f"[{group.scan_intent}]")
+        if group.scan_description:
+            scan_parts.append(group.scan_description)
+        text.append(" ".join(scan_parts), style=c.fg_muted)
+        text.append("\n")
 
     # Find first request and first response among the (possibly duplicated) steps
     request_step = None
     response_step = None
     for s in steps:
-        ct = _enum_str(_get(s.step.content, "content_type", ""))
+        ct = s.content_type
         if ct == "tool_request" and request_step is None:
             request_step = s
         elif ct == "tool_response" and response_step is None:
@@ -1383,7 +1467,7 @@ def _render_merged_tool_card(
     # Request section
     if request_step is not None:
         request_text = _render_tool_request(
-            request_step.step.content, c, request_step.adjudication.decision
+            _event_step_as_content(request_step), c, request_step.decision
         )
         text.append_text(request_text)
 
@@ -1397,17 +1481,17 @@ def _render_merged_tool_card(
     # Response section
     if response_step is not None:
         response_text = _render_tool_response(
-            response_step.step.content,
+            _event_step_as_content(response_step),
             c,
-            response_step.adjudication.decision,
+            response_step.decision,
             file_path=group.file_path,
         )
         text.append_text(response_text)
 
     # CSS class based on worst decision
-    if group.decision == Decision.DENY:
+    if group.decision == Decision.Deny:
         css_class = "step-deny"
-    elif group.decision == Decision.ESCALATE:
+    elif group.decision == Decision.Escalate:
         css_class = "step-escalate"
     else:
         css_class = "step-allow"
@@ -1498,7 +1582,28 @@ def _append_inline_md(text: Text, line: str, c: ThemeColors) -> None:
 
 def _render_prompt_card(group: StepGroup, c: ThemeColors) -> Static:
     """Render a user prompt card with lightweight markdown formatting."""
-    text = _render_markdown_text(group.prompt_text, c)
+    header = Text()
+    # Show adjudication badge for denied/escalated prompts
+    if group.decision in (Decision.Deny, Decision.Escalate):
+        accent = c.error if group.decision == Decision.Deny else c.warning
+        label = "DENIED" if group.decision == Decision.Deny else "ESCALATED"
+        header.append(f" {label} ", style=f"bold {c.fg} on {accent}")
+        header.append(" ", style="")
+        if group.deny_policies:
+            header.append(
+                "; ".join(p.policy_id for p in group.deny_policies if p.policy_id),
+                style=accent,
+            )
+        elif group.deny_reason:
+            header.append(group.deny_reason, style=accent)
+        header.append("\n\n")
+
+    body = _render_markdown_text(group.prompt_text, c)
+    if header.plain:
+        header.append_text(body)
+        text = header
+    else:
+        text = body
     css_class = "step-prompt-model" if group.role == "model" else "step-prompt"
     return Static(text, classes=css_class)
 
@@ -1535,12 +1640,12 @@ def _build_group_border_title(group: StepGroup) -> str:
     return "  ".join(parts)
 
 
-def _build_group_border_subtitle(group: StepGroup, steps: list[AdjudicatedStep]) -> str:
+def _build_group_border_subtitle(group: StepGroup, steps: list[EventStep]) -> str:
     """Build border subtitle: start-end time, gap since previous ended, duration."""
     first_step = steps[group.step_indices[0]]
     last_step = steps[group.step_indices[-1]]
-    start_ts = first_step.step.created_at
-    end_ts = last_step.step.created_at
+    start_ts = first_step.timestamp
+    end_ts = last_step.timestamp
 
     ts_str = ""
 
@@ -1549,25 +1654,20 @@ def _build_group_border_subtitle(group: StepGroup, steps: list[AdjudicatedStep])
         ts_str += f"idle {_format_ms(group.gap_ms)}  "
 
     # Timestamp range + duration
-    if isinstance(start_ts, datetime):
-        local_start = start_ts.astimezone()
-        tz_name = local_start.strftime("%Z") or local_start.strftime("%z")
-        ts_str += local_start.strftime("%H:%M:%S")
+    local_start = start_ts.astimezone()
+    tz_name = local_start.strftime("%Z") or local_start.strftime("%z")
+    ts_str += local_start.strftime("%H:%M:%S")
 
-        # Show end time if different from start (multi-step group)
-        if isinstance(end_ts, datetime) and len(group.step_indices) > 1:
-            local_end = end_ts.astimezone()
-            if local_end.strftime("%H:%M:%S") != local_start.strftime("%H:%M:%S"):
-                ts_str += f"\u2013{local_end.strftime('%H:%M:%S')}"
+    # Show end time if different from start (multi-step group)
+    if len(group.step_indices) > 1:
+        local_end = end_ts.astimezone()
+        if local_end.strftime("%H:%M:%S") != local_start.strftime("%H:%M:%S"):
+            ts_str += f"\u2013{local_end.strftime('%H:%M:%S')}"
 
-        ts_str += f" {tz_name}"
+    ts_str += f" {tz_name}"
 
     # Duration: time from first to last step in the group (request to response)
-    if (
-        isinstance(start_ts, datetime)
-        and isinstance(end_ts, datetime)
-        and len(group.step_indices) > 1
-    ):
+    if len(group.step_indices) > 1:
         dur_ms = (end_ts - start_ts).total_seconds() * 1000
         if dur_ms > 100:
             ts_str += f" (took {_format_ms(dur_ms)})"
@@ -1587,7 +1687,16 @@ def _render_step_row(group: StepGroup, selected: bool, c: ThemeColors) -> Text:
     text.append(f"#{group.display_index + 1:<4} ", style=c.fg_dim)
 
     if group.is_prompt:
+        # Show deny/escalate indicator for blocked prompts
+        if group.decision == Decision.Deny:
+            text.append("\u2717 ", style=c.error)
+        elif group.decision == Decision.Escalate:
+            text.append("\u26a0 ", style=c.warning)
         icon_style = c.fg_secondary if group.role == "model" else c.prompt_blue
+        if group.decision == Decision.Deny:
+            icon_style = c.error
+        elif group.decision == Decision.Escalate:
+            icon_style = c.warning
         text.append(f"{group.icon} ", style=icon_style)
         preview = group.prompt_text[:30].replace("\n", " ")
         if len(group.prompt_text) > 30:
@@ -1596,10 +1705,10 @@ def _render_step_row(group: StepGroup, selected: bool, c: ThemeColors) -> Text:
     else:
         # Decision icon + tool name
         display_name = _clean_tool_name(group.tool_id or group.label)
-        if group.decision == Decision.DENY:
+        if group.decision == Decision.Deny:
             text.append("\u2717 ", style=c.error)
             text.append(display_name, style=c.error)
-        elif group.decision == Decision.ESCALATE:
+        elif group.decision == Decision.Escalate:
             text.append("\u26a0 ", style=c.warning)
             text.append(display_name, style=c.warning)
         else:
@@ -1616,6 +1725,14 @@ def _render_step_row(group: StepGroup, selected: bool, c: ThemeColors) -> Text:
             if len(preview) > 24:
                 preview = preview[:21] + "\u2026"
             text.append(f"  {preview}", style=c.fg_dim)
+
+        # Scan intent badge (e.g. "investigate", "implement") when available
+        if group.scan_intent and group.decision == Decision.Allow:
+            text.append(f"  [{group.scan_intent}]", style=c.fg_muted)
+
+        # Mode badge for non-default modes (Monitor shows observed-only, Steer shows steering)
+        if (mode := group.mode) is not None and mode != Mode.Govern:
+            text.append(f"  {str(mode).upper()}", style=c.fg_muted)
 
         # Duration
         if group.duration_ms is not None:
@@ -1649,7 +1766,7 @@ class DecisionMinimap(Widget):
             return text
 
         # Build suffix: [N/total  M denied]
-        denied = sum(1 for g in self._groups if g.decision == Decision.DENY)
+        denied = sum(1 for g in self._groups if g.decision == Decision.Deny)
         counter = f"[{self.current_index + 1}/{total}"
         if denied > 0:
             counter += f"  {denied} denied"
@@ -1670,7 +1787,7 @@ class DecisionMinimap(Widget):
                     text.append("\u2588", style=color)
         else:
             bucket_count = max(1, available)
-            pos_worst: list[Decision] = [Decision.ALLOW] * bucket_count
+            pos_worst: list[Decision] = [Decision.Allow] * bucket_count
             for i, group in enumerate(self._groups):
                 pos = i * bucket_count // total
                 pos_worst[pos] = _worst_decision(pos_worst[pos], group.decision)
@@ -1710,6 +1827,8 @@ class DecisionMinimap(Widget):
 class TrajectoryScreen(SectionNavMixin, Screen):
     """A screen for displaying a trajectory with semantic formatting."""
 
+    app: "sondera.tui.app.SonderaApp"  # type: ignore[name-defined]  # noqa: UP037, F821
+
     BINDINGS = [
         Binding("escape", "back", "Back"),
         Binding("tab", "next_section", "Panel", key_display="tab"),
@@ -1733,6 +1852,130 @@ class TrajectoryScreen(SectionNavMixin, Screen):
         Binding("ctrl+grave_accent", "ask", "AI", key_display="ctrl+`"),
         Binding("enter", "noop", show=False),
     ]
+
+    # ----- Live streaming ----------------------------------------------------
+
+    @work(exclusive=True, group="trajectory-live-stream")
+    async def _stream_live_events(self) -> None:
+        """Subscribe to live events for this trajectory and append new steps.
+
+        Opens a :class:`TrajectoryEventStream` filtered to this trajectory's
+        resource name.  Each arriving :class:`TrajectoryEventNotification` is
+        processed by :meth:`_apply_live_event` which re-correlates the event
+        list and mounts any new step widgets into ``#step-list``.
+
+        Streaming stops automatically once the trajectory reaches a terminal
+        state (completed, failed, or terminated).
+        """
+        from textual.worker import get_current_worker
+
+        worker = get_current_worker()
+        filter_expr = f'trajectory = "{self.trajectory.name}"'
+        try:
+            stream: TrajectoryEventStream = await self.app.harness.stream_trajectories(
+                filter=filter_expr
+            )
+        except Exception:
+            return
+
+        async for notification in stream:
+            if worker.is_cancelled:
+                break
+
+            event = notification.event  # type: ignore[union-attr]
+            if event is not None:
+                await self._apply_live_event(event)
+
+            # Stop once the trajectory has finished
+            if self._live_status in {"completed", "failed", "terminated"}:
+                break
+
+    async def _apply_live_event(self, event: Event) -> None:
+        """Process one incoming live :class:`Event` and update the step view.
+
+        Appends *event* to the local event list, re-correlates the full stream
+        to produce updated :class:`EventStep` and :class:`StepGroup` sequences,
+        then mounts widgets for any newly visible groups.  Summary and minimap
+        are refreshed on every call regardless of whether new groups appear.
+        """
+        event_type = (event.event_type or "").lower()
+
+        # Track terminal lifecycle events so the summary bar shows the right status
+        if event_type in {"completed", "failed", "suspended", "terminated"}:
+            self._live_status = event_type
+
+        # Append the event; correlate_events skips lifecycle entries automatically
+        self._live_events.append(event)
+        old_group_count = len(self._step_groups)
+
+        new_steps = correlate_events(self._live_events)
+        new_groups = _build_step_groups(new_steps)
+        _enrich_step_groups(new_groups, new_steps)
+
+        added_groups = new_groups[old_group_count:]
+
+        # Always refresh summary (step count, timing, and status may have changed)
+        with contextlib.suppress(Exception):
+            self.query_one("#trajectory-summary", Static).update(self._render_summary())
+
+        if not added_groups:
+            return
+
+        # Mutate lists in-place so the DecisionMinimap reference stays valid
+        self._steps = new_steps
+        self._step_groups.extend(added_groups)
+
+        # Extend index mappings for the new groups
+        for g in added_groups:
+            for si in g.step_indices:
+                self._step_to_display[si] = g.display_index
+
+        # Rebuild violation navigation index
+        self._violation_indices = [
+            g.display_index
+            for g in self._step_groups
+            if g.decision in (Decision.Deny, Decision.Escalate)
+        ]
+
+        # Extend searchable text used by the '/' search feature
+        for g in added_groups:
+            parts: list[str] = []
+            for si in g.step_indices:
+                step = self._steps[si]
+                ct = step.content_type
+                if ct == "prompt":
+                    parts.append(step.text)
+                elif ct == "tool_request":
+                    parts.append(step.tool_id)
+                    args = step.args
+                    if isinstance(args, dict):
+                        for v in args.values():
+                            parts.append(str(v)[:500])
+                elif ct == "tool_response":
+                    parts.append(step.tool_id)
+                    resp = step.response
+                    if isinstance(resp, dict):
+                        for v in resp.values():
+                            parts.append(str(v)[:500])
+                    elif resp is not None:
+                        parts.append(str(resp)[:500])
+            self._group_text.append("\n".join(parts).lower())
+
+        # Mount new row widgets at the bottom of the step list
+        c = get_theme_colors(self.app)
+        with contextlib.suppress(Exception):
+            step_list = self.query_one("#step-list", ScrollableContainer)
+            for group in added_groups:
+                await step_list.mount(
+                    Static(
+                        _render_step_row(group, False, c),
+                        classes="step-row",
+                    )
+                )
+
+        # Refresh the minimap; its _groups reference is the same list object
+        with contextlib.suppress(Exception):
+            self.query_one("#decision-minimap", DecisionMinimap).refresh()
 
     def action_back(self) -> None:
         """Cancel AI stream > dismiss search > pop screen."""
@@ -1804,7 +2047,7 @@ class TrajectoryScreen(SectionNavMixin, Screen):
 
     def __init__(
         self,
-        trajectory: AdjudicatedTrajectory,
+        trajectory: Trajectory,
         initial_step: int | None = None,
     ):
         super().__init__()
@@ -1812,9 +2055,19 @@ class TrajectoryScreen(SectionNavMixin, Screen):
         self.initial_step = initial_step
         self._selected_index: int = 0
 
+        # Mutable local copy of trajectory events for live streaming.
+        # New events appended via the stream are added here and re-correlated.
+        self._live_events: list[Event] = list(trajectory.events or [])
+        # Status derived from terminal lifecycle events received via the stream;
+        # overrides trajectory.status in the summary bar when set.
+        self._live_status: str | None = None
+
+        # Correlate events into EventSteps
+        self._steps: list[EventStep] = correlate_events(trajectory.events or [])
+
         # Build groups and enrich with metadata
-        self._step_groups = _build_step_groups(trajectory.steps)
-        _enrich_step_groups(self._step_groups, trajectory.steps)
+        self._step_groups = _build_step_groups(self._steps)
+        _enrich_step_groups(self._step_groups, self._steps)
 
         # Index mappings: step index <-> display index
         self._step_to_display: dict[int, int] = {}
@@ -1826,7 +2079,7 @@ class TrajectoryScreen(SectionNavMixin, Screen):
         self._violation_indices: list[int] = [
             g.display_index
             for g in self._step_groups
-            if g.decision in (Decision.DENY, Decision.ESCALATE)
+            if g.decision in (Decision.Deny, Decision.Escalate)
         ]
 
         # Search state
@@ -1839,20 +2092,19 @@ class TrajectoryScreen(SectionNavMixin, Screen):
         for g in self._step_groups:
             parts: list[str] = []
             for si in g.step_indices:
-                step = trajectory.steps[si]
-                content = step.step.content
-                ct = _enum_str(_get(content, "content_type", ""))
+                step = self._steps[si]
+                ct = step.content_type
                 if ct == "prompt":
-                    parts.append(str(_get(content, "text", "")))
+                    parts.append(step.text)
                 elif ct == "tool_request":
-                    parts.append(str(_get(content, "tool_id", "")))
-                    args = _get(content, "args", {})
+                    parts.append(step.tool_id)
+                    args = step.args
                     if isinstance(args, dict):
                         for v in args.values():
                             parts.append(str(v)[:500])
                 elif ct == "tool_response":
-                    parts.append(str(_get(content, "tool_id", "")))
-                    resp = _get(content, "response", None)
+                    parts.append(step.tool_id)
+                    resp = step.response
                     if isinstance(resp, dict):
                         for v in resp.values():
                             parts.append(str(v)[:500])
@@ -1866,50 +2118,49 @@ class TrajectoryScreen(SectionNavMixin, Screen):
         """Render a clean 2-line trajectory summary."""
         c = get_theme_colors(self.app)
         traj = self.trajectory
-        steps = traj.steps
+        steps = self._steps
         text = Text()
 
         # Line 1: agent + short ID + status + steps + timing
-        text.append(traj.agent_id[:30], style=f"bold {c.fg}")
+        agent_id = traj.agent
+        text.append(agent_id[:30], style=f"bold {c.fg}")
         # Show short trajectory ID for identification
-        short_id = traj.id.split("-")[0] if "-" in traj.id else traj.id[:8]
+        tid = traj.name
+        short_id = tid.split("-")[0] if "-" in tid else tid[:8]
         text.append(f"  {short_id}", style=c.fg_dim)
         text.append("  ")
-        # Treat PENDING/RUNNING with completed step data as completed
-        effective = traj.status
-        if effective in (TrajectoryStatus.PENDING, TrajectoryStatus.RUNNING) and steps:
-            first_ts = steps[0].step.created_at
-            last_ts = steps[-1].step.created_at
-            if (
-                isinstance(first_ts, datetime)
-                and isinstance(last_ts, datetime)
-                and first_ts != last_ts
-            ):
-                effective = TrajectoryStatus.COMPLETED
+        # Use live status from the stream when available, otherwise fall back to
+        # the trajectory's own status field.
+        effective = self._live_status or str(traj.status or "unknown").lower()
+        if effective in {"running", "pending"} and steps:
+            first_ts = steps[0].timestamp
+            last_ts = steps[-1].timestamp
+            if first_ts != last_ts:
+                effective = "completed"
         icon, color = _status_icon(effective, c)
-        text.append(f"{icon} {_enum_str(effective)}", style=f"bold {color}")
+        text.append(f"{icon} {effective}", style=f"bold {color}")
         text.append("  ")
         text.append(f"{len(self._step_groups)} steps", style=c.fg_muted)
 
         # Time range: first step to last step
-        first_ts = steps[0].step.created_at if steps else None
-        last_ts = steps[-1].step.created_at if steps else None
+        first_ts = steps[0].timestamp if steps else None
+        last_ts = steps[-1].timestamp if steps else None
 
-        if isinstance(first_ts, datetime):
+        if first_ts is not None:
             local_start = first_ts.astimezone()
             tz_name = local_start.strftime("%Z") or local_start.strftime("%z")
             date_str = local_start.strftime("%b %-d %Y ")
             text.append("  ")
             text.append(date_str, style=c.fg_dim)
             text.append(local_start.strftime("%H:%M:%S"), style=c.fg_muted)
-            if isinstance(last_ts, datetime) and last_ts != first_ts:
+            if last_ts is not None and last_ts != first_ts:
                 local_end = last_ts.astimezone()
                 text.append("\u2013", style=c.fg_dim)
                 text.append(local_end.strftime("%H:%M:%S"), style=c.fg_muted)
             text.append(f" {tz_name}", style=c.fg_dim)
 
         # Duration derived from the displayed time range
-        if isinstance(first_ts, datetime) and isinstance(last_ts, datetime):
+        if first_ts is not None and last_ts is not None:
             duration = (last_ts - first_ts).total_seconds()
             if duration > 0:
                 text.append(
@@ -1917,8 +2168,8 @@ class TrajectoryScreen(SectionNavMixin, Screen):
                 )
 
         # Line 2: violations or clean status (count from grouped steps, not raw)
-        denied = sum(1 for g in self._step_groups if g.decision == Decision.DENY)
-        escalated = sum(1 for g in self._step_groups if g.decision == Decision.ESCALATE)
+        denied = sum(1 for g in self._step_groups if g.decision == Decision.Deny)
+        escalated = sum(1 for g in self._step_groups if g.decision == Decision.Escalate)
 
         if denied > 0 or escalated > 0:
             text.append("\n")
@@ -1945,10 +2196,10 @@ class TrajectoryScreen(SectionNavMixin, Screen):
         if group.is_prompt:
             card = _render_prompt_card(group, c)
         elif group.is_tool_request or group.is_tool_response:
-            group_steps = [self.trajectory.steps[si] for si in group.step_indices]
+            group_steps = [self._steps[si] for si in group.step_indices]
             card = _render_merged_tool_card(group_steps, group, c)
         else:
-            step = self.trajectory.steps[group.primary_index]
+            step = self._steps[group.primary_index]
             card = _render_step_content(step, group.primary_index, c)
 
         # Highlight search matches in the detail card text
@@ -1987,7 +2238,7 @@ class TrajectoryScreen(SectionNavMixin, Screen):
                     row_classes = "step-row"
                     if selected:
                         row_classes += " step-row--selected"
-                    if group.decision == Decision.DENY:
+                    if group.decision == Decision.Deny:
                         row_classes += " step-row--denied"
                     yield Static(
                         _render_step_row(group, selected, c),
@@ -2017,9 +2268,7 @@ class TrajectoryScreen(SectionNavMixin, Screen):
 
         # Deep-link to initial step (convert step index -> display index)
         initial = 0
-        if self.initial_step is not None and 0 <= self.initial_step < len(
-            self.trajectory.steps
-        ):
+        if self.initial_step is not None and 0 <= self.initial_step < len(self._steps):
             initial = self._step_to_display.get(self.initial_step, 0)
         if initial != self._selected_index:
             # Navigate immediately (updates selection + detail panel),
@@ -2038,6 +2287,11 @@ class TrajectoryScreen(SectionNavMixin, Screen):
 
         with contextlib.suppress(Exception):
             self.query_one("#ask-panel", AskPanel).refresh_suggestion()
+
+        # Start live event streaming for active (running/pending) trajectories
+        status = str(self.trajectory.status or "unknown").lower()
+        if status in {"running", "pending"}:
+            self._stream_live_events()
 
     def _update_minimap(self, display_index: int) -> None:
         """Update the decision minimap to highlight the given group."""
@@ -2058,7 +2312,7 @@ class TrajectoryScreen(SectionNavMixin, Screen):
             return
 
         group = self._step_groups[idx]
-        time_str = _build_group_border_subtitle(group, self.trajectory.steps)
+        time_str = _build_group_border_subtitle(group, self._steps)
         title_str = _build_group_border_title(group)
         card = self._render_group_widget(group)
         # Combine step info (left) and time (right) in the border title

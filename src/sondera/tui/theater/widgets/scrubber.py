@@ -12,7 +12,8 @@ from textual.reactive import reactive
 from textual.widget import Widget
 
 if TYPE_CHECKING:
-    from sondera.types import AdjudicatedStep, Decision, Role
+    from sondera.tui.events import EventStep
+    from sondera.types import Decision
 
 # Color constants for decisions
 COLOR_ALLOW = "#81DDB4"  # Electric Green
@@ -73,9 +74,9 @@ class ScrubberTimeline(Widget):
         classes: str | None = None,
     ) -> None:
         super().__init__(name=name, id=id, classes=classes)
-        self._steps: list[AdjudicatedStep] = []
+        self._steps: list[EventStep] = []
 
-    def set_steps(self, steps: list[AdjudicatedStep]) -> None:
+    def set_steps(self, steps: list[EventStep]) -> None:
         """Set the trajectory steps for display."""
         self._steps = steps
         self.total_steps = len(steps)
@@ -93,32 +94,28 @@ class ScrubberTimeline(Widget):
         """Get color for a decision."""
         from sondera.types import Decision
 
-        if decision == Decision.DENY:
+        if decision == Decision.Deny:
             return COLOR_DENY
-        elif decision == Decision.ESCALATE:
+        elif decision == Decision.Escalate:
             return COLOR_ESCALATE
         return COLOR_ALLOW
 
-    def _get_role_char(self, role: Role) -> str:
+    def _get_role_char(self, role: str) -> str:
         """Get character for a role."""
-        from sondera.types import Role
-
         return {
-            Role.USER: "U",
-            Role.MODEL: "M",
-            Role.TOOL: "T",
-            Role.SYSTEM: "S",
+            "user": "U",
+            "model": "M",
+            "tool": "T",
+            "system": "S",
         }.get(role, "?")
 
-    def _get_role_color(self, role: Role) -> str:
+    def _get_role_color(self, role: str) -> str:
         """Get color for a role."""
-        from sondera.types import Role
-
         return {
-            Role.USER: COLOR_USER,
-            Role.MODEL: COLOR_MODEL,
-            Role.TOOL: COLOR_TOOL,
-            Role.SYSTEM: COLOR_ALLOW,
+            "user": COLOR_USER,
+            "model": COLOR_MODEL,
+            "tool": COLOR_TOOL,
+            "system": COLOR_ALLOW,
         }.get(role, COLOR_ALLOW)
 
     def render(self) -> RenderableType:
@@ -203,8 +200,8 @@ class ScrubberTimeline(Widget):
 
         for step_idx in step_indices:
             step = self._steps[step_idx]
-            role_char = self._get_role_char(step.step.role)
-            decision_color = self._get_decision_color(step.adjudication.decision)
+            role_char = self._get_role_char(step.role)
+            decision_color = self._get_decision_color(step.decision)
 
             # Highlight current step
             if step_idx == self.current_step:

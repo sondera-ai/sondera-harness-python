@@ -12,12 +12,12 @@ from textual.screen import Screen
 from textual.widgets import Footer, Header, Static
 
 from sondera.tui.colors import get_theme_colors
+from sondera.tui.events import correlate_events, parse_ts
 from sondera.types import (
-    AdjudicatedTrajectory,
     Agent,
     Decision,
     Trajectory,
-    TrajectoryStatus,
+    TrajectoryEventStream,
 )
 
 from ..ai.panel import AskPanel
@@ -92,27 +92,19 @@ class AgentScreen(SectionNavMixin, Screen):
     def action_filter_running(self) -> None:
         self._toggle_filter("running")
 
-    def _matches_filter(self, t: Trajectory | AdjudicatedTrajectory) -> bool:
+    def _matches_filter(self, t: Trajectory) -> bool:
         """Check if a trajectory matches the active filter."""
         f = self._status_filter
         if f is None:
             return True
+        status = str(t.status or "unknown").lower()
         if f == "failed":
-            return t.status == TrajectoryStatus.FAILED
+            return status == "failed"
         if f == "running":
-            return t.status in (
-                TrajectoryStatus.RUNNING,
-                TrajectoryStatus.PENDING,
-            ) and not _is_stale(t)
+            return status in {"running", "pending"} and not _is_stale(t)
         if f == "denied":
-            # Use decision_summary for immediate filtering (pre-enrichment)
-            if t.decision_summary is not None:
-                return t.decision_summary.deny_count > 0
-            # Fallback: enriched trajectories with loaded steps
-            if isinstance(t, AdjudicatedTrajectory) and t.steps:
-                denied, _ = _count_violations(t)
-                return denied > 0
-            return False
+            denied, _ = _count_violations(t)
+            return denied > 0
         return True
 
     def _apply_filter(self) -> None:
@@ -147,13 +139,13 @@ class AgentScreen(SectionNavMixin, Screen):
         self._status_filter: str | None = None  # None | "failed" | "denied" | "running"
         self._policy_map: dict[str, str] = {}  # policy_id -> description
         # All trajectories (globally sorted), used for client-side pagination
-        self._all_trajectories: list[Trajectory | AdjudicatedTrajectory] = []
+        self._all_trajectories: list[Trajectory] = []
         # Filtered view: indices into _all_trajectories
-        self._display_trajectories: list[Trajectory | AdjudicatedTrajectory] = []
+        self._display_trajectories: list[Trajectory] = []
         self._display_to_global: list[int] = []
         self._current_page = 1
         # Visible slice for the current page
-        self.trajectories: list[Trajectory | AdjudicatedTrajectory] = []
+        self.trajectories: list[Trajectory] = []
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -171,13 +163,10 @@ class AgentScreen(SectionNavMixin, Screen):
         text = Text()
 
         # Row 1: name + provider + stats
-        text.append(agent.name or agent.id[:20], style=f"bold {c.fg}")
-        if agent.provider_id:
+        text.append(agent.id, style=f"bold {c.fg}")
+        if agent.provider:
             text.append("  ")
-            text.append(agent.provider_id, style=c.fg_muted)
-        if not agent.name:
-            text.append("  ")
-            text.append(agent.id[:20], style=c.fg_muted)
+            text.append(agent.provider, style=c.fg_muted)
         text.append("  ")
         if self._active_count > 0:
             text.append(f"● {self._active_count} running", style=f"bold {c.primary}")
@@ -198,33 +187,13 @@ class AgentScreen(SectionNavMixin, Screen):
         if self._denied_count == 0 and self._awaiting_count == 0 and total > 0:
             text.append("\u2713 clean", style=c.success)
 
-        # Row 2: tools + policies
-        if agent.tools or self._policy_map:
+        # Row 2: policies
+        if self._policy_map:
             text.append("\n")
-            if agent.tools:
-                text.append("Tools: ", style=c.fg_muted)
-                tool_names = ", ".join(t.name for t in agent.tools)
-                text.append(tool_names, style=f"bold {c.fg}")
-            if agent.tools and self._policy_map:
-                text.append("  ")
-            if self._policy_map:
-                names = ", ".join(
-                    d if d else pid for pid, d in self._policy_map.items()
-                )
-                label = "Policy" if len(self._policy_map) == 1 else "Policies"
-                text.append(f"{label}: ", style=c.fg_muted)
-                text.append(names, style=c.fg)
-
-        # Expandable detail (press 'i')
-        if self._show_detail:
-            if agent.description:
-                text.append("\n")
-                text.append(agent.description, style=c.fg_secondary)
-            if agent.instruction and agent.instruction != agent.description:
-                text.append("\n")
-                text.append("Goal: ", style=c.fg_muted)
-                instruction = agent.instruction.replace("\n", " ")
-                text.append(instruction, style=c.fg_secondary)
+            names = ", ".join(d if d else pid for pid, d in self._policy_map.items())
+            label = "Policy" if len(self._policy_map) == 1 else "Policies"
+            text.append(f"{label}: ", style=c.fg_muted)
+            text.append(names, style=c.fg)
 
         return text
 
@@ -246,7 +215,7 @@ class AgentScreen(SectionNavMixin, Screen):
 
     def on_mount(self) -> None:
         """Initialize the screen."""
-        self.sub_title = f"Agent: {self.agent.name}"
+        self.sub_title = f"Agent: {self.agent.id}"
         self._update_summary()
         feed = self.query_one("#trajectory-feed", TrajectoryFeed)
         feed.denied_count = self._denied_count
@@ -262,13 +231,10 @@ class AgentScreen(SectionNavMixin, Screen):
 
     @work(exclusive=True, group="agent-detail-fetch")
     async def _fetch_full_agent(self) -> None:
-        """Fetch the full agent (with tools) via get_agent()."""
+        """Fetch the full agent via get_agent()."""
         try:
             full = await self.app.harness.get_agent(self.agent.id)
             if full:
-                # Platform may not return tools; keep local ones if richer
-                if not full.tools and self.agent.tools:
-                    full = full.model_copy(update={"tools": self.agent.tools})
                 self.agent = full
                 self._update_summary()
         except Exception:
@@ -277,14 +243,12 @@ class AgentScreen(SectionNavMixin, Screen):
     @work(exclusive=True)
     async def load_trajectories(self) -> None:
         """Fetch all trajectories, sort by created_at desc, paginate client-side."""
-        # Fetch all pages (server order is unpredictable)
         all_trajectories: list[Trajectory] = []
         page_token = ""
         while True:
             try:
                 page, next_token = await self.app.harness.list_trajectories(
                     agent_id=self.agent.id,
-                    min_step_count=1,
                     page_size=250,
                     page_token=page_token,
                 )
@@ -299,21 +263,26 @@ class AgentScreen(SectionNavMixin, Screen):
             page_token = next_token
 
         # Sort globally by most recent activity descending
-        all_trajectories.sort(key=lambda t: t.updated_at, reverse=True)
+        all_trajectories.sort(key=lambda t: parse_ts(t.update_time), reverse=True)
 
         self._all_trajectories = all_trajectories
         self._total_trajectories = len(all_trajectories)
 
-        # Update active count (exclude stale: no update in 15 min)
-        _active = {TrajectoryStatus.RUNNING, TrajectoryStatus.PENDING}
+        # Update active count (exclude stale)
         self._active_count = sum(
-            1 for t in all_trajectories if t.status in _active and not _is_stale(t)
+            1
+            for t in all_trajectories
+            if str(t.status or "unknown").lower() in {"running", "pending"}
+            and not _is_stale(t)
         )
         self._apply_filter()
         self._update_summary()
 
         # Show first page
         self._show_page(1)
+
+        # Open a live stream for this agent now that the initial list is loaded
+        self._stream_trajectory_events()
 
     def _show_page(self, page: int) -> None:
         """Display a client-side page immediately and enrich in background."""
@@ -350,6 +319,16 @@ class AgentScreen(SectionNavMixin, Screen):
 
         worker = get_current_worker()
 
+        def _extract_policies(traj: Trajectory) -> None:
+            """Extract policy metadata from trajectory events."""
+            if not traj.events:
+                return
+            steps = correlate_events(traj.events)
+            for step in steps:
+                for p in step.policies:
+                    if p.policy_id is not None:
+                        self._policy_map[p.policy_id] = p.description or ""
+
         async def _enrich_one(i: int) -> None:
             if worker.is_cancelled:
                 return
@@ -358,27 +337,22 @@ class AgentScreen(SectionNavMixin, Screen):
             gi = global_indices[i]
 
             # Skip already-enriched trajectories (e.g. paginating back)
-            if isinstance(traj, AdjudicatedTrajectory) and traj.steps:
+            if traj.events:
                 feed.update_enrichment(i, traj)
-                for step in traj.steps:
-                    for p in step.adjudication.policies:
-                        self._policy_map[p.id] = p.description
+                _extract_policies(traj)
                 return
 
             try:
                 result = await self.app._throttled(
-                    self.app.harness.get_trajectory(traj.id)
+                    self.app.harness.get_trajectory(traj.name)
                 )
                 if worker.is_cancelled:
                     return
                 if result:
                     self._all_trajectories[gi] = result
                     feed.update_enrichment(i, result)
-                    if isinstance(result, AdjudicatedTrajectory) and result.steps:
-                        for step in result.steps:
-                            for p in step.adjudication.policies:
-                                self._policy_map[p.id] = p.description
-                        self._update_summary()
+                    _extract_policies(result)
+                    self._update_summary()
                 else:
                     feed.mark_enrichment_failed(i)
             except Exception:
@@ -388,11 +362,9 @@ class AgentScreen(SectionNavMixin, Screen):
         to_fetch: list[int] = []
         for i in range(len(page_trajectories)):
             traj = page_trajectories[i]
-            if isinstance(traj, AdjudicatedTrajectory) and traj.steps:
+            if traj.events:
                 feed.update_enrichment(i, traj)
-                for step in traj.steps:
-                    for p in step.adjudication.policies:
-                        self._policy_map[p.id] = p.description
+                _extract_policies(traj)
             else:
                 to_fetch.append(i)
 
@@ -404,11 +376,92 @@ class AgentScreen(SectionNavMixin, Screen):
             *[_enrich_one(i) for i in to_fetch], return_exceptions=True
         )
 
+    @work(exclusive=True, group="agent-trajectory-stream")
+    async def _stream_trajectory_events(self) -> None:
+        """Subscribe to live trajectory events for this agent and update the feed.
+
+        Opens a :class:`TrajectoryEventStream` filtered to this agent.  For each
+        :class:`TrajectoryEventNotification` received the matching trajectory row is
+        refreshed in-place; brand-new trajectories are prepended to the list.
+        """
+        from textual.worker import get_current_worker
+
+        worker = get_current_worker()
+        filter_expr = f'agent = "{self.agent.id}"'
+        try:
+            stream: TrajectoryEventStream = await self.app.harness.stream_trajectories(
+                filter=filter_expr
+            )
+        except Exception:
+            return
+
+        async for notification in stream:
+            if worker.is_cancelled:
+                break
+
+            traj_id = notification.trajectory_id  # type: ignore[union-attr]
+            if not traj_id:
+                continue
+
+            try:
+                updated: Trajectory | None = await self.app.harness.get_trajectory(
+                    traj_id
+                )
+            except Exception:
+                continue
+
+            if updated is None:
+                continue
+
+            existing_idx = next(
+                (i for i, t in enumerate(self._all_trajectories) if t.name == traj_id),
+                None,
+            )
+            is_new = existing_idx is None
+            if is_new:
+                self._all_trajectories.insert(0, updated)
+                self._total_trajectories += 1
+            else:
+                self._all_trajectories[existing_idx] = updated
+
+            self._apply_filter()
+            self._update_summary()
+
+            try:
+                feed = self.query_one("#trajectory-feed", TrajectoryFeed)
+            except Exception:
+                continue
+
+            page_idx = next(
+                (i for i, t in enumerate(self.trajectories) if t.name == traj_id),
+                None,
+            )
+            if page_idx is not None:
+                # Targeted row update — preserves scroll position and cursor
+                self.trajectories[page_idx] = updated
+                feed.update_enrichment(page_idx, updated)
+            elif is_new:
+                # New trajectory may belong on the current page — refresh it
+                self._show_page(self._current_page)
+
+    def action_refresh(self) -> None:
+        """Re-fetch trajectories and restart the live stream."""
+        try:
+            feed = self.query_one("#trajectory-feed", TrajectoryFeed)
+            feed.query_one("#trajectories-pagination", PaginationBar).reset()
+        except Exception:
+            pass
+        self.load_trajectories()
+        self._fetch_full_agent()
+
     @staticmethod
-    def _first_denied_step(trajectory: AdjudicatedTrajectory) -> int | None:
-        """Return the index of the first denied step, or None."""
-        for i, step in enumerate(trajectory.steps):
-            if step.adjudication.decision == Decision.DENY:
+    def _first_denied_step(trajectory: Trajectory) -> int | None:
+        """Return the index of the first denied EventStep, or None."""
+        if not trajectory.events:
+            return None
+        steps = correlate_events(trajectory.events)
+        for i, step in enumerate(steps):
+            if step.decision == Decision.Deny:
                 return i
         return None
 
@@ -422,20 +475,20 @@ class AgentScreen(SectionNavMixin, Screen):
         idx = feed._selected_index
         if 0 <= idx < len(self.trajectories):
             trajectory = self.trajectories[idx]
-        if isinstance(trajectory, AdjudicatedTrajectory) and trajectory.steps:
+        if trajectory.events:
             initial = self._first_denied_step(trajectory)
             self.app.push_screen(TrajectoryScreen(trajectory, initial_step=initial))
         else:
-            self._open_trajectory(trajectory.id)
+            self._open_trajectory(trajectory.name)
 
     @work
     async def _open_trajectory(self, trajectory_id: str) -> None:
         """Fetch full trajectory on-demand (fallback before enrichment completes)."""
         try:
-            trajectory = await self.app.harness.get_trajectory(trajectory_id)
-            if trajectory:
-                initial = self._first_denied_step(trajectory)
-                self.app.push_screen(TrajectoryScreen(trajectory, initial_step=initial))
+            traj = await self.app.harness.get_trajectory(trajectory_id)
+            if traj:
+                initial = self._first_denied_step(traj)
+                self.app.push_screen(TrajectoryScreen(traj, initial_step=initial))
             else:
                 self.notify("Trajectory not found", severity="error")
         except Exception as e:
@@ -455,15 +508,6 @@ class AgentScreen(SectionNavMixin, Screen):
         self, event: TrajectoryFeed.TrajectorySelected
     ) -> None:
         self.action_select_trajectory()
-
-    def action_refresh(self) -> None:
-        try:
-            feed = self.query_one("#trajectory-feed", TrajectoryFeed)
-            feed.query_one("#trajectories-pagination", PaginationBar).reset()
-        except Exception:
-            pass
-        self.load_trajectories()
-        self._fetch_full_agent()
 
     def action_page_next(self) -> None:
         try:

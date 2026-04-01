@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any
 
 from sondera.tui.app import SonderaApp
+from sondera.tui.events import violations_from_events
 from sondera.tui.screens.agent import AgentScreen
 from sondera.tui.screens.trajectory import TrajectoryScreen
 
@@ -36,7 +36,7 @@ def extract_dashboard_context(app: SonderaApp) -> str:
     lines.append("AGENTS:")
     if app._agent_statuses:
         for a in app._agent_statuses[:_MAX_AGENTS]:
-            parts = [f"  - {a.agent.name}"]
+            parts = [f"  - {a.agent.id}"]
             parts.append(f"status={a.status}")
             parts.append(f"trajectories={a.total_trajectories}")
             if a.has_more_trajectories:
@@ -56,33 +56,30 @@ def extract_dashboard_context(app: SonderaApp) -> str:
             lines.append(f"  ... and {len(app._agent_statuses) - _MAX_AGENTS} more")
     else:
         for agent in app._agents[:_MAX_AGENTS]:
-            tools = ", ".join(t.name for t in agent.tools) if agent.tools else "none"
-            lines.append(f"  - {agent.name} (id: {agent.id[:16]}, tools: {tools})")
+            lines.append(f"  - {agent.id} (id: {agent.id[:16]}, tools: none)")
         if len(app._agents) > _MAX_AGENTS:
             lines.append(f"  ... and {len(app._agents) - _MAX_AGENTS} more")
     lines.append("")
 
-    # Violations
-    violations = [
-        adj
-        for adj in app._adjudications
-        if _enum_str(adj.adjudication.decision) in ("deny", "escalate")
-    ]
-    lines.append(f"RECENT VIOLATIONS ({len(violations)}):")
-    for adj in violations[:_MAX_VIOLATIONS]:
-        agent_name = app._agents_map.get(adj.agent_id, adj.agent_id[:16])
-        decision = _enum_str(adj.adjudication.decision).upper()
-        reason = adj.adjudication.reason[:_TEXT_CAP]
-        policies = ", ".join(p.id for p in adj.adjudication.policies[:3])
-        lines.append(f"  [{decision}] Agent: {agent_name}")
-        lines.append(f"    Trajectory: {adj.trajectory_id}")
+    # Violations: build ViolationRecords from the raw adjudication Events
+    violation_records = violations_from_events(app._adjudications)
+    lines.append(f"RECENT VIOLATIONS ({len(violation_records)}):")
+    for v in violation_records[:_MAX_VIOLATIONS]:
+        agent_name_str = app._agents_map.get(v.agent_id, v.agent_id[:16])
+        decision = _enum_str(v.decision).upper()
+        reason = v.reason[:_TEXT_CAP]
+        policies = ", ".join(p.policy_id for p in v.policies[:3] if p.policy_id)
+        lines.append(f"  [{decision}] Agent: {agent_name_str}")
+        lines.append(f"    Trajectory: {v.trajectory_id}")
         lines.append(f"    Reason: {reason}")
         if policies:
             lines.append(f"    Policies: {policies}")
-        if adj.step_index is not None:
-            lines.append(f"    Step index: {adj.step_index}")
-    if len(violations) > _MAX_VIOLATIONS:
-        lines.append(f"  ... and {len(violations) - _MAX_VIOLATIONS} more violations")
+        if v.step_index is not None:
+            lines.append(f"    Step index: {v.step_index}")
+    if len(violation_records) > _MAX_VIOLATIONS:
+        lines.append(
+            f"  ... and {len(violation_records) - _MAX_VIOLATIONS} more violations"
+        )
 
     return "\n".join(lines)
 
@@ -91,15 +88,8 @@ def extract_agent_context(screen: AgentScreen) -> str:
     """Build context from the agent detail screen."""
     lines: list[str] = []
     agent = screen.agent
-    lines.append(f"AGENT DETAIL: {agent.name}")
+    lines.append(f"AGENT DETAIL: {agent.id}")
     lines.append(f"  ID: {agent.id}")
-    if agent.description:
-        lines.append(f"  Description: {agent.description[:_DESC_CAP]}")
-    if agent.instruction:
-        lines.append(f"  Instruction: {agent.instruction[:_DESC_CAP]}")
-    if agent.tools:
-        tool_names = ", ".join(t.name for t in agent.tools)
-        lines.append(f"  Tools: {tool_names}")
     lines.append(f"  Denied: {screen._denied_count}")
     lines.append(f"  Escalated: {screen._awaiting_count}")
     lines.append(f"  Total trajectories: {screen._total_trajectories}")
@@ -109,17 +99,11 @@ def extract_agent_context(screen: AgentScreen) -> str:
     from sondera.tui.widgets.trajectory_feed import _trajectory_label
 
     for t in screen._all_trajectories[:_MAX_TRAJECTORIES]:
-        status = _enum_str(t.status)
-        steps = t.step_count
+        status = str(t.status or "unknown").lower()
+        steps = len(t.events) if t.events else (t.event_count or 0)
         label = _trajectory_label(t, max_len=60)
-        violations = ""
-        if t.deny_count > 0:
-            violations += f" {t.deny_count} denied"
-        if t.escalate_count > 0:
-            violations += f" {t.escalate_count} escalated"
-        lines.append(
-            f'  - {t.id}  "{label}"  status={status}  steps={steps}{violations}'
-        )
+        tid = t.name
+        lines.append(f'  - {tid}  "{label}"  status={status}  steps={steps}')
     if len(screen._all_trajectories) > _MAX_TRAJECTORIES:
         lines.append(
             f"  ... and {len(screen._all_trajectories) - _MAX_TRAJECTORIES} more"
@@ -137,35 +121,35 @@ def extract_trajectory_context(screen: TrajectoryScreen) -> str:
     """
     lines: list[str] = []
     t = screen.trajectory
-    agent_name = screen.app._agents_map.get(t.agent_id, t.agent_id)  # type: ignore[attr-defined]
-    lines.append(f"TRAJECTORY DETAIL: {t.id}")
-    lines.append(f"  Agent: {agent_name} ({t.agent_id})")
-    lines.append(f"  Status: {_enum_str(t.status)}")
+    tid = t.name
+    agent_id = t.agent
+    agent_name_str = screen.app._agents_map.get(agent_id, agent_id)  # type: ignore[attr-defined]
+    lines.append(f"TRAJECTORY DETAIL: {tid}")
+    lines.append(f"  Agent: {agent_name_str} ({agent_id})")
+    lines.append(f"  Status: {str(t.status or 'unknown').lower()}")
     lines.append(f"  Steps: {len(screen._step_groups)}")
-    lines.append(
-        f"  Denied: {t.deny_count}  Escalated: {t.escalate_count}"
-        f"  Allowed: {t.allow_count}"
-    )
-    # Compute duration from step timestamps (t.duration needs started_at/ended_at
-    # which aren't always populated, but step timestamps are always present)
-    duration = t.duration
-    first_ts = None
-    last_ts = None
-    if t.steps:
-        first_ts = t.steps[0].step.created_at
-        last_ts = t.steps[-1].step.created_at
-        if (
-            duration is None
-            and isinstance(first_ts, datetime)
-            and isinstance(last_ts, datetime)
-        ):
-            secs = (last_ts - first_ts).total_seconds()
-            if secs > 0:
-                duration = secs
+
+    # Count decisions from grouped steps
+    from sondera.types import Decision
+
+    denied = sum(1 for g in screen._step_groups if g.decision == Decision.Deny)
+    escalated = sum(1 for g in screen._step_groups if g.decision == Decision.Escalate)
+    allowed = len(screen._step_groups) - denied - escalated
+    lines.append(f"  Denied: {denied}  Escalated: {escalated}  Allowed: {allowed}")
+
+    # Compute duration from step timestamps
+    steps = screen._steps
+    first_ts = steps[0].timestamp if steps else None
+    last_ts = steps[-1].timestamp if steps else None
+    duration = None
+    if first_ts is not None and last_ts is not None:
+        secs = (last_ts - first_ts).total_seconds()
+        if secs > 0:
+            duration = secs
     if duration is not None:
-        mins, secs = divmod(int(duration), 60)
-        lines.append(f"  Duration: {mins}m {secs}s ({duration:.0f} seconds)")
-    if isinstance(first_ts, datetime) and isinstance(last_ts, datetime):
+        mins, secs_i = divmod(int(duration), 60)
+        lines.append(f"  Duration: {mins}m {secs_i}s ({duration:.0f} seconds)")
+    if first_ts is not None and last_ts is not None:
         lines.append(f"  Time range: {first_ts.isoformat()} to {last_ts.isoformat()}")
     lines.append("")
 
@@ -211,7 +195,9 @@ def extract_trajectory_context(screen: TrajectoryScreen) -> str:
             if group.deny_reason:
                 lines.append(f"    Reason: {group.deny_reason[:_REASON_CAP]}")
             if group.deny_policies:
-                policies = ", ".join(p.id for p in group.deny_policies[:3])
+                policies = ", ".join(
+                    p.policy_id for p in group.deny_policies[:3] if p.policy_id
+                )
                 lines.append(f"    Policies: {policies}")
 
     omitted = len(screen._step_groups) - len(included)
