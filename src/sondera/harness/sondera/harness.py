@@ -131,17 +131,20 @@ class SonderaRemoteHarness(AbstractHarness):
         # already registered (deduplicates by provider + id).
         registered = await self._client.create_agent(self._agent)
         self._agent = registered
-        # Create trajectory by sending a Started event
+        # Create trajectory by sending a Started event.
+        # The trajectory_id MUST match between Started and subsequent events.
         trajectory_id = f"traj-{uuid.uuid4()}"
         started = Started(agent=self._agent, task=session_id)
         event = Event(
             agent=self._agent,
-            trajectory_id="",
+            trajectory_id=trajectory_id,
             event=started,
         )
         await self._client.adjudicate(event)
+        # Only set after successful adjudication — if the RPC fails, the
+        # harness stays uninitialized so callers don't send orphaned events.
+        self._trajectory_id = trajectory_id
         logging.debug(f"Agent {self._agent.id} registered and started")
-        self._trajectory_id = trajectory_id  #
         logging.debug(
             f"Trajectory created for agent {self._agent.id}: {self._trajectory_id}"
         )
