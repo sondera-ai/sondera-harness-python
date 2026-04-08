@@ -157,7 +157,6 @@ async def build_agent(*, provider: Provider, model_name: str | None, enforce: bo
         )
     ]
     model = make_model(provider=provider, model=model_name)
-    await harness.initialize()
 
     return create_agent(
         model=model,

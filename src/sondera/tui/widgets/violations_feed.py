@@ -17,8 +17,9 @@ from textual.widget import Widget
 from textual.widgets import Static
 
 from sondera.tui.colors import get_theme_colors
+from sondera.tui.events import ViolationRecord
 from sondera.tui.util import relative_time as _relative_time
-from sondera.types import AdjudicationRecord, Decision
+from sondera.types import Decision
 
 MAX_VISIBLE_GROUPS = 10
 
@@ -27,7 +28,7 @@ MAX_VISIBLE_GROUPS = 10
 class ViolationGroup:
     """Violations grouped by agent + decision + reason."""
 
-    records: list[AdjudicationRecord]
+    records: list[ViolationRecord]
     agent_id: str
     agent_name: str
     decision: Decision
@@ -79,7 +80,7 @@ class ViolationsFeed(Widget):
     }
     """
 
-    violations: reactive[list[AdjudicationRecord]] = reactive(list, always_update=True)
+    violations: reactive[list[ViolationRecord]] = reactive(list, always_update=True)
     agents_map: reactive[dict[str, str]] = reactive(dict, always_update=True)
     # Trajectory timestamps: trajectory_id -> most recent timestamp
     trajectory_times: reactive[dict[str, datetime]] = reactive(dict, always_update=True)
@@ -87,7 +88,7 @@ class ViolationsFeed(Widget):
     class ViolationSelected(Message):
         """Posted when user presses Enter on a violation."""
 
-        def __init__(self, record: AdjudicationRecord) -> None:
+        def __init__(self, record: ViolationRecord) -> None:
             self.record = record
             super().__init__()
 
@@ -135,8 +136,8 @@ class ViolationsFeed(Widget):
 
     def watch_violations(
         self,
-        old_violations: list[AdjudicationRecord],
-        new_violations: list[AdjudicationRecord],
+        old_violations: list[ViolationRecord],
+        new_violations: list[ViolationRecord],
     ) -> None:
         # Preserve selection by matching group identity across refreshes
         old_groups = self._flat_groups
@@ -166,26 +167,27 @@ class ViolationsFeed(Widget):
         self,
     ) -> tuple[list[ViolationGroup], list[ViolationGroup]]:
         """Group violations by (agent_id, decision, reason) into DENY and ESCALATE lists."""
-        groups_map: dict[tuple, list[AdjudicationRecord]] = defaultdict(list)
+        groups_map: dict[tuple, list[ViolationRecord]] = defaultdict(list)
         for record in self.violations:
             key = (
                 record.agent_id,
-                record.adjudication.decision,
-                record.adjudication.reason,
+                str(record.decision),
+                record.reason,
             )
             groups_map[key].append(record)
 
         deny_groups: list[ViolationGroup] = []
         escalate_groups: list[ViolationGroup] = []
 
-        for (agent_id, decision, reason), records in groups_map.items():
+        for (agent_id, _decision_val, reason), records in groups_map.items():
+            decision = records[0].decision
             agent_name = self.agents_map.get(agent_id) or agent_id[:16]
             policy_id = ""
             policy_desc = ""
-            if records[0].adjudication.policies:
-                p = records[0].adjudication.policies[0]
-                policy_id = p.id
-                policy_desc = p.description
+            if records[0].policies:
+                p = records[0].policies[0]
+                policy_id = p.policy_id or ""
+                policy_desc = p.description or ""
 
             group = ViolationGroup(
                 records=records,
@@ -199,9 +201,9 @@ class ViolationsFeed(Widget):
                 trajectory_ids={r.trajectory_id for r in records},
             )
 
-            if decision == Decision.DENY:
+            if decision == Decision.Deny:
                 deny_groups.append(group)
-            elif decision == Decision.ESCALATE:
+            elif decision == Decision.Escalate:
                 escalate_groups.append(group)
 
         return deny_groups, escalate_groups
@@ -310,9 +312,9 @@ class ViolationsFeed(Widget):
             text.append("  ")
 
         # Decision icon
-        if group.decision == Decision.DENY:
+        if group.decision == Decision.Deny:
             text.append("\u2717 ", style=f"bold {c.error}")
-        elif group.decision == Decision.ESCALATE:
+        elif group.decision == Decision.Escalate:
             text.append("\u26a0 ", style=f"bold {c.warning}")
 
         # Agent name

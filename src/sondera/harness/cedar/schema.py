@@ -146,6 +146,13 @@ def tool_to_action(tool: Tool) -> Action:
     return action
 
 
+def _agent_tools(agent: Agent) -> list[Tool]:
+    """Extract tools from an Agent's card."""
+    if agent.card and agent.card.react_card:
+        return agent.card.react_card.tools
+    return []
+
+
 def agent_to_cedar_schema(agent: Agent) -> CedarSchema:
     """Convert an Agent to a Cedar Schema.
 
@@ -161,7 +168,7 @@ def agent_to_cedar_schema(agent: Agent) -> CedarSchema:
                 type="Record",
                 attributes={
                     "name": SchemaType(type="String"),
-                    "provider_id": SchemaType(type="String"),
+                    "provider": SchemaType(type="String"),
                     "tools": SchemaType(
                         type="Set", element=SchemaType(name="Tool", type="Entity")
                     ),
@@ -198,9 +205,9 @@ def agent_to_cedar_schema(agent: Agent) -> CedarSchema:
         ),
     }
 
-    # Create actions from lean
+    # Create actions from agent card tools
     actions: dict[str, Action] = {}
-    for tool in agent.tools:
+    for tool in _agent_tools(agent):
         # Use tool name as action name, sanitized for Cedar
         action_name = tool.name.replace(" ", "_").replace("-", "_")
         actions[action_name] = tool_to_action(tool)
@@ -210,7 +217,7 @@ def agent_to_cedar_schema(agent: Agent) -> CedarSchema:
     )
 
     # Create namespace definition
-    namespace_name = agent.name.replace(" ", "_").replace("-", "_")
+    namespace_name = agent.id.replace(" ", "_").replace("-", "_")
     namespace_def = NamespaceDefinition(entityTypes=entity_types, actions=actions)
 
     # Create the schema with the namespace

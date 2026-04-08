@@ -7,7 +7,7 @@ from google.adk import Agent as AdkAgent
 from google.adk.tools.base_tool import BaseTool
 from google.adk.tools.function_tool import FunctionTool
 
-from sondera.types import Agent, Parameter, SourceCode, Tool
+from sondera.types import Agent, AgentCard, Parameter, ReActAgentCard, SourceCode, Tool
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +23,7 @@ def _get_function_source(func: Callable) -> tuple[str, str]:
 
 
 def _analyze_function_parameters(func: Callable) -> list[Parameter]:
-    """Analyze function parameters and return Sondera format Parameters."""
+    """Analyze function parameters and return Parameter objects."""
     parameters = []
     sig = inspect.signature(func)
 
@@ -59,8 +59,9 @@ def _analyze_function_parameters(func: Callable) -> list[Parameter]:
                     description = line.strip()
                     break
 
+        # Use param_type argument for Parameter
         parameters.append(
-            Parameter(name=param_name, description=description, type=param_type)
+            Parameter(name=param_name, description=description, param_type=param_type)
         )
 
     return parameters
@@ -129,8 +130,16 @@ def _extract_source_code(obj: Callable | object, default_name: str) -> tuple[str
 def format(
     agent: AdkAgent, agent_name: str | None = None, agent_id: str | None = None
 ) -> Agent:
-    """Transform the ADK agent into the Sondera Format."""
+    """Transform the ADK agent into the Sondera Agent format.
 
+    Args:
+        agent: The ADK agent to convert.
+        agent_name: Optional name override.
+        agent_id: Optional id override.
+
+    Returns:
+        An Agent with full metadata including tools, instruction, etc.
+    """
     agent_name = agent_name or agent.name
     agent_id = agent_id or agent.name
 
@@ -202,21 +211,23 @@ def format(
         # Create Tool object (common for both function and BaseTool paths)
         tools.append(
             Tool(
-                name=tool_name,
-                description=tool_description.strip(),
-                parameters=parameters,
-                response=response_type,
+                tool_name,
+                tool_description.strip(),
+                parameters,
                 parameters_json_schema=parameters_json_schema,
+                response=response_type,
                 response_json_schema=response_json_schema,
-                source=SourceCode(language=language, code=source_code),
+                source=SourceCode(language, source_code),
             )
         )
 
     return Agent(
-        id=agent_id,
-        provider_id="google",
-        name=agent_name,
-        instruction=instruction,
-        description=agent.description,
-        tools=tools,
+        agent_id,
+        "google-adk",
+        card=AgentCard.react(
+            ReActAgentCard(
+                system_instruction=instruction,
+                tools=tools,
+            )
+        ),
     )

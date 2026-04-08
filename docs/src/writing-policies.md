@@ -735,7 +735,8 @@ See [`examples/cedar/coding_agent.py`](https://github.com/sondera-ai/sondera-har
 When updating policies, validate that new rules don't allow previously-denied actions. This pattern replays historical trajectories against your new policy set:
 
 ```python
-from sondera import CedarPolicyHarness, SonderaRemoteHarness, Decision
+from sondera import CedarPolicyHarness, SonderaRemoteHarness
+from sondera import Decision
 from sondera.harness.cedar.schema import agent_to_cedar_schema
 
 async def test_policy_change_is_safe(agent, new_policies):
@@ -750,13 +751,11 @@ async def test_policy_change_is_safe(agent, new_policies):
 
         await local.initialize(agent=agent)
         for adj_step in traj.steps:
-            new_result = await local.adjudicate(
-                adj_step.step.stage, adj_step.step.role, adj_step.step.content
-            )
+            new_result = await local.adjudicate(adj_step.event)
             # If old policy denied, new policy must also deny
-            if adj_step.adjudication.decision == Decision.DENY:
-                assert new_result.decision == Decision.DENY, (
-                    f"Regression: {adj_step.step.stage.value} was denied, now allowed"
+            if adj_step.adjudication.decision == Decision.Deny:
+                assert new_result.decision == Decision.Deny, (
+                    f"Regression: previously denied action is now allowed"
                 )
         await local.finalize()
 ```

@@ -12,6 +12,8 @@ from unittest.mock import AsyncMock, MagicMock, Mock
 
 import pytest
 
+from sondera import Adjudicated, Agent
+
 # Skip this module if strands is not installed
 pytest.importorskip("strands", reason="strands package not installed")
 
@@ -26,21 +28,23 @@ from strands.hooks.events import (
 
 from sondera.harness import Harness
 from sondera.strands import SonderaHarnessHook
-from sondera.types import Adjudication, Decision
 
 
 @pytest.fixture
 def mock_harness() -> MagicMock:
     """Create a mock harness for testing."""
     harness = MagicMock(spec=Harness)
-    harness.adjudicate = AsyncMock(
-        return_value=Adjudication(decision=Decision.ALLOW, reason="Allowed")
-    )
+    harness.adjudicate = AsyncMock(return_value=Adjudicated.allow())
     harness.finalize = AsyncMock()
     harness.initialize = AsyncMock()
     harness.resume = AsyncMock()
     harness._trajectory_id = "test-trajectory-123"
     harness.trajectory_id = "test-trajectory-123"
+    # Mock agent for adjudication calls
+    harness.agent = Agent(
+        id="test-agent",
+        provider="test-provider",
+    )
     return harness
 
 

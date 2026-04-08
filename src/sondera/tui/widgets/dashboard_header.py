@@ -1,4 +1,4 @@
-"""Dashboard header: single-row severity stats + problem agent count + refresh indicator."""
+"""Dashboard header: single-row severity stats and problem agent count."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from sondera.tui.colors import get_theme_colors
 
 
 class DashboardHeader(Widget):
-    """Single-row header: denial/awaiting/live counts, problem agent count, refresh state."""
+    """Single-row header: denial/awaiting/live counts and problem agent count."""
 
     can_focus = False
 
@@ -27,7 +27,6 @@ class DashboardHeader(Widget):
     live_count = reactive(0)
     total_agents = reactive(0)
     problem_agent_count = reactive(0)
-    refreshing: reactive[bool] = reactive(False)
 
     def render(self) -> Text:
         c = get_theme_colors(self.app)
@@ -74,11 +73,6 @@ class DashboardHeader(Widget):
         else:
             text.append(f"{self.total_agents} agents", style=c.fg_dim)
 
-        # Refresh indicator
-        if self.refreshing:
-            text.append("  ")
-            text.append("\u21bb refreshing\u2026", style=c.primary)
-
         return text
 
     def watch_violation_count(self) -> None:
@@ -94,7 +88,4 @@ class DashboardHeader(Widget):
         self.refresh()
 
     def watch_problem_agent_count(self) -> None:
-        self.refresh()
-
-    def watch_refreshing(self) -> None:
         self.refresh()

@@ -296,20 +296,20 @@ class AnimationCanvas(Widget):
 
     def on_step(self, event: StepEvent) -> None:
         """Add a point for this step."""
-        from sondera.types import Decision, Role
+        from sondera.types import Decision
 
-        if event.decision == Decision.ALLOW:
+        if event.decision == Decision.Allow:
             decision = 0
-        elif event.decision == Decision.DENY:
+        elif event.decision == Decision.Deny:
             decision = 1
-        else:  # ESCALATE
+        else:  # Escalate
             decision = 2
 
-        if event.role == Role.MODEL:
+        if event.role == "model":
             role = 0
-        elif event.role == Role.USER:
+        elif event.role == "user":
             role = 1
-        else:  # TOOL (or SYSTEM, treat as TOOL)
+        else:  # tool (or system, treat as tool)
             role = 2
 
         self._points.append(PlotPoint(decision=decision, role=role))

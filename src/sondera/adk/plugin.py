@@ -2,9 +2,10 @@
 Sondera Harness Plugin for Google ADK integration.
 
 This plugin implements the ADK BasePlugin callback patterns for policy enforcement,
-guardrails, and security controls across agent workflows using the Sondera Harness.
+guardrails, and security controls across agent workflows using the Harness ABC.
 """
 
+import json
 import logging
 from typing import Any, cast
 
@@ -12,7 +13,7 @@ from google.adk.agents.base_agent import BaseAgent
 from google.adk.agents.callback_context import CallbackContext
 from google.adk.agents.invocation_context import InvocationContext
 from google.adk.agents.llm_agent import LlmAgent
-from google.adk.events.event import Event
+from google.adk.events.event import Event as AdkEvent
 from google.adk.models.llm_request import LlmRequest
 from google.adk.models.llm_response import LlmResponse
 from google.adk.plugins.base_plugin import BasePlugin
@@ -21,15 +22,15 @@ from google.adk.tools.tool_context import ToolContext
 from google.genai import types as genai_types
 
 from sondera.adk.analyze import format
-from sondera.harness import Harness
+from sondera.harness.abc import Harness
 from sondera.types import (
+    Agent,
     Decision,
-    ModelMetadata,
-    PromptContent,
-    Role,
-    Stage,
-    ToolRequestContent,
-    ToolResponseContent,
+    Event,
+    Prompt,
+    PromptRole,
+    ToolCall,
+    ToolOutput,
 )
 
 logger = logging.getLogger(__name__)
@@ -58,12 +59,12 @@ def _extract_text(content: genai_types.Content | None) -> str:
 
 
 class SonderaHarnessPlugin(BasePlugin):
-    """Sondera Harness Plugin for ADK integration.
+    """Sondera Harness Plugin for ADK integration using the Harness ABC.
 
-    This plugin integrates with the Sondera Harness for policy enforcement,
+    This plugin integrates with the Sondera Platform for policy enforcement,
     guardrails, and governance across ADK agent workflows. It implements
-    the ADK BasePlugin interface and uses dependency injection for the
-    Harness instance.
+    the ADK BasePlugin interface and delegates to a Harness implementation
+    for trajectory management and event adjudication.
 
     The plugin intercepts agent execution at key points:
     - User message: Initialize trajectory and evaluate user input
@@ -74,15 +75,12 @@ class SonderaHarnessPlugin(BasePlugin):
     Example:
         ```python
         from sondera.adk import SonderaHarnessPlugin
-        from sondera.harness import RemoteHarness
+        from sondera.harness import SonderaRemoteHarness
         from google.adk import Agent
         from google.adk.runners import Runner
 
-        # Create a harness instance
-        harness = RemoteHarness(
-            sondera_harness_endpoint="localhost:50051",
-            sondera_api_key="<YOUR_API_TOKEN>",
-        )
+        # Create the harness (uses env vars for configuration)
+        harness = SonderaRemoteHarness()
 
         # Create the plugin with the harness
         plugin = SonderaHarnessPlugin(harness=harness)
@@ -106,17 +104,70 @@ class SonderaHarnessPlugin(BasePlugin):
         """Initialize the Sondera Harness Plugin.
 
         Args:
-            harness: The Sondera Harness instance to use for policy enforcement.
-                     Can be RemoteHarness for production or LocalHarness for testing.
+            harness: A Harness implementation for trajectory management
+                and event adjudication (e.g., SonderaRemoteHarness, CedarPolicyHarness).
             logger_instance: Optional custom logger instance.
         """
         super().__init__(name="sondera_harness")
         self._harness = harness
         self._log = logger_instance or logger
+
+        # Current state
         self._current_model_name: str | None = None
-        # Track the active session so we resume the same trajectory
-        # across multiple messages in a single conversation.
         self._active_session_id: str | None = None
+
+    @property
+    def trajectory_id(self) -> str | None:
+        """Get the current trajectory ID."""
+        return self._harness.trajectory_id
+
+    @property
+    def agent(self) -> Agent | None:
+        """Get the current agent (Agent with full metadata)."""
+        return self._harness.agent
+
+    @property
+    def harness(self) -> Harness:
+        """Get the underlying Harness instance."""
+        return self._harness
+
+    async def _initialize_trajectory(
+        self, agent: Agent, session_id: str | None = None
+    ) -> None:
+        """Initialize a new trajectory for the agent.
+
+        Args:
+            agent: The Agent with full metadata (tools, instruction, etc.)
+            session_id: Optional session identifier to group trajectories.
+        """
+        await self._harness.initialize(agent=agent, session_id=session_id)
+        self._log.debug(
+            "[SonderaHarness] Trajectory created for agent %s: %s",
+            self._harness.agent.id if self._harness.agent else "unknown",
+            self._harness.trajectory_id,
+        )
+
+    async def _finalize_trajectory(self) -> None:
+        """Finalize the current trajectory."""
+        if not self._harness.trajectory_id:
+            return
+
+        await self._harness.finalize()
+
+    async def _adjudicate(self, payload: Prompt | ToolCall | ToolOutput):
+        """Adjudicate an event payload against policies.
+
+        Returns the Adjudicated result from the harness.
+        """
+        if not self._harness.trajectory_id or not self._harness.agent:
+            raise RuntimeError("No active trajectory. Call initialize first.")
+
+        event = Event(
+            agent=self._harness.agent,
+            trajectory_id=self._harness.trajectory_id,
+            event=payload,
+        )
+        return await self._harness.adjudicate(event)
 
     # -------------------------------------------------------------------------
     # User Message Callback
@@ -154,16 +205,16 @@ class SonderaHarnessPlugin(BasePlugin):
         same_session = (
             session_id is not None
             and session_id == self._active_session_id
-            and self._harness.trajectory_id is not None
+            and self.trajectory_id is not None
         )
         if same_session:
             # Trajectory is already active — nothing to do.
             pass
         else:
             # Finalize any previous trajectory before starting a new session
-            if self._harness.trajectory_id is not None:
-                await self._harness.finalize()
-            await self._harness.initialize(agent=agent, session_id=session_id)
+            if self.trajectory_id is not None:
+                await self._finalize_trajectory()
+            await self._initialize_trajectory(agent=agent, session_id=session_id)
             self._active_session_id = session_id
 
         # Extract text from all parts of the user message
@@ -172,23 +223,23 @@ class SonderaHarnessPlugin(BasePlugin):
             return None
 
         # Adjudicate user input
-        adjudication = await self._harness.adjudicate(
-            Stage.PRE_MODEL, Role.USER, PromptContent(text=content)
+        adjudication = await self._adjudicate(
+            Prompt(role=PromptRole.User, content=content)
         )
         self._log.info(
             "[SonderaHarness] User message adjudication for trajectory %s",
-            self._harness.trajectory_id,
+            self.trajectory_id,
         )
 
-        if adjudication.decision == Decision.DENY:
+        if adjudication.decision == Decision.Deny:
             return genai_types.Content(
                 parts=[genai_types.Part(text=adjudication.reason)]
             )
-        if adjudication.decision == Decision.ESCALATE:
+        if adjudication.decision == Decision.Escalate:
             self._log.warning(
                 "[SonderaHarness] ESCALATE: %s (trajectory %s)",
                 adjudication.reason,
-                self._harness.trajectory_id,
+                self.trajectory_id,
             )
         return None
 
@@ -255,7 +306,7 @@ class SonderaHarnessPlugin(BasePlugin):
         """
         self._log.debug(
             "[SonderaHarness] Before model call for trajectory %s",
-            self._harness.trajectory_id,
+            self.trajectory_id,
         )
 
         # Extract the last user message from the request contents
@@ -268,32 +319,26 @@ class SonderaHarnessPlugin(BasePlugin):
 
         # Capture model name for metadata (also store for after_model_callback)
         self._current_model_name = llm_request.model
-        metadata = (
-            ModelMetadata(model_name=llm_request.model) if llm_request.model else None
-        )
 
-        adjudication = await self._harness.adjudicate(
-            Stage.PRE_MODEL,
-            Role.MODEL,
-            PromptContent(text=content),
-            model_metadata=metadata,
+        adjudication = await self._adjudicate(
+            Prompt(role=PromptRole.User, content=content)
         )
         self._log.info(
             "[SonderaHarness] Before model adjudication for trajectory %s",
-            self._harness.trajectory_id,
+            self.trajectory_id,
         )
 
-        if adjudication.decision == Decision.DENY:
+        if adjudication.decision == Decision.Deny:
             return LlmResponse(
                 content=genai_types.Content(
                     parts=[genai_types.Part(text=adjudication.reason)]
                 )
             )
-        if adjudication.decision == Decision.ESCALATE:
+        if adjudication.decision == Decision.Escalate:
             self._log.warning(
                 "[SonderaHarness] ESCALATE: %s (trajectory %s)",
                 adjudication.reason,
-                self._harness.trajectory_id,
+                self.trajectory_id,
             )
         return None
 
@@ -321,35 +366,25 @@ class SonderaHarnessPlugin(BasePlugin):
         if not content:
             return None
 
-        # Reuse model name captured from before_model_callback
-        metadata = (
-            ModelMetadata(model_name=self._current_model_name)
-            if self._current_model_name
-            else None
-        )
-
-        adjudication = await self._harness.adjudicate(
-            Stage.POST_MODEL,
-            Role.MODEL,
-            PromptContent(text=content),
-            model_metadata=metadata,
+        adjudication = await self._adjudicate(
+            Prompt(role=PromptRole.Assistant, content=content)
         )
         self._log.info(
             "[SonderaHarness] After model adjudication for trajectory %s",
-            self._harness.trajectory_id,
+            self.trajectory_id,
         )
 
-        if adjudication.decision == Decision.DENY:
+        if adjudication.decision == Decision.Deny:
             return LlmResponse(
                 content=genai_types.Content(
                     parts=[genai_types.Part(text=adjudication.reason)]
                 )
             )
-        if adjudication.decision == Decision.ESCALATE:
+        if adjudication.decision == Decision.Escalate:
             self._log.warning(
                 "[SonderaHarness] ESCALATE: %s (trajectory %s)",
                 adjudication.reason,
-                self._harness.trajectory_id,
+                self.trajectory_id,
             )
         return None
 
@@ -378,24 +413,22 @@ class SonderaHarnessPlugin(BasePlugin):
         """
         self._log.debug("[SonderaHarness] Before tool: %s", tool.name)
 
-        adjudication = await self._harness.adjudicate(
-            Stage.PRE_TOOL,
-            Role.TOOL,
-            ToolRequestContent(tool_id=tool.name, args=tool_args),
+        adjudication = await self._adjudicate(
+            ToolCall(tool=tool.name, arguments=tool_args)
         )
         self._log.info(
             "[SonderaHarness] Before tool adjudication for trajectory %s - %s",
-            self._harness.trajectory_id,
+            self.trajectory_id,
             adjudication,
         )
 
-        if adjudication.decision == Decision.DENY:
+        if adjudication.decision == Decision.Deny:
             return {"error": f"Tool blocked: {adjudication.reason}"}
-        if adjudication.decision == Decision.ESCALATE:
+        if adjudication.decision == Decision.Escalate:
             self._log.warning(
                 "[SonderaHarness] ESCALATE: %s (trajectory %s)",
                 adjudication.reason,
-                self._harness.trajectory_id,
+                self.trajectory_id,
             )
         return None
 
@@ -426,24 +459,23 @@ class SonderaHarnessPlugin(BasePlugin):
             # There's already an error from the before_tool callback, skip adjudication.
             return result
 
-        adjudication = await self._harness.adjudicate(
-            Stage.POST_TOOL,
-            Role.TOOL,
-            ToolResponseContent(tool_id=tool.name, response=result),
+        output = result if isinstance(result, str) else json.dumps(result)
+        adjudication = await self._adjudicate(
+            ToolOutput.from_success(call_id=tool.name, output=output)
         )
         self._log.info(
             "[SonderaHarness] After tool adjudication for trajectory %s - %s",
-            self._harness.trajectory_id,
+            self.trajectory_id,
             adjudication,
         )
 
-        if adjudication.decision == Decision.DENY:
+        if adjudication.decision == Decision.Deny:
             return {"error": f"Tool result blocked: {adjudication.reason}"}
-        if adjudication.decision == Decision.ESCALATE:
+        if adjudication.decision == Decision.Escalate:
             self._log.warning(
                 "[SonderaHarness] ESCALATE: %s (trajectory %s)",
                 adjudication.reason,
-                self._harness.trajectory_id,
+                self.trajectory_id,
             )
         return None
 
@@ -455,8 +487,8 @@ class SonderaHarnessPlugin(BasePlugin):
         self,
         *,
         invocation_context: InvocationContext,
-        event: Event,
-    ) -> Event | None:
+        event: AdkEvent,
+    ) -> AdkEvent | None:
         """Callback executed after an event is yielded from runner.
 
         Args:
@@ -489,7 +521,7 @@ class SonderaHarnessPlugin(BasePlugin):
         """
         self._log.debug(
             "[SonderaHarness] Run completed for trajectory %s",
-            self._harness.trajectory_id,
+            self.trajectory_id,
         )
 
     async def close(self) -> None:
@@ -497,11 +529,11 @@ class SonderaHarnessPlugin(BasePlugin):
 
         Finalizes the active trajectory and cleans up resources.
         """
-        if self._harness.trajectory_id is not None:
+        if self.trajectory_id is not None:
             self._log.info(
                 "[SonderaHarness] Finalizing trajectory %s",
-                self._harness.trajectory_id,
+                self.trajectory_id,
             )
-            await self._harness.finalize()
+            await self._finalize_trajectory()
             self._active_session_id = None
         self._log.debug("[SonderaHarness] Plugin closed")

@@ -203,43 +203,43 @@ When a policy uses the `@escalate` annotation, the harness returns `Decision.ESC
 ### Basic Escalation Pattern
 
 ```python
-from sondera import CedarPolicyHarness, Decision, ToolRequestContent, Stage, Role
+import json
+from sondera import CedarPolicyHarness
+from sondera import Decision, Event, ToolCall
 
 async def execute_with_escalation(harness: CedarPolicyHarness, tool_call: dict) -> str:
     """Execute a tool call, handling escalations for approval."""
+    assert harness.agent is not None and harness.trajectory_id is not None
 
-    result = await harness.adjudicate(
-        Stage.PRE_TOOL,
-        Role.MODEL,
-        ToolRequestContent(
-            tool_id=tool_call["name"],
-            parameters=tool_call["args"],
-        ),
+    event = Event(
+        agent=harness.agent,
+        trajectory_id=harness.trajectory_id,
+        event=ToolCall(tool=tool_call["name"], arguments=json.dumps(tool_call["args"])),
     )
+    result = await harness.adjudicate(event)
 
-    if result.decision == Decision.ALLOW:
+    if result.decision == Decision.Allow:
         return execute_tool(tool_call)
 
-    if result.decision == Decision.DENY:
-        # Hard denial - do not allow override
+    if result.decision == Decision.Deny:
         return f"Action '{tool_call['name']}' blocked: {result.reason}"
 
-    if result.decision == Decision.ESCALATE:
-        # Escalation - request approval before proceeding
-        policy = result.policies[0]
+    if result.decision == Decision.Escalate:
+        pm = result.metadata[0]
+        route_to = pm.metadata.get("escalate_arg", "unknown")
         print(f"Action requires approval: {tool_call['name']}")
-        print(f"Reason: {policy.description}")
-        print(f"Route to: {policy.escalate_arg}")  # e.g., "finance-team"
+        print(f"Reason: {result.reason}")
+        print(f"Route to: {route_to}")
 
         approved = await request_approval(
             action=tool_call["name"],
             args=tool_call["args"],
-            reason=policy.description,
-            route_to=policy.escalate_arg,
+            reason=result.reason,
+            route_to=route_to,
         )
 
         if approved:
-            return execute_tool(tool_call)  # Your tool execution function
+            return execute_tool(tool_call)
         else:
             return f"Action '{tool_call['name']}' was rejected."
 
@@ -263,8 +263,10 @@ async def request_approval(action: str, args: dict, reason: str, route_to: str) 
 For production systems, use webhooks or message queues. The `escalate_arg` can route approvals to different teams:
 
 ```python
+import json
 import httpx
-from sondera import CedarPolicyHarness, Decision, ToolRequestContent, Stage, Role
+from sondera import CedarPolicyHarness
+from sondera import Decision, Event, ToolCall
 
 # Map escalate_arg values to Slack webhook URLs
 SLACK_WEBHOOKS = {
@@ -275,28 +277,28 @@ SLACK_WEBHOOKS = {
 
 async def escalate_to_slack(harness: CedarPolicyHarness, tool_call: dict) -> str:
     """Escalate actions to the appropriate Slack channel for approval."""
+    assert harness.agent is not None and harness.trajectory_id is not None
 
-    result = await harness.adjudicate(
-        Stage.PRE_TOOL,
-        Role.MODEL,
-        ToolRequestContent(
-            tool_id=tool_call["name"],
-            parameters=tool_call["args"],
-        ),
+    event = Event(
+        agent=harness.agent,
+        trajectory_id=harness.trajectory_id,
+        event=ToolCall(tool=tool_call["name"], arguments=json.dumps(tool_call["args"])),
     )
+    result = await harness.adjudicate(event)
 
-    if result.decision == Decision.ALLOW:
-        return execute_tool(tool_call)  # Your tool execution function
+    if result.decision == Decision.Allow:
+        return execute_tool(tool_call)
 
-    if result.decision == Decision.DENY:
+    if result.decision == Decision.Deny:
         return f"Action blocked: {result.reason}"
 
-    if result.decision == Decision.ESCALATE:
-        policy = result.policies[0]
-        webhook_url = SLACK_WEBHOOKS.get(policy.escalate_arg)
+    if result.decision == Decision.Escalate:
+        pm = result.metadata[0]
+        route_to = pm.metadata.get("escalate_arg", "unknown")
+        webhook_url = SLACK_WEBHOOKS.get(route_to)
 
         if not webhook_url:
-            return f"No webhook configured for: {policy.escalate_arg}"
+            return f"No webhook configured for: {route_to}"
 
         async with httpx.AsyncClient() as client:
             await client.post(webhook_url, json={
@@ -308,7 +310,7 @@ async def escalate_to_slack(harness: CedarPolicyHarness, tool_call: dict) -> str
                     },
                     {
                         "type": "section",
-                        "text": {"type": "mrkdwn", "text": f"*Reason:* {policy.description}"},
+                        "text": {"type": "mrkdwn", "text": f"*Reason:* {result.reason}"},
                     },
                     {
                         "type": "actions",
@@ -320,8 +322,7 @@ async def escalate_to_slack(harness: CedarPolicyHarness, tool_call: dict) -> str
                 ],
             })
 
-        # In practice, you'd wait for a callback from Slack
-        return f"Escalated to {annotation.escalate_arg} for approval"
+        return f"Escalated to {route_to} for approval"
 ```
 
 ---

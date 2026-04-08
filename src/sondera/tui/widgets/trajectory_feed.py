@@ -16,36 +16,26 @@ from textual.widget import Widget
 from textual.widgets import Static
 
 from sondera.tui.colors import SPINNER_CHARS, SPINNER_INTERVAL, get_theme_colors
+from sondera.tui.events import EventStep, correlate_events, parse_ts
 from sondera.tui.util import _utc_seconds_ago
-from sondera.types import (
-    AdjudicatedStep,
-    AdjudicatedTrajectory,
-    Decision,
-    PromptContent,
-    ToolRequestContent,
-    ToolResponseContent,
-    Trajectory,
-    TrajectoryStatus,
-)
+from sondera.types import Decision, Trajectory
 
 from .pagination_bar import PaginationBar
 
 
-def _step_content_type(s: AdjudicatedStep) -> str:
-    v = getattr(s.step.content, "content_type", "")
-    return str(getattr(v, "value", v))
+def _step_content_type(s: EventStep) -> str:
+    return s.content_type
 
 
-def _step_tool_id(s: AdjudicatedStep) -> str:
-    v = getattr(s.step.content, "tool_id", "")
-    return str(getattr(v, "value", v))
+def _step_tool_id(s: EventStep) -> str:
+    return s.tool_id
 
 
-def _step_text(s: AdjudicatedStep) -> str:
-    return str(getattr(s.step.content, "text", ""))
+def _step_text(s: EventStep) -> str:
+    return s.text
 
 
-def _iter_step_groups(steps: list[AdjudicatedStep]) -> Iterator[list[int]]:
+def _iter_step_groups(steps: list[EventStep]) -> Iterator[list[int]]:
     """Yield groups of step indices, merging duplicates and request+response pairs.
 
     Must match the grouping in screens/trajectory.py::_build_step_groups so
@@ -119,51 +109,44 @@ def _iter_step_groups(steps: list[AdjudicatedStep]) -> Iterator[list[int]]:
         i += 1
 
 
-def _count_grouped_steps(steps: list[AdjudicatedStep]) -> int:
+def _count_grouped_steps(steps: list[EventStep]) -> int:
     """Count agent-loop turns: skip duplicates, merge request+response pairs."""
     return sum(1 for _ in _iter_step_groups(steps))
 
 
-_STATUS_ICONS: dict[TrajectoryStatus, str] = {
-    TrajectoryStatus.RUNNING: "\u25cf ",
-    TrajectoryStatus.PENDING: "\u25cf ",
-    TrajectoryStatus.COMPLETED: "\u2713 ",
-    TrajectoryStatus.SUSPENDED: "\u25cb ",
-    TrajectoryStatus.FAILED: "\u2717 ",
-    TrajectoryStatus.UNKNOWN: "? ",
+_STATUS_ICONS: dict[str, str] = {
+    "running": "\u25cf ",
+    "pending": "\u25cf ",
+    "completed": "\u2713 ",
+    "suspended": "\u25cb ",
+    "failed": "\u2717 ",
+    "unknown": "? ",
 }
 
 # Normalize backend status labels for display
-_STATUS_LABELS: dict[TrajectoryStatus, str] = {
-    TrajectoryStatus.RUNNING: "running",
-    TrajectoryStatus.PENDING: "running",
-    TrajectoryStatus.COMPLETED: "completed",
-    TrajectoryStatus.SUSPENDED: "suspended",
-    TrajectoryStatus.FAILED: "failed",
-    TrajectoryStatus.UNKNOWN: "unknown",
+_STATUS_LABELS: dict[str, str] = {
+    "running": "running",
+    "pending": "running",
+    "completed": "completed",
+    "suspended": "suspended",
+    "failed": "failed",
+    "unknown": "unknown",
 }
 
 # 1 hour: RUNNING/PENDING trajectories older than this are stale (session didn't finalize)
 _STALE_THRESHOLD_SECONDS = 3600
 
 
-def _is_stale(trajectory: Trajectory | AdjudicatedTrajectory) -> bool:
+def _is_stale(trajectory: Trajectory) -> bool:
     """Return True if a RUNNING/PENDING trajectory hasn't been updated recently.
 
-    Uses the last step timestamp for enriched trajectories (most reliable),
-    falls back to the best available metadata timestamp for unenriched ones.
+    Falls back to the best available metadata timestamp.
     """
-    if trajectory.status not in (TrajectoryStatus.RUNNING, TrajectoryStatus.PENDING):
+    status = str(trajectory.status or "unknown").lower()
+    if status not in {"running", "pending"}:
         return False
-    # Best signal: last step timestamp (only available after enrichment)
-    if isinstance(trajectory, AdjudicatedTrajectory) and trajectory.steps:
-        last = trajectory.steps[-1].step.created_at
-    else:
-        # Before enrichment: use best available metadata timestamp
-        candidates = [trajectory.updated_at, trajectory.created_at]
-        if trajectory.ended_at:
-            candidates.append(trajectory.ended_at)
-        last = max(candidates)
+    # Use best available metadata timestamp
+    last = max(parse_ts(trajectory.update_time), parse_ts(trajectory.create_time))
     if last.tzinfo is None:
         last = last.astimezone(UTC)
     now = datetime.now(tz=UTC)
@@ -171,9 +154,11 @@ def _is_stale(trajectory: Trajectory | AdjudicatedTrajectory) -> bool:
 
 
 def _relative_time(
-    dt: datetime, primary: str, fg: str, fg_secondary: str, fg_dim: str
+    dt: datetime | str, primary: str, fg: str, fg_secondary: str, fg_dim: str
 ) -> tuple[str, str]:
     """Format a datetime as a relative time string with theme-aware color."""
+    if isinstance(dt, str):
+        dt = parse_ts(dt)
     seconds = _utc_seconds_ago(dt)
     if seconds < 5:
         label = "just now"
@@ -200,8 +185,10 @@ def _relative_time(
     return label, color
 
 
-def _uptime_label(created_at: datetime) -> str:
+def _uptime_label(created_at: datetime | str) -> str:
     """Format a duration since created_at as a compact uptime string."""
+    if isinstance(created_at, str):
+        created_at = parse_ts(created_at)
     if created_at.tzinfo is None:
         created_at = created_at.astimezone(UTC)
     now = datetime.now(tz=UTC)
@@ -215,47 +202,45 @@ def _uptime_label(created_at: datetime) -> str:
     return f"\u2191{seconds // 86400}d"
 
 
-def _last_active_dt(trajectory: Trajectory | AdjudicatedTrajectory) -> datetime:
+def _last_active_dt(trajectory: Trajectory) -> datetime:
     """Return the best available 'last active' datetime."""
-    ts = trajectory.ended_at
-    if (
-        ts is None
-        and isinstance(trajectory, AdjudicatedTrajectory)
-        and trajectory.steps
-    ):
-        ts = trajectory.steps[-1].step.created_at
-    if ts is None:
-        ts = trajectory.updated_at
-    return ts
+    return parse_ts(trajectory.update_time)
 
 
 def _worst_decision(a: Decision, b: Decision) -> Decision:
     """DENY > ESCALATE > ALLOW."""
-    if a == Decision.DENY or b == Decision.DENY:
-        return Decision.DENY
-    if a == Decision.ESCALATE or b == Decision.ESCALATE:
-        return Decision.ESCALATE
-    return Decision.ALLOW
+    if a == Decision.Deny or b == Decision.Deny:
+        return Decision.Deny
+    if a == Decision.Escalate or b == Decision.Escalate:
+        return Decision.Escalate
+    return Decision.Allow
+
+
+def _get_event_steps(trajectory: Trajectory) -> list[EventStep]:
+    """Get correlated EventSteps from a trajectory's events."""
+    if not trajectory.events:
+        return []
+    return correlate_events(trajectory.events)
 
 
 def _count_violations(
-    trajectory: Trajectory | AdjudicatedTrajectory,
+    trajectory: Trajectory, steps: list[EventStep] | None = None
 ) -> tuple[int, int]:
     """Count denied and escalated *grouped* steps. Returns (denied, escalated)."""
-    if not isinstance(trajectory, AdjudicatedTrajectory) or not trajectory.steps:
+    if steps is None:
+        steps = _get_event_steps(trajectory)
+    if not steps:
         return 0, 0
 
     denied = 0
     escalated = 0
-    for indices in _iter_step_groups(trajectory.steps):
-        group_decision = Decision.ALLOW
+    for indices in _iter_step_groups(steps):
+        group_decision = Decision.Allow
         for idx in indices:
-            group_decision = _worst_decision(
-                group_decision, trajectory.steps[idx].adjudication.decision
-            )
-        if group_decision == Decision.DENY:
+            group_decision = _worst_decision(group_decision, steps[idx].decision)
+        if group_decision == Decision.Deny:
             denied += 1
-        elif group_decision == Decision.ESCALATE:
+        elif group_decision == Decision.Escalate:
             escalated += 1
     return denied, escalated
 
@@ -271,73 +256,89 @@ def _clean_tool_name(tool_id: str) -> str:
     return tool_id
 
 
-def _format_step_snippet(
-    content: ToolRequestContent | PromptContent, max_len: int
-) -> str:
-    """Format a step's content as a short snippet string."""
-    if isinstance(content, ToolRequestContent):
+def _format_step_snippet(step: EventStep, max_len: int) -> str:
+    """Format a step's content as a short snippet string.
+
+    Prefers Scanned description for tool requests when available, as it
+    provides a concise human-readable summary of what the tool is doing.
+    """
+    ct = step.content_type
+    if ct == "tool_request":
+        # Prefer Scanned description for richer context
+        if step.scan_description:
+            desc = step.scan_description.strip().replace("\n", " ")
+            return desc[:max_len]
+        args = step.args
         args_str = ""
-        if content.args:
-            first_key = next(iter(content.args))
-            first_val = str(content.args[first_key]).strip().replace("\n", " ")
+        if args:
+            first_key = next(iter(args))
+            first_val = str(args[first_key]).strip().replace("\n", " ")
             if len(first_val) > 25:
                 first_val = first_val[:22] + "..."
             args_str = f'("{first_val}")'
-        tool_name = _clean_tool_name(content.tool_id)
+        tool_name = _clean_tool_name(step.tool_id)
         snippet = f"{tool_name}{args_str}"
         return snippet[:max_len]
-    text = content.text.strip().replace("\n", " ")
+    text = step.text.strip().replace("\n", " ")
     if len(text) > max_len:
         return text[: max_len - 3] + "..."
     return text
 
 
 def _activity_snippet(
-    trajectory: Trajectory | AdjudicatedTrajectory, max_len: int = 40
+    trajectory: Trajectory,
+    max_len: int = 40,
+    steps: list[EventStep] | None = None,
 ) -> str | None:
     """Get a short snippet of the most recent activity (last meaningful step)."""
-    if not isinstance(trajectory, AdjudicatedTrajectory) or not trajectory.steps:
+    if steps is None:
+        steps = _get_event_steps(trajectory)
+    if not steps:
         return None
 
     # Priority: show denied step content if any violations exist
-    for step in reversed(trajectory.steps):
-        if step.adjudication.decision == Decision.DENY:
-            content = step.step.content
-            if isinstance(content, (ToolRequestContent, PromptContent)):
-                return _format_step_snippet(content, max_len)
+    for step in reversed(steps):
+        if step.decision == Decision.Deny:
+            ct = step.content_type
+            if ct in ("tool_request", "prompt"):
+                return _format_step_snippet(step, max_len)
 
     # Fallback: last tool request or prompt
-    for step in reversed(trajectory.steps):
-        content = step.step.content
-        if isinstance(content, ToolRequestContent):
-            return _format_step_snippet(content, max_len)
-        if isinstance(content, ToolResponseContent):
+    for step in reversed(steps):
+        ct = step.content_type
+        if ct == "tool_request":
+            return _format_step_snippet(step, max_len)
+        if ct == "tool_response":
             continue
-        if isinstance(content, PromptContent):
-            return _format_step_snippet(content, max_len)
+        if ct == "prompt":
+            return _format_step_snippet(step, max_len)
     return None
 
 
 def _trajectory_label(
-    trajectory: Trajectory | AdjudicatedTrajectory, max_len: int = 18
+    trajectory: Trajectory,
+    max_len: int = 18,
+    steps: list[EventStep] | None = None,
 ) -> str:
     """Derive a short label from the first user prompt or tool call."""
-    if isinstance(trajectory, AdjudicatedTrajectory) and trajectory.steps:
+    if steps is None:
+        steps = _get_event_steps(trajectory)
+    tid = trajectory.name
+    if steps:
         # Priority 1: first user prompt
-        for step in trajectory.steps:
-            content = step.step.content
-            if isinstance(content, PromptContent) and content.text.strip():
-                label = content.text.strip().replace("\n", " ")
+        for step in steps:
+            if step.content_type == "prompt" and step.text.strip():
+                label = step.text.strip().replace("\n", " ")
                 if len(label) > max_len:
                     return label[: max_len - 1] + "\u2026"
                 return label
         # Priority 2: first tool call
-        for step in trajectory.steps:
-            content = step.step.content
-            if isinstance(content, ToolRequestContent):
-                tool_name = _clean_tool_name(content.tool_id)
-                if content.args:
-                    first_val = str(next(iter(content.args.values())))
+        for step in steps:
+            if step.content_type == "tool_request":
+                tool_name = _clean_tool_name(step.tool_id)
+                args = step.args
+                if args:
+                    first_val = str(next(iter(args.values())))
                     first_val = first_val.strip().replace("\n", " ")
                     if len(first_val) > 15:
                         first_val = first_val[:12] + "\u2026"
@@ -348,9 +349,9 @@ def _trajectory_label(
                     return label[: max_len - 1] + "\u2026"
                 return label
         # Has steps but no prompt or tool call
-        return trajectory.id[:8]
+        return tid[:8]
     # Not yet enriched: show short ID so instances are distinguishable
-    return trajectory.id[:8]
+    return tid[:8]
 
 
 class TrajectoryFeed(Widget):
@@ -379,9 +380,7 @@ class TrajectoryFeed(Widget):
     }
     """
 
-    trajectories: reactive[list[Trajectory | AdjudicatedTrajectory]] = reactive(
-        list, always_update=True
-    )
+    trajectories: reactive[list[Trajectory]] = reactive(list, always_update=True)
     denied_count: reactive[int] = reactive(0)
     awaiting_count: reactive[int] = reactive(0)
     filter_label: reactive[str] = reactive("")
@@ -389,7 +388,7 @@ class TrajectoryFeed(Widget):
     class TrajectorySelected(Message):
         """Posted when user presses Enter on a trajectory."""
 
-        def __init__(self, trajectory: Trajectory | AdjudicatedTrajectory) -> None:
+        def __init__(self, trajectory: Trajectory) -> None:
             self.trajectory = trajectory
             super().__init__()
 
@@ -417,8 +416,8 @@ class TrajectoryFeed(Widget):
         for i, trajectory in enumerate(self.trajectories):
             if (
                 not _is_stale(trajectory)
-                and trajectory.status
-                in (TrajectoryStatus.RUNNING, TrajectoryStatus.PENDING)
+                and str(trajectory.status or "unknown").lower()
+                in {"running", "pending"}
                 and i < len(self._row_widgets)
             ):
                 is_selected = i == self._selected_index
@@ -507,45 +506,48 @@ class TrajectoryFeed(Widget):
             return 30
         return 18
 
-    def _status_icon_color(self, status: TrajectoryStatus) -> tuple[str, str]:
+    def _status_icon_color(self, status: str) -> tuple[str, str]:
         """Return (icon, color) for a trajectory status using theme colors."""
         c = get_theme_colors(self.app)
         color_map = {
-            TrajectoryStatus.RUNNING: c.primary,
-            TrajectoryStatus.PENDING: c.primary,
-            TrajectoryStatus.COMPLETED: c.success,
-            TrajectoryStatus.SUSPENDED: c.warning,
-            TrajectoryStatus.FAILED: c.error,
-            TrajectoryStatus.UNKNOWN: c.fg_secondary,
+            "running": c.primary,
+            "pending": c.primary,
+            "completed": c.success,
+            "suspended": c.warning,
+            "failed": c.error,
+            "unknown": c.fg_secondary,
         }
         icon = _STATUS_ICONS.get(status, "? ")
         color = color_map.get(status, c.fg_secondary)
         return icon, color
 
-    def _status_text_color(self, status: TrajectoryStatus) -> str:
+    def _status_text_color(self, status: str) -> str:
         """Return text color for a trajectory status label."""
         c = get_theme_colors(self.app)
         color_map = {
-            TrajectoryStatus.RUNNING: c.primary,
-            TrajectoryStatus.PENDING: c.primary,
-            TrajectoryStatus.COMPLETED: c.fg_dim,
-            TrajectoryStatus.SUSPENDED: c.warning,
-            TrajectoryStatus.FAILED: c.error,
-            TrajectoryStatus.UNKNOWN: c.fg_secondary,
+            "running": c.primary,
+            "pending": c.primary,
+            "completed": c.fg_dim,
+            "suspended": c.warning,
+            "failed": c.error,
+            "unknown": c.fg_secondary,
         }
         return color_map.get(status, c.fg_secondary)
 
     def _render_row(
         self,
-        trajectory: Trajectory | AdjudicatedTrajectory,
+        trajectory: Trajectory,
         is_selected: bool,
         spinner_frame: int = 0,
     ) -> Text:
         """Render a single trajectory row."""
         c = get_theme_colors(self.app)
         text = Text()
-        status = trajectory.status
+        status = str(trajectory.status or "unknown").lower()
         label_w = self._label_width()
+
+        # Compute correlated steps once for the entire row
+        event_steps = _get_event_steps(trajectory)
 
         # Cursor
         if is_selected:
@@ -557,10 +559,7 @@ class TrajectoryFeed(Widget):
         stale = _is_stale(trajectory)
 
         # Status icon: animated spinner for running, static icon for others
-        is_active = not stale and status in (
-            TrajectoryStatus.RUNNING,
-            TrajectoryStatus.PENDING,
-        )
+        is_active = not stale and status in {"running", "pending"}
         if is_active:
             sc = SPINNER_CHARS[spinner_frame % len(SPINNER_CHARS)]
             text.append(f"{sc} ", style=f"bold {c.primary}")
@@ -571,8 +570,9 @@ class TrajectoryFeed(Widget):
             text.append(icon, style=f"bold {icon_color}")
 
         # Trajectory label (first user prompt or short ID)
-        label = _trajectory_label(trajectory, max_len=label_w)
-        is_bare_id = len(label) == 8 and label == trajectory.id[:8]
+        label = _trajectory_label(trajectory, max_len=label_w, steps=event_steps)
+        tid = trajectory.name
+        is_bare_id = len(label) == 8 and label == tid[:8]
         label_style = c.fg_dim if is_bare_id else c.fg
         text.append(label[:label_w].ljust(label_w + 2), style=label_style)
 
@@ -581,19 +581,22 @@ class TrajectoryFeed(Widget):
             text.append("timed out".ljust(12), style=c.fg_dim)
         else:
             status_color = self._status_text_color(status)
-            status_label = _STATUS_LABELS.get(status, status.value)
+            status_label = _STATUS_LABELS.get(status, status)
             text.append(status_label.ljust(12), style=status_color)
 
         # Step count
-        if isinstance(trajectory, AdjudicatedTrajectory) and trajectory.steps:
-            n = _count_grouped_steps(trajectory.steps)
+        if event_steps:
+            n = _count_grouped_steps(event_steps)
             step_str = f"{n} step{'s' if n != 1 else ''}".ljust(12)
             step_color = c.fg if n > 0 else c.fg_dim
-        elif trajectory.step_count > 0:
-            n = trajectory.step_count
+        elif (
+            n := len(trajectory.events)
+            if trajectory.events
+            else (trajectory.event_count or 0)
+        ) > 0:
             step_str = f"{n} step{'s' if n != 1 else ''}".ljust(12)
             step_color = c.fg_secondary
-        elif trajectory.id in self._enrichment_attempted:
+        elif tid in self._enrichment_attempted:
             step_str = "\u2026".ljust(12)
             step_color = c.fg_dim
         else:
@@ -603,28 +606,26 @@ class TrajectoryFeed(Widget):
 
         # Time
         col_w = 20
-        if not stale and trajectory.status in (
-            TrajectoryStatus.RUNNING,
-            TrajectoryStatus.PENDING,
-        ):
+        if not stale and status in {"running", "pending"}:
             time_label, time_color = _relative_time(
                 _last_active_dt(trajectory), c.primary, c.fg, c.fg_secondary, c.fg_dim
             )
-            uptime = _uptime_label(trajectory.created_at)
+            uptime = _uptime_label(parse_ts(trajectory.create_time))
             text.append(time_label, style=time_color)
             rest = f" ({uptime})"
             text.append(rest.ljust(col_w - len(time_label)), style=c.fg_dim)
         else:
             time_label, time_color = _relative_time(
-                trajectory.created_at, c.primary, c.fg, c.fg_secondary, c.fg_dim
+                parse_ts(trajectory.create_time),
+                c.primary,
+                c.fg,
+                c.fg_secondary,
+                c.fg_dim,
             )
             text.append(time_label.ljust(col_w), style=time_color)
 
-        # Violation badges (enriched grouped count, or decision_summary fallback)
-        denied, escalated = _count_violations(trajectory)
-        if denied == 0 and escalated == 0 and trajectory.decision_summary is not None:
-            denied = trajectory.decision_summary.deny_count
-            escalated = trajectory.decision_summary.escalate_count
+        # Violation badges
+        denied, escalated = _count_violations(trajectory, steps=event_steps)
         if denied > 0:
             text.append(f"\u2717 {denied} denied", style=f"bold {c.error}")
             if escalated > 0:
@@ -633,7 +634,7 @@ class TrajectoryFeed(Widget):
             text.append(f"\u26a0 {escalated} awaiting", style=f"bold {c.warning}")
 
         # Activity snippet
-        snippet = _activity_snippet(trajectory)
+        snippet = _activity_snippet(trajectory, steps=event_steps)
         if snippet and denied == 0 and escalated == 0:
             text.append(snippet, style=c.fg_secondary)
         elif snippet:
@@ -646,8 +647,7 @@ class TrajectoryFeed(Widget):
         """Mark a trajectory whose enrichment returned no data."""
         if index >= len(self.trajectories):
             return
-        tid = self.trajectories[index].id
-        self._enrichment_attempted.add(tid)
+        self._enrichment_attempted.add(self.trajectories[index].name)
         # Re-render the row to show "0 steps" instead of "- steps"
         if index < len(self._row_widgets):
             is_selected = index == self._selected_index
@@ -656,12 +656,12 @@ class TrajectoryFeed(Widget):
             )
             self._row_widgets[index].update(row)
 
-    def update_enrichment(self, index: int, trajectory: AdjudicatedTrajectory) -> None:
+    def update_enrichment(self, index: int, trajectory: Trajectory) -> None:
         """Update a single row after enrichment without full rebuild."""
         if index >= len(self.trajectories):
             return
 
-        self._enrichment_attempted.add(trajectory.id)
+        self._enrichment_attempted.add(trajectory.name)
 
         # Mutate the list in place
         traj_list = self.trajectories
@@ -681,9 +681,7 @@ class TrajectoryFeed(Widget):
         except Exception:
             pass
 
-    def get_selected_trajectory(
-        self,
-    ) -> Trajectory | AdjudicatedTrajectory | None:
+    def get_selected_trajectory(self) -> Trajectory | None:
         """Get the currently selected trajectory."""
         if self.trajectories and 0 <= self._selected_index < len(self.trajectories):
             return self.trajectories[self._selected_index]

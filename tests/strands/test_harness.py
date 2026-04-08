@@ -9,6 +9,8 @@ from unittest.mock import AsyncMock, MagicMock, Mock
 
 import pytest
 
+from sondera import Adjudicated, Agent, Decision
+
 # Skip this module if strands is not installed
 pytest.importorskip("strands", reason="strands package not installed")
 
@@ -24,21 +26,23 @@ from strands.hooks.events import (
 
 from sondera.harness import Harness
 from sondera.strands import SonderaHarnessHook
-from sondera.types import Adjudication, Decision
 
 
 @pytest.fixture
 def mock_harness() -> MagicMock:
     """Create a mock harness for testing."""
     harness = MagicMock(spec=Harness)
-    harness.adjudicate = AsyncMock(
-        return_value=Adjudication(decision=Decision.ALLOW, reason="Allowed")
-    )
+    harness.adjudicate = AsyncMock(return_value=Adjudicated.allow())
     harness.finalize = AsyncMock()
     harness.initialize = AsyncMock()
     harness.resume = AsyncMock()
     harness._trajectory_id = "test-trajectory-123"
     harness.trajectory_id = "test-trajectory-123"
+    # Mock agent for adjudication calls
+    harness.agent = Agent(
+        id="test-agent",
+        provider="test-provider",
+    )
     return harness
 
 
@@ -187,8 +191,8 @@ class TestSonderaStrandsHarnessHooks:
     @pytest.mark.asyncio
     async def test_before_tool_call_blocks_on_deny(self, mock_harness: MagicMock):
         """Test that tool call is blocked when adjudication denies."""
-        mock_harness.adjudicate.return_value = Adjudication(
-            decision=Decision.DENY, reason="Tool not allowed"
+        mock_harness.adjudicate.return_value = Adjudicated(
+            decision=Decision.Deny, reason="Tool not allowed"
         )
         hook = SonderaHarnessHook(harness=mock_harness)
 
@@ -282,6 +286,44 @@ class TestSonderaStrandsHarnessHelperMethods:
         )
 
         assert hook._log is custom_logger
+
+
+class TestSessionId:
+    """Tests for session_id propagation in SonderaHarnessHook."""
+
+    @pytest.mark.asyncio
+    async def test_session_id_passed_to_initialize(self, mock_harness: MagicMock):
+        """Verify constructor session_id is forwarded to harness.initialize."""
+        hook = SonderaHarnessHook(harness=mock_harness, session_id="sess-strands")
+
+        mock_agent = Mock()
+        mock_agent.name = "test-agent"
+        mock_agent.system_prompt = "You are helpful"
+        mock_agent.description = "A test agent"
+        mock_agent.tools = []
+        event = BeforeInvocationEvent(agent=mock_agent)
+
+        await hook._on_before_invocation(event)
+        mock_harness.initialize.assert_awaited_once()
+        call_kwargs = mock_harness.initialize.call_args[1]
+        assert call_kwargs["session_id"] == "sess-strands"
+
+    @pytest.mark.asyncio
+    async def test_no_session_id_passes_none(self, mock_harness: MagicMock):
+        """Verify None is passed when no session_id is provided."""
+        hook = SonderaHarnessHook(harness=mock_harness)
+
+        mock_agent = Mock()
+        mock_agent.name = "test-agent"
+        mock_agent.system_prompt = "You are helpful"
+        mock_agent.description = "A test agent"
+        mock_agent.tools = []
+        event = BeforeInvocationEvent(agent=mock_agent)
+
+        await hook._on_before_invocation(event)
+        mock_harness.initialize.assert_awaited_once()
+        call_kwargs = mock_harness.initialize.call_args[1]
+        assert call_kwargs["session_id"] is None
 
 
 if __name__ == "__main__":

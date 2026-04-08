@@ -15,20 +15,34 @@ from textual.theme import Theme
 from textual.widgets import Footer, Header, Static
 
 import sondera.settings as _settings
-from sondera.harness import (
-    FileTrajectoryStorage,
-    SonderaRemoteHarness,
-    TrajectoryStorage,
-)
+from sondera.harness import Harness, SonderaRemoteHarness
 from sondera.tui.ai.panel import AskInput, AskPanel, AskSessionState
 from sondera.tui.colors import ThemeColors, get_theme_colors
+from sondera.tui.events import correlate_events, parse_ts, violations_from_events
 from sondera.tui.mixins import SectionNavMixin
 from sondera.tui.screens import AgentScreen, TrajectoryScreen
 from sondera.tui.widgets.agents_feed import AgentsFeed, AgentStatus
 from sondera.tui.widgets.dashboard_header import DashboardHeader
 from sondera.tui.widgets.trajectory_feed import _is_stale
 from sondera.tui.widgets.violations_feed import ViolationsFeed
-from sondera.types import Decision, TrajectoryStatus
+from sondera.types import Adjudicated, Agent, Decision, Event, TrajectoryEventStream
+
+
+def _agent_id(agent: Agent | str | None) -> str:
+    """Extract the agent ID string from an Agent object or a plain resource name."""
+    if agent is None:
+        return ""
+    return agent if isinstance(agent, str) else agent.id
+
+
+def _ensure_agent(agent: Agent | str | None) -> Agent | None:
+    """Coerce a plain agent resource-name string into a minimal Agent object."""
+    if agent is None:
+        return None
+    if isinstance(agent, str):
+        return Agent(id=agent, provider="unknown")
+    return agent
+
 
 sondera_dark = Theme(
     name="sondera-dark",
@@ -69,6 +83,65 @@ sondera_light = Theme(
 )
 
 
+def _compute_agent_status(
+    agent,
+    trajectories: list,
+    denied_count: int,
+    denied_traj_count: int,
+    awaiting_count: int,
+    has_more_trajectories: bool = False,
+) -> AgentStatus:
+    """Derive an AgentStatus from a trajectory list and pre-computed violation counts."""
+    running = sum(
+        1
+        for t in trajectories
+        if str(t.status or "unknown").lower() in {"running", "pending"}
+        and not _is_stale(t)
+    )
+    failed = sum(
+        1 for t in trajectories if str(t.status or "unknown").lower() == "failed"
+    )
+    completed = sum(
+        1 for t in trajectories if str(t.status or "unknown").lower() == "completed"
+    )
+    if running > 0:
+        status = "live"
+    elif failed > 0:
+        status = "errored"
+    elif trajectories:
+        status = "idle"
+    else:
+        status = "off"
+    last_active = max(
+        (max(parse_ts(t.update_time), parse_ts(t.create_time)) for t in trajectories),
+        default=None,
+    )
+    sorted_trajs = sorted(
+        trajectories, key=lambda t: parse_ts(t.update_time), reverse=True
+    )
+    last_traj_status = None
+    if sorted_trajs:
+        latest = sorted_trajs[0]
+        ls = str(latest.status or "unknown").lower()
+        last_traj_status = (
+            "stale" if ls in {"running", "pending"} and _is_stale(latest) else ls
+        )
+    return AgentStatus(
+        agent=agent,
+        status=status,
+        live_count=running,
+        total_trajectories=len(trajectories),
+        has_more_trajectories=has_more_trajectories,
+        denied_count=denied_count,
+        denied_trajectory_count=denied_traj_count,
+        awaiting_count=awaiting_count,
+        last_active=last_active,
+        completed_count=completed,
+        failed_count=failed,
+        last_trajectory_status=last_traj_status,
+    )
+
+
 class SonderaApp(SectionNavMixin, App):
     """Mission Control dashboard for Sondera governance monitoring."""
 
@@ -106,26 +179,28 @@ class SonderaApp(SectionNavMixin, App):
         self._agents: list = []
         self._agents_map: dict[str, str] = {}
         self._adjudications: list = []
+        self._seen_adj_ids: set[str] = set()
         self._agent_statuses: list = []
-        self._connected_since: datetime | None = None
         self._agents_by_id: dict = {}
         self._ask_state = AskSessionState()
         self._last_activity = time.monotonic()
 
-        # Setup Harness
-        if _settings.SETTINGS.sondera_harness_type == "sondera":
-            self.harness: TrajectoryStorage = SonderaRemoteHarness(
+        # Harness is created lazily on first use to avoid blocking the
+        # constructor with an eager gRPC connection attempt.
+        self._harness: Harness | None = None
+
+    PAGE_SIZE = 20
+    _grpc_sem: asyncio.Semaphore | None = None
+
+    @property
+    def harness(self) -> Harness:
+        """Lazily create the harness on first access."""
+        if self._harness is None:
+            self._harness = SonderaRemoteHarness(
                 sondera_harness_endpoint=_settings.SETTINGS.sondera_harness_endpoint,
                 sondera_api_key=_settings.SETTINGS.sondera_api_token,
             )
-        elif _settings.SETTINGS.sondera_harness_type == "local":
-            self.harness: TrajectoryStorage = FileTrajectoryStorage(
-                _settings.SETTINGS.local_trajectory_storage_dir
-            )
-
-    AUTO_REFRESH_INTERVAL = 30
-    PAGE_SIZE = 20
-    _grpc_sem: asyncio.Semaphore | None = None
+        return self._harness
 
     @property
     def _semaphore(self) -> asyncio.Semaphore:
@@ -197,28 +272,7 @@ class SonderaApp(SectionNavMixin, App):
         self._registered_themes = dict(sorted(self._registered_themes.items()))
         self.theme = self._load_theme_pref()
         self.update_dataset()
-        self.set_interval(self.AUTO_REFRESH_INTERVAL, self._periodic_refresh)
-        self.set_interval(1.0, self._tick_subtitle)
         self.set_interval(5.0, self._check_idle)
-
-    def _periodic_refresh(self) -> None:
-        self.update_dataset()
-
-    def _tick_subtitle(self) -> None:
-        """Update the header sub_title with last refresh time."""
-        if self._connected_since is None:
-            self.sub_title = ""
-            return
-        delta = (datetime.now(tz=UTC) - self._connected_since).total_seconds()
-        if delta < 5:
-            elapsed = "just now"
-        elif delta < 60:
-            elapsed = f"{int(delta)}s ago"
-        elif delta < 3600:
-            elapsed = f"{int(delta // 60)}m ago"
-        else:
-            elapsed = f"{int(delta // 3600)}h ago"
-        self.sub_title = f"refreshed {elapsed}"
 
     def _check_idle(self) -> None:
         """Trigger screensaver if idle timeout has elapsed."""
@@ -245,11 +299,9 @@ class SonderaApp(SectionNavMixin, App):
         self._last_activity = time.monotonic()
 
     def pop_screen(self):
-        """Pop a screen and refresh dashboard data when returning to base."""
+        """Pop a screen and sync AskPanel state."""
         self._bump_activity()
         result = super().pop_screen()
-        if len(self.screen_stack) == 1:
-            self.update_dataset()
         # Sync AskPanel on the now-visible screen with shared state
         with contextlib.suppress(Exception):
             self.screen.query_one("#ask-panel", AskPanel)._sync_from_state()
@@ -268,10 +320,7 @@ class SonderaApp(SectionNavMixin, App):
 
     @work(exclusive=True)
     async def update_dataset(self) -> None:
-        """Load dashboard data in two phases for fast initial render."""
-        header = self.query_one(DashboardHeader)
-        header.refreshing = True
-
+        """Load dashboard data on startup in two phases for fast initial render."""
         # Phase 1: Agents + adjudications in parallel
         try:
             agents_result, adj_result = await asyncio.gather(
@@ -279,8 +328,7 @@ class SonderaApp(SectionNavMixin, App):
                 self._throttled(self.harness.list_adjudications(page_size=250)),
             )
         except Exception as e:
-            header.refreshing = False
-            self.notify(f"Failed to connect: {e}", severity="error", timeout=5)
+            self.notify(f"{e}", severity="error", timeout=5)
             return
 
         agents, agents_next = agents_result
@@ -293,63 +341,40 @@ class SonderaApp(SectionNavMixin, App):
         except Exception:
             pass
 
-        adjudications, _adj_next = adj_result
+        adj_events, _adj_next = adj_result
 
-        # Merge locally-known tools for the AI Assistant: the platform
-        # may not return tools if RegisterAgent hit ALREADY_EXISTS before
-        # tools were added.
-        from sondera.tui.ai.session import _AI_AGENT
-
-        for i, agent in enumerate(agents):
-            if (
-                agent.provider_id == _AI_AGENT.provider_id
-                and agent.name == _AI_AGENT.name
-                and not agent.tools
-                and _AI_AGENT.tools
-            ):
-                agents[i] = agent.model_copy(update={"tools": _AI_AGENT.tools})
-                break
-
-        agents_map = {agent.id: agent.name for agent in agents}
+        agents_map = {agent.id: agent.id for agent in agents}
         self._agents = agents
         self._agents_map = agents_map
         self._agents_by_id = {agent.id: agent for agent in agents}
-        self._adjudications = adjudications
+        self._adjudications = adj_events  # list[Event] wrapping Adjudicated
+        self._seen_adj_ids = {ev.event_id for ev in adj_events if ev.event_id}
 
-        # Filter violations (DENY or ESCALATE)
-        violations = [
-            adj
-            for adj in adjudications
-            if adj.adjudication.decision in (Decision.DENY, Decision.ESCALATE)
-        ]
+        # Build violation records from adjudication events
+        violation_records = violations_from_events(adj_events)
 
         # Update violations feed
         violations_feed = self.query_one(ViolationsFeed)
         violations_feed.agents_map = agents_map
-        violations_feed.violations = violations
+        violations_feed.violations = violation_records
 
         # Update header counts
+        header = self.query_one(DashboardHeader)
         header.violation_count = sum(
-            1 for adj in adjudications if adj.adjudication.decision == Decision.DENY
+            1 for v in violation_records if v.decision == Decision.Deny
         )
         header.awaiting_count = sum(
-            1 for adj in adjudications if adj.adjudication.decision == Decision.ESCALATE
+            1 for v in violation_records if v.decision == Decision.Escalate
         )
         header.total_agents = len(agents)
 
-        is_initial_load = self._connected_since is None
-        header.refreshing = False
-        self._connected_since = datetime.now(tz=UTC)
-
-        # Only auto-focus on initial load, not periodic refreshes
-        if is_initial_load:
-            if violations:
-                violations_feed.focus()
-            else:
-                self.query_one(AgentsFeed).focus()
-            # Generate contextual suggestion now that data is loaded
-            with contextlib.suppress(Exception):
-                self.query_one("#ask-panel", AskPanel).refresh_suggestion()
+        # Auto-focus the most relevant feed
+        if violation_records:
+            violations_feed.focus()
+        else:
+            self.query_one(AgentsFeed).focus()
+        with contextlib.suppress(Exception):
+            self.query_one("#ask-panel", AskPanel).refresh_suggestion()
 
         # Phase 2: Trajectories in background (for agent status)
         self._load_trajectories()
@@ -365,9 +390,7 @@ class SonderaApp(SectionNavMixin, App):
         # Fetch all agents' trajectories concurrently (semaphore limits to 3 in-flight)
         first_page_tasks = [
             self._throttled(
-                self.harness.list_trajectories(
-                    agent_id=agent.id, min_step_count=1, page_size=50
-                )
+                self.harness.list_trajectories(agent_id=agent.id, page_size=50)
             )
             for agent in agents
         ]
@@ -377,18 +400,25 @@ class SonderaApp(SectionNavMixin, App):
 
         all_trajectories = []
 
-        # Build per-agent denied/awaiting counts
+        # Build per-agent denied/awaiting counts from adjudication Events
         agent_denied: Counter[str] = Counter()
         agent_awaiting: Counter[str] = Counter()
         agent_denied_trajectories: dict[str, set[str]] = {}
-        for adj in self._adjudications:
-            if adj.adjudication.decision == Decision.DENY:
-                agent_denied[adj.agent_id] += 1
-                agent_denied_trajectories.setdefault(adj.agent_id, set()).add(
-                    adj.trajectory_id
-                )
-            elif adj.adjudication.decision == Decision.ESCALATE:
-                agent_awaiting[adj.agent_id] += 1
+        for adj_ev in self._adjudications:
+            adj_payload = adj_ev.event  # Adjudicated
+            agent_aid = _agent_id(adj_ev.agent)
+            traj_tid = adj_ev.trajectory_id or ""
+            if (
+                isinstance(adj_payload, Adjudicated)
+                and adj_payload.decision == Decision.Deny
+            ):
+                agent_denied[agent_aid] += 1
+                agent_denied_trajectories.setdefault(agent_aid, set()).add(traj_tid)
+            elif (
+                isinstance(adj_payload, Adjudicated)
+                and adj_payload.decision == Decision.Escalate
+            ):
+                agent_awaiting[agent_aid] += 1
 
         # Build trajectory timestamp map for violations feed
         trajectory_times: dict[str, datetime] = {}
@@ -398,113 +428,47 @@ class SonderaApp(SectionNavMixin, App):
         problem_agent_count = 0
 
         for agent, result in zip(agents, first_results, strict=True):
+            denied = agent_denied[agent.id]
+            awaiting = agent_awaiting[agent.id]
+            denied_traj_count = len(agent_denied_trajectories.get(agent.id, set()))
+
             if isinstance(result, BaseException):
-                has_problems = (
-                    agent_denied[agent.id] > 0 or agent_awaiting[agent.id] > 0
-                )
-                if has_problems:
+                if denied > 0 or awaiting > 0:
                     problem_agent_count += 1
                 agent_statuses.append(
-                    AgentStatus(
+                    _compute_agent_status(
                         agent=agent,
-                        status="off",
-                        denied_count=agent_denied[agent.id],
-                        denied_trajectory_count=len(
-                            agent_denied_trajectories.get(agent.id, set())
-                        ),
-                        awaiting_count=agent_awaiting[agent.id],
+                        trajectories=[],
+                        denied_count=denied,
+                        denied_traj_count=denied_traj_count,
+                        awaiting_count=awaiting,
                     )
                 )
                 continue
 
             trajectories, next_token = result
             all_trajectories.extend(trajectories)
-            has_more = bool(next_token)
-
-            def _best_ts(t):
-                candidates = [t.updated_at, t.created_at]
-                if t.ended_at:
-                    candidates.append(t.ended_at)
-                return max(candidates)
 
             # Build trajectory time map
             for t in trajectories:
-                trajectory_times[t.id] = _best_ts(t)
+                trajectory_times[t.name] = max(
+                    parse_ts(t.update_time), parse_ts(t.create_time)
+                )
 
-            # Compute status
-            _active_statuses = (TrajectoryStatus.RUNNING, TrajectoryStatus.PENDING)
-            running = sum(
-                1
-                for t in trajectories
-                if t.status in _active_statuses and not _is_stale(t)
-            )
-            failed = sum(1 for t in trajectories if t.status == TrajectoryStatus.FAILED)
-            completed = sum(
-                1 for t in trajectories if t.status == TrajectoryStatus.COMPLETED
-            )
-            denied = agent_denied[agent.id]
-            awaiting = agent_awaiting[agent.id]
-
-            # Track problem agents
             if denied > 0 or awaiting > 0:
                 problem_agent_count += 1
 
-            last_active = max(
-                (_best_ts(t) for t in trajectories),
-                default=None,
+            a_status = _compute_agent_status(
+                agent=agent,
+                trajectories=trajectories,
+                denied_count=denied,
+                denied_traj_count=denied_traj_count,
+                awaiting_count=awaiting,
+                has_more_trajectories=bool(next_token),
             )
-
-            if running > 0:
-                status = "live"
+            if a_status.status == "live":
                 live_count += 1
-            elif failed > 0:
-                status = "errored"
-            elif trajectories:
-                status = "idle"
-            else:
-                status = "off"
-
-            # Last trajectory status
-            sorted_trajs = sorted(
-                trajectories, key=lambda t: t.updated_at, reverse=True
-            )
-            last_traj_status = None
-            if sorted_trajs:
-                latest = sorted_trajs[0]
-                ls = latest.status
-                if ls in (
-                    TrajectoryStatus.RUNNING,
-                    TrajectoryStatus.PENDING,
-                ) and _is_stale(latest):
-                    last_traj_status = "stale"
-                else:
-                    status_labels = {
-                        TrajectoryStatus.COMPLETED: "completed",
-                        TrajectoryStatus.FAILED: "failed",
-                        TrajectoryStatus.RUNNING: "running",
-                        TrajectoryStatus.PENDING: "pending",
-                        TrajectoryStatus.SUSPENDED: "suspended",
-                    }
-                    last_traj_status = status_labels.get(ls, ls.value)
-
-            agent_statuses.append(
-                AgentStatus(
-                    agent=agent,
-                    status=status,
-                    live_count=running,
-                    total_trajectories=len(trajectories),
-                    has_more_trajectories=has_more,
-                    denied_count=denied,
-                    denied_trajectory_count=len(
-                        agent_denied_trajectories.get(agent.id, set())
-                    ),
-                    awaiting_count=awaiting,
-                    last_active=last_active,
-                    completed_count=completed,
-                    failed_count=failed,
-                    last_trajectory_status=last_traj_status,
-                )
-            )
+            agent_statuses.append(a_status)
 
         if worker.is_cancelled:
             return
@@ -533,7 +497,7 @@ class SonderaApp(SectionNavMixin, App):
                     a.total_trajectories = count
                     a.has_more_trajectories = False
 
-        all_trajectories.sort(key=lambda t: t.created_at, reverse=True)
+        all_trajectories.sort(key=lambda t: parse_ts(t.create_time), reverse=True)
         self._all_trajectories = all_trajectories
 
         # Sort by most recently active at top
@@ -556,6 +520,138 @@ class SonderaApp(SectionNavMixin, App):
         violations_feed = self.query_one(ViolationsFeed)
         violations_feed.trajectory_times = trajectory_times
 
+        # Begin streaming live updates from this point forward
+        self._stream_dashboard_events()
+
+    @work(exclusive=True, group="dashboard-stream")
+    async def _stream_dashboard_events(self) -> None:
+        """Stream all trajectory events and apply incremental updates to dashboard state."""
+        from textual.worker import get_current_worker
+
+        worker = get_current_worker()
+        try:
+            stream: TrajectoryEventStream = await self.harness.stream_trajectories()
+        except Exception:
+            return
+
+        async for notification in stream:
+            if worker.is_cancelled:
+                break
+            traj_id = notification.trajectory_id  # type: ignore[union-attr]
+            if not traj_id:
+                continue
+            event = notification.event  # type: ignore[union-attr]
+            if event is not None:
+                self._ingest_adjudication(event)
+            await self._refresh_agent_from_trajectory(traj_id)
+
+    def _ingest_adjudication(self, event: Event) -> None:
+        """Append a Deny/Escalate adjudication event to state and refresh the violations feed."""
+        if not isinstance(event.event, Adjudicated):
+            return
+        if event.event.decision not in (Decision.Deny, Decision.Escalate):
+            return
+        event_id = event.event_id or ""
+        if event_id in self._seen_adj_ids:
+            return
+        self._seen_adj_ids.add(event_id)
+        self._adjudications.append(event)
+
+        violation_records = violations_from_events(self._adjudications)
+        with contextlib.suppress(Exception):
+            self.query_one(ViolationsFeed).violations = violation_records
+        with contextlib.suppress(Exception):
+            header = self.query_one(DashboardHeader)
+            header.violation_count = sum(
+                1 for v in violation_records if v.decision == Decision.Deny
+            )
+            header.awaiting_count = sum(
+                1 for v in violation_records if v.decision == Decision.Escalate
+            )
+
+    async def _refresh_agent_from_trajectory(self, traj_id: str) -> None:
+        """Fetch one trajectory, upsert it, and recompute its agent's dashboard row."""
+        try:
+            trajectory = await self._throttled(self.harness.get_trajectory(traj_id))
+        except Exception:
+            return
+        if not trajectory:
+            return
+
+        raw_agent = trajectory.agent
+        if not raw_agent:
+            return
+        agent = _ensure_agent(raw_agent)
+        agent_id = _agent_id(raw_agent)
+
+        # Upsert into _all_trajectories
+        for i, t in enumerate(self._all_trajectories):
+            if t.name == trajectory.name:
+                self._all_trajectories[i] = trajectory
+                break
+        else:
+            self._all_trajectories.append(trajectory)
+
+        # All known trajectories for this agent
+        agent_trajectories = [
+            t for t in self._all_trajectories if _agent_id(t.agent) == agent_id
+        ]
+
+        # Per-agent violation counts from current adjudications
+        denied_count = 0
+        denied_traj_ids: set[str] = set()
+        awaiting_count = 0
+        for adj_ev in self._adjudications:
+            if _agent_id(adj_ev.agent) != agent_id:
+                continue
+            adj_payload = adj_ev.event
+            if isinstance(adj_payload, Adjudicated):
+                if adj_payload.decision == Decision.Deny:
+                    denied_count += 1
+                    denied_traj_ids.add(adj_ev.trajectory_id or "")
+                elif adj_payload.decision == Decision.Escalate:
+                    awaiting_count += 1
+
+        with contextlib.suppress(Exception):
+            agents_feed = self.query_one(AgentsFeed)
+            current = list(agents_feed.agents)
+            has_more = next(
+                (a.has_more_trajectories for a in current if a.agent.id == agent_id),
+                False,
+            )
+            new_status = _compute_agent_status(
+                agent=agent,
+                trajectories=agent_trajectories,
+                denied_count=denied_count,
+                denied_traj_count=len(denied_traj_ids),
+                awaiting_count=awaiting_count,
+                has_more_trajectories=has_more,
+            )
+            for i, a in enumerate(current):
+                if a.agent.id == agent_id:
+                    current[i] = new_status
+                    break
+            else:
+                current.append(new_status)
+            _epoch = datetime(2000, 1, 1, tzinfo=UTC)
+            current.sort(key=lambda a: -(a.last_active or _epoch).timestamp())
+            agents_feed.agents = current
+
+            header = self.query_one(DashboardHeader)
+            header.live_count = sum(1 for a in current if a.status == "live")
+            header.problem_agent_count = sum(
+                1 for a in current if a.denied_count > 0 or a.awaiting_count > 0
+            )
+            self._agent_statuses = current
+
+        # Update trajectory timestamps for the violations feed
+        with contextlib.suppress(Exception):
+            violations_feed = self.query_one(ViolationsFeed)
+            times = dict(violations_feed.trajectory_times)
+            for t in agent_trajectories:
+                times[t.name] = max(parse_ts(t.update_time), parse_ts(t.create_time))
+            violations_feed.trajectory_times = times
+
     # -- Navigation handlers --
 
     def on_violations_feed_violation_selected(
@@ -563,7 +659,7 @@ class SonderaApp(SectionNavMixin, App):
     ) -> None:
         self._open_trajectory(
             msg.record.trajectory_id,
-            jump_to_decision=msg.record.adjudication.decision,
+            jump_to_decision=msg.record.decision,
             step_index=msg.record.step_index,
         )
 
@@ -636,20 +732,16 @@ class SonderaApp(SectionNavMixin, App):
     def _on_config_result(self, changed: bool | None) -> None:
         """Reinitialize harness if config was saved."""
         if changed:
-            if _settings.SETTINGS.sondera_harness_type == "sondera":
-                self.harness = SonderaRemoteHarness(
-                    sondera_harness_endpoint=_settings.SETTINGS.sondera_harness_endpoint,
-                    sondera_api_key=_settings.SETTINGS.sondera_api_token,
-                )
-            elif _settings.SETTINGS.sondera_harness_type == "local":
-                self.harness = FileTrajectoryStorage(
-                    _settings.SETTINGS.local_trajectory_storage_dir
-                )
+            self._harness = SonderaRemoteHarness(
+                sondera_harness_endpoint=_settings.SETTINGS.sondera_harness_endpoint,
+                sondera_api_key=_settings.SETTINGS.sondera_api_token,
+            )
             self._bump_activity()  # Reset idle timer with new timeout
             self.update_dataset()
             self.notify("Configuration saved", timeout=3)
 
     def action_refresh(self) -> None:
+        """Re-fetch all dashboard data and restart the live stream."""
         self._bump_activity()
         self.update_dataset()
 
@@ -662,10 +754,9 @@ class SonderaApp(SectionNavMixin, App):
         self.push_screen(ScreensaverScreen(self._agent_statuses))
 
     def action_show_dashboard(self) -> None:
-        """Pop back to dashboard and refresh data."""
+        """Pop back to the dashboard."""
         while len(self.screen_stack) > 1:
             self.pop_screen()
-        self.update_dataset()
 
     def _section_cycle(self) -> list:
         """Return the ordered list of focusable sections."""
@@ -804,12 +895,11 @@ class SonderaApp(SectionNavMixin, App):
             if trajectory:
                 initial_step = None
                 if step_index is not None:
-                    # Direct deep-link via server-provided step index
                     initial_step = step_index
-                elif jump_to_decision and trajectory.steps:
-                    # Fallback: find first step matching decision type
-                    for i, step in enumerate(trajectory.steps):
-                        if step.adjudication.decision == jump_to_decision:
+                elif jump_to_decision and trajectory.events:
+                    steps = correlate_events(trajectory.events)
+                    for i, s in enumerate(steps):
+                        if s.decision == jump_to_decision:
                             initial_step = i
                             break
                 self.push_screen(
@@ -819,3 +909,8 @@ class SonderaApp(SectionNavMixin, App):
                 self.notify("Trajectory not found", severity="error")
         except Exception as e:
             self.notify(f"Failed to load trajectory: {e}", severity="error")
+
+
+if __name__ == "__main__":
+    app = SonderaApp()
+    app.run()

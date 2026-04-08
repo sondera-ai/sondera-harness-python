@@ -11,8 +11,9 @@ import inspect
 import json
 from typing import Any
 
-from sondera.harness import TrajectoryStorage
+from sondera.harness import Harness
 from sondera.tui.ai.context import _enum_str
+from sondera.tui.events import EventStep, correlate_events, violations_from_events
 from sondera.types import Agent, Decision
 
 _APP_ERROR = {"error": "App reference not available."}
@@ -387,33 +388,6 @@ def get_tool_declarations() -> list[dict[str, Any]]:
     ]
 
 
-def get_sdk_tools() -> list:
-    """Convert OpenAI tool declarations to SDK Tool objects for agent registration."""
-    from sondera import Parameter, Tool
-
-    tools = []
-    for decl in get_tool_declarations():
-        func = decl["function"]
-        props = func.get("parameters", {}).get("properties", {})
-        sdk_params = [
-            Parameter(
-                name=name,
-                description=prop.get("description", ""),
-                type=prop.get("type", "string"),
-            )
-            for name, prop in props.items()
-        ]
-        tools.append(
-            Tool(
-                id=func["name"],
-                name=func["name"],
-                description=func.get("description", ""),
-                parameters=sdk_params,
-            )
-        )
-    return tools
-
-
 # ---------------------------------------------------------------------------
 # Agent name resolution
 # ---------------------------------------------------------------------------
@@ -444,12 +418,12 @@ def _resolve_agent_id(
     # 2. Exact name (case-insensitive)
     needle_lower = needle.lower()
     for agent in agents:
-        if agent.name.lower() == needle_lower:
+        if agent.id.lower() == needle_lower:
             return agent.id
 
     # 3. Substring match on name
     for agent in agents:
-        if needle_lower in agent.name.lower():
+        if needle_lower in agent.id.lower():
             return agent.id
 
     # 4. Prefix match on ID
@@ -468,7 +442,7 @@ def _resolve_agent_id(
 async def execute_tool(
     name: str,
     args: dict[str, Any],
-    harness: TrajectoryStorage,
+    harness: Harness,
     agents: list[Agent],
     agents_map: dict[str, str],
     adjudications: list[Any] | None = None,
@@ -535,9 +509,9 @@ def _exec_list_agents(
         "count": len(agents),
         "agents": [
             {
-                "name": a.name,
+                "name": a.id,
                 "id": a.id,
-                "tools": len(a.tools),
+                "tools": 0,
             }
             for a in agents
         ],
@@ -563,7 +537,7 @@ def _resolve_trajectory_id(prefix: str, adjudications: list[Any]) -> str | None:
 
 async def _exec_get_trajectory(
     args: dict[str, Any],
-    harness: TrajectoryStorage,
+    harness: Harness,
     agents: list[Agent],
     agents_map: dict[str, str],
     adjudications: list[Any] | None = None,
@@ -589,7 +563,7 @@ async def _exec_get_trajectory(
 
 async def _exec_list_agent_trajectories(
     args: dict[str, Any],
-    harness: TrajectoryStorage,
+    harness: Harness,
     agents: list[Agent],
     agents_map: dict[str, str],
 ) -> dict[str, Any]:
@@ -614,7 +588,7 @@ async def _exec_list_agent_trajectories(
 
 async def _exec_list_violations(
     args: dict[str, Any],
-    harness: TrajectoryStorage,
+    harness: Harness,
     agents: list[Agent],
     agents_map: dict[str, str],
 ) -> dict[str, Any]:
@@ -627,13 +601,11 @@ async def _exec_list_violations(
         if agent_id is None:
             return {"error": f"No agent found matching '{name_or_id}'"}
 
-    # Strategy 1: server-side adjudication records
-    records, _ = await harness.list_adjudications(
+    # Strategy 1: server-side adjudication records (returns Event objects)
+    adj_events, _ = await harness.list_adjudications(
         agent_id=agent_id, page_size=min(page_size, 100)
     )
-    violations = [
-        r for r in records if r.adjudication.decision.value in ("deny", "escalate")
-    ]
+    violations = violations_from_events(adj_events)
     if violations:
         return {
             "count": len(violations),
@@ -649,7 +621,12 @@ async def _exec_list_violations(
             page_size=20,
         )
         violated_tids = [
-            t.id for t in trajectories if t.deny_count > 0 or t.escalate_count > 0
+            t.name
+            for t in trajectories
+            if any(
+                s.decision in (Decision.Deny, Decision.Escalate)
+                for s in correlate_events(t.events or [])
+            )
         ]
         if violated_tids:
             step_violations: list[dict[str, Any]] = []
@@ -657,21 +634,21 @@ async def _exec_list_violations(
                 full = await harness.get_trajectory(tid)
                 if full is None:
                     continue
-                a_name = agents_map.get(full.agent_id, full.agent_id[:16])
-                for i, step in enumerate(full.steps):
-                    decision = _enum_str(step.adjudication.decision).upper()
-                    if decision in ("DENY", "ESCALATE"):
+                full_agent_id = full.agent
+                a_name = agents_map.get(full_agent_id, full_agent_id[:16])
+                event_steps = correlate_events(full.events or [])
+                for i, step in enumerate(event_steps):
+                    if step.decision in (Decision.Deny, Decision.Escalate):
+                        decision_str = _enum_str(step.decision).upper()
                         v: dict[str, Any] = {
-                            "decision": decision,
+                            "decision": decision_str,
                             "agent": a_name,
-                            "reason": step.adjudication.reason[:_TEXT_CAP],
+                            "reason": step.reason[:_TEXT_CAP],
                             "trajectory_id": tid,
                             "step_index": i,
                         }
-                        if step.adjudication.policies:
-                            v["policies"] = [
-                                p.id for p in step.adjudication.policies[:5]
-                            ]
+                        if step.policies:
+                            v["policies"] = [p.policy_id for p in step.policies[:5]]
                         step_violations.append(v)
                         if len(step_violations) >= page_size:
                             break
@@ -830,7 +807,7 @@ def _exec_navigate_to_agent(
 
     app.push_screen(AgentScreen(agent, **kwargs))
     app._ask_state.focus_pending = True
-    return {"navigated": agent.name, "screen": "agent_detail"}
+    return {"navigated": agent.id, "screen": "agent_detail"}
 
 
 @_require_app
@@ -873,15 +850,18 @@ async def _exec_navigate_to_trajectory(
         _enrich_step_groups,
     )
 
+    # Correlate events once for both denial lookup and navigation
+    event_steps = correlate_events(trajectory.events or [])
+    groups = _build_step_groups(event_steps)
+
     # If denial_number is set, resolve it to a display index
     if denial_number is not None:
         dn = int(denial_number)
-        groups = _build_step_groups(trajectory.steps)
-        _enrich_step_groups(groups, trajectory.steps)
+        _enrich_step_groups(groups, event_steps)
         violations = [
             g.display_index
             for g in groups
-            if g.decision in (Decision.DENY, Decision.ESCALATE)
+            if g.decision in (Decision.Deny, Decision.Escalate)
         ]
         if not violations:
             return {"error": "No violations in this trajectory."}
@@ -896,26 +876,26 @@ async def _exec_navigate_to_trajectory(
     current_screen = app.screen
     if (
         isinstance(current_screen, TrajectoryScreen)
-        and current_screen.trajectory.id == trajectory.id
+        and current_screen.trajectory.name == trajectory.name
         and display_index is not None
     ):
         _deferred_step_navigate(current_screen, display_index, app)
     else:
         # For new screens, convert display index to raw step index
         raw_step: int | None = None
-        if display_index is not None:
-            groups = _build_step_groups(trajectory.steps)
-            if 0 <= display_index < len(groups):
-                raw_step = groups[display_index].step_indices[0]
+        if display_index is not None and 0 <= display_index < len(groups):
+            raw_step = groups[display_index].step_indices[0]
         app.push_screen(TrajectoryScreen(trajectory, initial_step=raw_step))
         app._ask_state.focus_pending = True
 
-    agent_name = agents_map.get(trajectory.agent_id, trajectory.agent_id[:16])
+    t_agent_id = trajectory.agent
+    agent_name = agents_map.get(t_agent_id, t_agent_id[:16])
+    t_events = trajectory.events or []
     result: dict[str, Any] = {
-        "navigated": trajectory.id,
+        "navigated": trajectory.name,
         "agent": agent_name,
         "screen": "trajectory_detail",
-        "steps": len(trajectory.steps),
+        "steps": len(t_events),
     }
     if denial_number is not None:
         result["jumped_to_denial"] = int(denial_number)
@@ -1031,18 +1011,13 @@ async def _exec_navigate_to_violation(
     violated_tid: str | None = None
     initial_step: int | None = None
     try:
-        records, _ = await harness.list_adjudications(agent_id=agent_id, page_size=50)
-        violation = next(
-            (
-                r
-                for r in records
-                if r.adjudication.decision.value in ("deny", "escalate")
-            ),
-            None,
+        adj_events, _ = await harness.list_adjudications(
+            agent_id=agent_id, page_size=50
         )
-        if violation:
-            violated_tid = violation.trajectory_id
-            initial_step = violation.step_index
+        viol_records = violations_from_events(adj_events)
+        if viol_records:
+            violated_tid = viol_records[0].trajectory_id
+            initial_step = viol_records[0].step_index
     except Exception as e:
         errors.append(f"adjudications: {e}")
 
@@ -1054,8 +1029,9 @@ async def _exec_navigate_to_violation(
                 agent_id=agent_id, page_size=20
             )
             for t in trajectories:
-                if t.deny_count > 0 or t.escalate_count > 0:
-                    violated_tid = t.id
+                steps = correlate_events(t.events or [])
+                if any(s.decision in (Decision.Deny, Decision.Escalate) for s in steps):
+                    violated_tid = t.name
                     break
         except Exception as e:
             errors.append(f"list_trajectories: {e}")
@@ -1066,13 +1042,14 @@ async def _exec_navigate_to_violation(
     if violated_tid is None and trajectories:
         try:
             for t in trajectories[:10]:
-                full = await harness.get_trajectory(t.id)
+                tid = t.name
+                full = await harness.get_trajectory(tid)
                 if full is None:
                     continue
-                for i, step in enumerate(full.steps):
-                    decision = _enum_str(step.adjudication.decision).upper()
-                    if decision in ("DENY", "ESCALATE"):
-                        violated_tid = t.id
+                event_steps = correlate_events(full.events or [])
+                for i, step in enumerate(event_steps):
+                    if step.decision in (Decision.Deny, Decision.Escalate):
+                        violated_tid = tid
                         initial_step = i
                         break
                 if violated_tid:
@@ -1091,11 +1068,11 @@ async def _exec_navigate_to_violation(
     if trajectory is None:
         return {"error": f"Could not load trajectory {violated_tid}."}
 
-    # If we don't have a step index yet, scan steps
+    # If we don't have a step index yet, scan events
     if initial_step is None:
-        for i, step in enumerate(trajectory.steps):
-            decision = _enum_str(step.adjudication.decision).upper()
-            if decision in ("DENY", "ESCALATE"):
+        event_steps = correlate_events(trajectory.events or [])
+        for i, step in enumerate(event_steps):
+            if step.decision in (Decision.Deny, Decision.Escalate):
                 initial_step = i
                 break
 
@@ -1105,12 +1082,10 @@ async def _exec_navigate_to_violation(
     app._ask_state.focus_pending = True
 
     return {
-        "navigated": trajectory.id,
+        "navigated": trajectory.name,
         "agent": agent_name,
         "screen": "trajectory_detail",
         "violation_step": initial_step,
-        "deny_count": trajectory.deny_count,
-        "escalate_count": trajectory.escalate_count,
     }
 
 
@@ -1206,6 +1181,22 @@ def _exec_preview_setting_update(
 # Serialization helpers
 # ---------------------------------------------------------------------------
 
+
+def _count_decisions(
+    event_steps: list[EventStep],
+) -> tuple[int, int, int]:
+    """Count (allow, deny, escalate) decisions across EventSteps."""
+    allow_n = deny_n = escalate_n = 0
+    for s in event_steps:
+        if s.decision == Decision.Deny:
+            deny_n += 1
+        elif s.decision == Decision.Escalate:
+            escalate_n += 1
+        else:
+            allow_n += 1
+    return allow_n, deny_n, escalate_n
+
+
 _MAX_STEPS = 80
 _TEXT_CAP = 500
 # Budget (chars) for the serialized trajectory JSON sent back to the model.
@@ -1222,26 +1213,26 @@ def _serialize_adjudicated_trajectory(
     For large trajectories, ALLOW steps get trimmed to stay within budget.
     """
 
-    agent_name = agents_map.get(t.agent_id, t.agent_id[:16])
+    t_agent_id = t.agent
+    agent_name = agents_map.get(t_agent_id, t_agent_id[:16])
+    event_steps = correlate_events(t.events or [])
+    allow_n, deny_n, escalate_n = _count_decisions(event_steps)
     result: dict[str, Any] = {
-        "id": t.id,
+        "id": t.name,
         "agent": agent_name,
-        "agent_id": t.agent_id,
-        "status": _enum_str(t.status),
-        "step_count": len(t.steps),
-        "deny_count": t.deny_count,
-        "escalate_count": t.escalate_count,
-        "allow_count": t.allow_count,
+        "agent_id": t_agent_id,
+        "status": str(t.status or "unknown").lower(),
+        "step_count": len(event_steps),
+        "deny_count": deny_n,
+        "escalate_count": escalate_n,
+        "allow_count": allow_n,
     }
-    if t.duration is not None:
-        result["duration_seconds"] = round(t.duration, 1)
 
     # Separate violation steps (always included in full) from allow steps
     violation_indices: list[int] = []
     allow_indices: list[int] = []
-    for i, step in enumerate(t.steps):
-        decision = _enum_str(step.adjudication.decision).upper()
-        if decision in ("DENY", "ESCALATE"):
+    for i, step in enumerate(event_steps):
+        if step.decision in (Decision.Deny, Decision.Escalate):
             violation_indices.append(i)
         else:
             allow_indices.append(i)
@@ -1250,17 +1241,17 @@ def _serialize_adjudicated_trajectory(
     steps: list[dict[str, Any]] = []
     budget_used = 0
     for i in violation_indices[:40]:
-        s = _serialize_adjudicated_step(i + 1, t.steps[i])
+        s = _serialize_event_step(i + 1, event_steps[i])
         steps.append(s)
     budget_used = len(json.dumps(steps))
 
     # Fill remaining budget with allow steps (abbreviated for large trajectories)
-    is_large = len(t.steps) > 40
+    is_large = len(event_steps) > 40
     text_cap = 150 if is_large else _TEXT_CAP
     allow_limit = min(len(allow_indices), _MAX_STEPS - len(steps))
 
     for i in allow_indices[:allow_limit]:
-        s = _serialize_adjudicated_step(i + 1, t.steps[i], text_cap=text_cap)
+        s = _serialize_event_step(i + 1, event_steps[i], text_cap=text_cap)
         entry_size = len(json.dumps(s))
         if budget_used + entry_size > _TRAJECTORY_BUDGET:
             break
@@ -1270,7 +1261,7 @@ def _serialize_adjudicated_trajectory(
     # Sort by step number so the model sees chronological order
     steps.sort(key=lambda s: s.get("step", 0))
 
-    omitted = len(t.steps) - len(steps)
+    omitted = len(event_steps) - len(steps)
     if omitted > 0:
         steps.append({"note": f"... {omitted} more steps omitted (mostly ALLOW)"})
     result["steps"] = steps
@@ -1282,78 +1273,63 @@ def _serialize_adjudicated_trajectory(
     return result
 
 
-def _serialize_adjudicated_step(
-    num: int, step: Any, text_cap: int = _TEXT_CAP
+def _serialize_event_step(
+    num: int, step: EventStep, text_cap: int = _TEXT_CAP
 ) -> dict[str, Any]:
-    """Serialize a single AdjudicatedStep."""
-    adj = step.adjudication
-    decision = _enum_str(adj.decision).upper()
+    """Serialize a single EventStep."""
+    decision = _enum_str(step.decision).upper()
     s: dict[str, Any] = {
         "step": num,
         "decision": decision,
-        "stage": _enum_str(step.step.stage),
-        "role": _enum_str(step.step.role),
+        "stage": step.stage,
+        "role": step.role,
     }
     # Content preview
-    content = step.step.content
-    if isinstance(content, dict):
-        ctype = content.get("content_type", "")
-        if ctype == "prompt":
-            s["content"] = str(content.get("text", ""))[:text_cap]
-        elif ctype == "tool_request":
-            s["tool_id"] = content.get("tool_id", "")
-            args_str = str(content.get("args", {}))[:text_cap]
-            s["args"] = args_str
-        elif ctype == "tool_response":
-            s["tool_id"] = content.get("tool_id", "")
-            s["response"] = str(content.get("response", ""))[:text_cap]
-    elif hasattr(content, "content_type"):
-        ctype = content.content_type
-        if ctype == "prompt":
-            s["content"] = str(content.text)[:text_cap]
-        elif ctype == "tool_request":
-            s["tool_id"] = content.tool_id
-            s["args"] = str(content.args)[:text_cap]
-        elif ctype == "tool_response":
-            s["tool_id"] = content.tool_id
-            s["response"] = str(content.response)[:text_cap]
+    ctype = step.content_type
+    if ctype == "prompt":
+        s["content"] = step.text[:text_cap]
+    elif ctype == "tool_request":
+        s["tool_id"] = step.tool_id
+        s["args"] = str(step.args)[:text_cap]
+    elif ctype == "tool_response":
+        s["tool_id"] = step.tool_id
+        s["response"] = str(step.response)[:text_cap]
 
     if decision != "ALLOW":
-        s["reason"] = adj.reason[:text_cap]
-        if adj.policies:
-            s["policies"] = [p.id for p in adj.policies[:5]]
+        s["reason"] = step.reason[:text_cap]
+        if step.policies:
+            s["policies"] = [p.policy_id for p in step.policies[:5]]
 
     return s
 
 
 def _serialize_trajectory_summary(t: Any) -> dict[str, Any]:
     """Serialize a Trajectory (from list) to a summary dict."""
+    event_steps = correlate_events(t.events or [])
+    _allow_n, deny_n, escalate_n = _count_decisions(event_steps)
     result: dict[str, Any] = {
-        "id": t.id,
-        "status": _enum_str(t.status),
-        "steps": t.step_count,
+        "id": t.name,
+        "status": str(t.status or "unknown").lower(),
+        "steps": len(t.events) if t.events else (t.event_count or 0),
     }
-    if t.deny_count > 0:
-        result["denied"] = t.deny_count
-    if t.escalate_count > 0:
-        result["escalated"] = t.escalate_count
-    if t.duration is not None:
-        result["duration_seconds"] = round(t.duration, 1)
+    if deny_n > 0:
+        result["denied"] = deny_n
+    if escalate_n > 0:
+        result["escalated"] = escalate_n
     return result
 
 
 def _serialize_violation(record: Any, agents_map: dict[str, str]) -> dict[str, Any]:
-    """Serialize an AdjudicationRecord to a violation dict."""
+    """Serialize a ViolationRecord to a violation dict."""
     agent_name = agents_map.get(record.agent_id, record.agent_id[:16])
-    adj = record.adjudication
     result: dict[str, Any] = {
-        "decision": _enum_str(adj.decision).upper(),
+        "decision": _enum_str(record.decision).upper(),
         "agent": agent_name,
-        "reason": adj.reason[:_TEXT_CAP],
+        "reason": (record.reason or "")[:_TEXT_CAP],
         "trajectory_id": record.trajectory_id,
     }
-    if adj.policies:
-        result["policies"] = [p.id for p in adj.policies[:5]]
+    if record.policies:
+        result["policies"] = [p.policy_id for p in record.policies[:5]]
     if record.step_index is not None:
         result["step_index"] = record.step_index
     return result
@@ -1363,18 +1339,6 @@ def _serialize_agent(agent: Any) -> dict[str, Any]:
     """Serialize an Agent to a detail dict."""
     result: dict[str, Any] = {
         "id": agent.id,
-        "name": agent.name,
+        "name": agent.id,
     }
-    if agent.description:
-        result["description"] = agent.description[:_TEXT_CAP]
-    if agent.instruction:
-        result["instruction"] = agent.instruction[:_TEXT_CAP]
-    if agent.tools:
-        result["tools"] = [
-            {
-                "name": t.name,
-                "description": t.description[:200] if t.description else "",
-            }
-            for t in agent.tools
-        ]
     return result

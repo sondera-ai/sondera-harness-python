@@ -6,7 +6,7 @@ import logging
 from collections.abc import Callable
 from typing import Any, get_type_hints
 
-from sondera.types import Agent, Parameter, SourceCode, Tool
+from sondera.types import Agent, AgentCard, Parameter, ReActAgentCard, SourceCode, Tool
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +53,7 @@ def _analyze_function_parameters(func: Callable) -> list[Parameter]:
                     break
 
         parameters.append(
-            Parameter(name=param_name, description=description, type=param_type)
+            Parameter(name=param_name, description=description, param_type=param_type)
         )
 
     return parameters
@@ -190,7 +190,6 @@ def format_strands_agent(agent: Any) -> Agent:
     agent_name = getattr(agent, "name", "strands-agent")
     agent_id = agent_name
     system_prompt = getattr(agent, "system_prompt", "")
-    description = getattr(agent, "description", f"Strands agent: {agent_name}")
 
     # Extract tools
     tools = []
@@ -236,9 +235,11 @@ def format_strands_agent(agent: Any) -> Agent:
 
     return Agent(
         id=agent_id,
-        provider_id="strands",
-        name=agent_name,
-        instruction=system_prompt,
-        description=description,
-        tools=tools,
+        provider="strands",
+        card=AgentCard.react(
+            ReActAgentCard(
+                system_instruction=system_prompt,
+                tools=tools,
+            )
+        ),
     )

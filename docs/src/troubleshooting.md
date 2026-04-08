@@ -154,7 +154,8 @@ Use the harness directly in a test:
 
 ```python
 import pytest
-from sondera import CedarPolicyHarness, Agent, Decision, Tool, ToolRequestContent, Stage, Role
+from sondera import CedarPolicyHarness
+from sondera import Agent, Decision, Event, Tool, ToolCall
 from sondera.harness.cedar.schema import agent_to_cedar_schema
 
 @pytest.fixture
@@ -176,19 +177,21 @@ async def harness():
 
 @pytest.mark.asyncio
 async def test_blocks_rm_rf(harness):
-    result = await harness.adjudicate(
-        Stage.PRE_TOOL, Role.MODEL,
-        ToolRequestContent(tool_id="Bash", args={"command": "rm -rf /"})
+    event = Event(
+        agent=harness.agent, trajectory_id=harness.trajectory_id,
+        event=ToolCall(tool="Bash", arguments='{"command": "rm -rf /"}'),
     )
-    assert result.decision == Decision.DENY
+    result = await harness.adjudicate(event)
+    assert result.decision == Decision.Deny
 
 @pytest.mark.asyncio
 async def test_allows_safe_commands(harness):
-    result = await harness.adjudicate(
-        Stage.PRE_TOOL, Role.MODEL,
-        ToolRequestContent(tool_id="Bash", args={"command": "ls -la"})
+    event = Event(
+        agent=harness.agent, trajectory_id=harness.trajectory_id,
+        event=ToolCall(tool="Bash", arguments='{"command": "ls -la"}'),
     )
-    assert result.decision == Decision.ALLOW
+    result = await harness.adjudicate(event)
+    assert result.decision == Decision.Allow
 ```
 
 Run with:

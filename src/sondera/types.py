@@ -1,447 +1,115 @@
-"""Sondera SDK type definitions for agent interoperability and policy evaluation."""
+"""Re-export all ``sondera_harness_client`` types through the ``sondera`` package.
 
-import uuid
-from datetime import UTC, datetime
-from enum import Enum
-from typing import Any, Literal
-
-from pydantic import BaseModel, ConfigDict, Field, model_validator
-from pydantic.alias_generators import to_camel
-
-
-class Model(BaseModel):
-    """Base model for all Sondera SDK types."""
-
-    model_config = ConfigDict(
-        alias_generator=to_camel,
-        populate_by_name=True,
-        from_attributes=True,
-    )
-
-
-class Parameter(Model):
-    """
-    Parameter object allows the definition of input and output data types.
-
-    Simple parameter type theory for now.
-    """
-
-    name: str
-    """ Name of the parameter. For human-readable display or metadata.
-    """
-    description: str
-    """ Description of the parameter. For human-readable display or metadata.
-    """
-    type: str
-    """ Type of the parameter.
-    """
-
-
-class SourceCode(Model):
-    language: str
-    code: str
-
-
-class Tool(Model):
-    id: str | None = None
-    """ Optional unique identifier for the tool. Auto-generated if not provided.
-    """
-    name: str
-    """ Name of the tool. For human-readable display or metadata.
-    """
-    description: str
-    """ Description of the tool. For human-readable display or metadata.
-    """
-    parameters: list[Parameter]
-    """ The parameters that are used by the tool.
-    """
-    parameters_json_schema: str | None = None
-    """ JSON schema for the tool parameters.
-    """
-    response: str | None = None
-    """ The type that is returned by the tool.
-    """
-    response_json_schema: str | None = None
-    """ JSON schema for the tool response.
-    """
-    source: SourceCode | None = None
-    """ The source of the tool if available.
-    """
-
-
-class Agent(Model):
-    id: str
-    """ Unique identifier for the agent.
-    """
-    provider_id: str
-    """ Identifier for the provider of the agent.
-    """
-    name: str
-    """ Name of the agent. For human-readable display or metadata.
-    """
-    description: str
-    """ Description of the agent. For human-readable display or metadata.
-    """
-    instruction: str
-    """ Instruction or goal of the agent.
-    """
-    tools: list[Tool]
-
-
-class TrajectoryStatus(Enum):
-    """Status of the trajectory."""
-
-    UNKNOWN = "unknown"
-    PENDING = "pending"
-    RUNNING = "running"
-    COMPLETED = "completed"
-    SUSPENDED = "suspended"
-    FAILED = "failed"
-
-
-class Stage(Enum):
-    """Lifecycle stage of the step."""
-
-    PRE_RUN = "pre_run"
-    PRE_MODEL = "pre_model"
-    POST_MODEL = "post_model"
-    PRE_TOOL = "pre_tool"
-    POST_TOOL = "post_tool"
-    POST_RUN = "post_run"
-
-
-class Role(Enum):
-    """Role of the step."""
-
-    USER = "user"
-    MODEL = "model"
-    TOOL = "tool"
-    SYSTEM = "system"
-
-
-class TrajectoryStep(Model):
-    role: Role
-    """ Role of the step.
-    """
-    stage: Stage
-    """ Stage of the step.
-    """
-    created_at: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))
-    """ Created at timestamp.
-    """
-    content: Any
-    """ Content of the step.
-    """
-
-
-class DecisionSummary(Model):
-    """Summary of adjudication decisions for a trajectory."""
-
-    allow_count: int = 0
-    """Number of steps with ALLOW decision."""
-    deny_count: int = 0
-    """Number of steps with DENY decision."""
-    escalate_count: int = 0
-    """Number of steps with ESCALATE decision."""
-
-
-class Trajectory(Model):
-    id: str = Field(default_factory=lambda: f"traj-{uuid.uuid4()}")
-    """ Unique identifier for the trajectory.
-    """
-    agent_id: str = Field(default_factory=lambda: "agent-1")
-    """ Identifier for the agent that created the trajectory.
-    """
-    status: TrajectoryStatus = Field(default=TrajectoryStatus.PENDING)
-    metadata: dict[str, Any] = Field(default_factory=dict)
-    """ Metadata of the trajectory.
-    """
-    created_at: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))
-    """ Created at timestamp.
-    """
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))
-    """ Updated at timestamp.
-    """
-    started_at: datetime | None = Field(default=None)
-    """ Started at timestamp.
-    """
-    ended_at: datetime | None = Field(default=None)
-    """ Ended at timestamp.
-    """
-    steps: list[TrajectoryStep] = Field(default_factory=list)
-    raw_step_count: int | None = Field(default=None)
-    """Server-reported step count from list responses. None when not reported."""
-    decision_summary: DecisionSummary | None = Field(default=None)
-    """Server-reported decision counts from list responses. None when not reported."""
-    session_id: str | None = Field(default=None)
-    """Groups trajectories belonging to the same conversation session.
-    All trajectories with the same session_id form an ordered sequence of turns."""
-
-    @property
-    def duration(self) -> float | None:
-        """Calculate trajectory duration in seconds."""
-        if self.started_at and self.ended_at:
-            return (self.ended_at - self.started_at).total_seconds()
-        return None
-
-    @property
-    def step_count(self) -> int:
-        """Get the total number of steps.
-
-        Returns len(steps) when steps are loaded (get_trajectory),
-        otherwise the server-reported raw_step_count from list_trajectories.
-        """
-        if self.steps:
-            return len(self.steps)
-        if self.raw_step_count is not None:
-            return self.raw_step_count
-        return 0
-
-    @property
-    def deny_count(self) -> int:
-        """Count of denied steps. Uses decision_summary when available."""
-        if self.decision_summary is not None:
-            return self.decision_summary.deny_count
-        return sum(
-            1
-            for step in self.steps
-            if (adj := getattr(step, "adjudication", None)) is not None
-            and adj.decision == Decision.DENY
-        )
-
-    @property
-    def escalate_count(self) -> int:
-        """Count of escalated steps. Uses decision_summary when available."""
-        if self.decision_summary is not None:
-            return self.decision_summary.escalate_count
-        return sum(
-            1
-            for step in self.steps
-            if (adj := getattr(step, "adjudication", None)) is not None
-            and adj.decision == Decision.ESCALATE
-        )
-
-    @property
-    def allow_count(self) -> int:
-        """Count of allowed steps. Uses decision_summary when available."""
-        if self.decision_summary is not None:
-            return self.decision_summary.allow_count
-        return sum(
-            1
-            for step in self.steps
-            if (adj := getattr(step, "adjudication", None)) is not None
-            and adj.decision == Decision.ALLOW
-        )
-
-    @property
-    def has_violations(self) -> bool:
-        """Check if trajectory has any denied or escalated steps."""
-        return self.deny_count > 0 or self.escalate_count > 0
-
-    @property
-    def is_completed(self) -> bool:
-        """Check if trajectory is in a terminal state."""
-        return self.status in [TrajectoryStatus.COMPLETED, TrajectoryStatus.FAILED]
-
-    @property
-    def is_active(self) -> bool:
-        """Check if trajectory is currently running."""
-        return self.status == TrajectoryStatus.RUNNING
-
-    def get_steps_by_role(self, role: Role) -> list[TrajectoryStep]:
-        """Get all steps with a specific role."""
-        return [step for step in self.steps if step.role == role]
-
-    def get_steps_by_stage(self, stage: Stage) -> list[TrajectoryStep]:
-        """Get all steps at a specific stage."""
-        return [step for step in self.steps if step.stage == stage]
-
-
-class PolicyEngineMode(Enum):
-    """Policy engine mode."""
-
-    MONITOR = "monitor"
-    """Monitor policy. Run policies but allow all actions."""
-    GOVERN = "govern"
-    """Govern policy on all actions."""
-
-
-class Decision(Enum):
-    """Decision of the adjudication."""
-
-    ALLOW = "allow"
-    DENY = "deny"
-    ESCALATE = "escalate"
-
-
-class Check(Model):
-    """Single guardrail check result."""
-
-    name: str
-    """Name of the guardrail check."""
-    flagged: bool
-    """Whether the check was flagged."""
-    message: str | None = None
-    """Optional message describing the check result."""
-
-
-class GuardrailContext(Model):
-    """Aggregated guardrail check results."""
-
-    checks: dict[str, Check] = Field(default_factory=dict)
-    """Map of check name to check result."""
-
-
-class PolicyMetadata(Model):
-    """Metadata about a policy that contributed to an adjudication decision."""
-
-    id: str
-    """Unique identifier of the policy."""
-    description: str
-    """Human-readable description from the policy's @description annotation."""
-    escalate: bool = False
-    """Whether this policy requires escalation to a human or other oracle to decide the final verdict."""
-    escalate_arg: str = ""
-    """The argument passed to @escalate, if any."""
-    custom: dict[str, str] = Field(default_factory=dict)
-    """Custom key-value metadata from the policy's annotations."""
-
-    def __str__(self) -> str:
-        parts = [f"[{self.id}]"]
-        if self.description:
-            parts.append(self.description)
-        if self.escalate:
-            parts.append(
-                f"(escalate: {self.escalate_arg})"
-                if self.escalate_arg
-                else "(escalate)"
-            )
-        if self.custom:
-            tags = ", ".join(f"{k}={v}" for k, v in self.custom.items())
-            parts.append(f"({tags})")
-        return " ".join(parts)
-
-
-class Adjudication(Model):
-    """Result of the adjudication."""
-
-    decision: Decision
-    """Whether the input is allowed."""
-    reason: str
-    """Reason for the adjudication decision."""
-    policies: list[PolicyMetadata] = Field(default_factory=list)
-    """Policies that determined this decision. Each entry contains the policy's
-    id, description (from @description annotation), escalation info, and custom metadata."""
-
-
-class AdjudicatedStep(Model):
-    """Result of the adjudicated input."""
-
-    mode: PolicyEngineMode
-    """Mode of the adjudication."""
-    adjudication: Adjudication
-    """Adjudication of the input."""
-    step: TrajectoryStep
-    """Step of the adjudication."""
-    guardrails: GuardrailContext | None = None
-    """Guardrail check results for this step."""
-
-    @property
-    def message(self) -> str:
-        """Get the adjudication reason in a friendly format."""
-        decision = self.adjudication.decision.value.capitalize()
-        return f"{decision}: {self.adjudication.reason}"
-
-
-class AdjudicatedTrajectory(Trajectory):
-    """Adjudicated trajectory with annotated steps."""
-
-    steps: list[AdjudicatedStep] = Field(default_factory=list)  # type: ignore[assignment]
-    """Steps of the adjudicated trajectory."""
-
-    @model_validator(mode="after")
-    def _compute_decision_summary(self) -> "AdjudicatedTrajectory":
-        """Auto-compute decision_summary from steps when the server doesn't provide one."""
-        if self.decision_summary is None and self.steps:
-            self.decision_summary = DecisionSummary(
-                allow_count=sum(
-                    1 for s in self.steps if s.adjudication.decision == Decision.ALLOW
-                ),
-                deny_count=sum(
-                    1 for s in self.steps if s.adjudication.decision == Decision.DENY
-                ),
-                escalate_count=sum(
-                    1
-                    for s in self.steps
-                    if s.adjudication.decision == Decision.ESCALATE
-                ),
-            )
-        return self
-
-
-class ModelMetadata(Model):
-    """Metadata about a model invocation for a trajectory step."""
-
-    model_name: str | None = None
-    """Name or identifier of the model (e.g., "gpt-4o", "gemini-2.5-flash")."""
-    input_tokens: int | None = None
-    """Number of input tokens consumed."""
-    output_tokens: int | None = None
-    """Number of output tokens generated."""
-    latency_ms: int | None = None
-    """Latency in milliseconds for the model call."""
-
-
-class PromptContent(Model):
-    """Prompt content type for trajectory steps."""
-
-    content_type: Literal["prompt"] = "prompt"
-    text: str
-
-
-class ToolRequestContent(Model):
-    """Tool request content type for trajectory steps."""
-
-    content_type: Literal["tool_request"] = "tool_request"
-    tool_id: str
-    args: dict[str, Any]
-
-
-class ToolResponseContent(Model):
-    """Tool response content type for trajectory steps."""
-
-    content_type: Literal["tool_response"] = "tool_response"
-    tool_id: str
-    response: Any
-
-
-Content = PromptContent | ToolRequestContent | ToolResponseContent
-"""Union type representing the content of a trajectory step.
-
-Corresponds to the Content protobuf message which uses a oneof field
-to represent different types of step content:
-- PromptContent: Text prompts or messages
-- ToolRequestContent: Requests to execute tools
-- ToolResponseContent: Results from tool execution
+External consumers should import types from ``sondera`` (or ``sondera.types``)
+rather than reaching into ``sondera_harness_client`` directly.
 """
 
+from sondera_harness_client import (
+    Actor,
+    ActorType,
+    Adjudicated,
+    Agent,
+    AgentCard,
+    AgentCardMetadata,
+    AgentList,
+    Analytics,
+    Causality,
+    CodingAgentCard,
+    CodingAgentCardAsset,
+    CodingAgentCardCapabilities,
+    CodingAgentCardSettingsSnapshot,
+    Completed,
+    Decision,
+    Event,
+    EventList,
+    Failed,
+    FileOperation,
+    FileOperationResult,
+    FileOpType,
+    GuardrailResults,
+    HarnessClient,
+    Mode,
+    Parameter,
+    PolicyMetadata,
+    Prompt,
+    PromptRole,
+    ReActAgentCard,
+    Resumed,
+    Scanned,
+    ShellCommand,
+    ShellCommandOutput,
+    SignatureGuardrailMatch,
+    SignatureGuardrailResult,
+    Snapshot,
+    SourceCode,
+    Started,
+    Steering,
+    Suspended,
+    Terminated,
+    Thought,
+    Tool,
+    ToolCall,
+    ToolOutput,
+    Trajectory,
+    TrajectoryEventNotification,
+    TrajectoryEventStream,
+    TrajectoryList,
+    TrajectoryStatus,
+    WebFetch,
+    WebFetchOutput,
+)
 
-class AdjudicationRecord(Model):
-    """Record of an adjudication event from the harness service.
-
-    Represents a single adjudication (policy decision) that occurred during
-    agent execution, linking the decision to its agent, trajectory, and step.
-    """
-
-    agent_id: str = Field(description="ID of the agent that triggered the adjudication")
-    trajectory_id: str = Field(
-        description="ID of the trajectory containing the adjudicated step"
-    )
-    step_id: str = Field(description="ID of the step that was adjudicated")
-    adjudication: Adjudication = Field(
-        description="The adjudication decision and reason"
-    )
-    step_index: int | None = Field(
-        default=None,
-        description="0-based position of the adjudicated step within the trajectory",
-    )
+__all__ = [
+    "Actor",
+    "ActorType",
+    "Adjudicated",
+    "Agent",
+    "AgentCard",
+    "AgentCardMetadata",
+    "AgentList",
+    "Analytics",
+    "Causality",
+    "CodingAgentCard",
+    "CodingAgentCardAsset",
+    "CodingAgentCardCapabilities",
+    "CodingAgentCardSettingsSnapshot",
+    "Completed",
+    "Decision",
+    "Event",
+    "EventList",
+    "Failed",
+    "FileOpType",
+    "FileOperation",
+    "FileOperationResult",
+    "GuardrailResults",
+    "HarnessClient",
+    "Mode",
+    "Parameter",
+    "PolicyMetadata",
+    "Prompt",
+    "PromptRole",
+    "ReActAgentCard",
+    "Resumed",
+    "Scanned",
+    "ShellCommand",
+    "ShellCommandOutput",
+    "SignatureGuardrailMatch",
+    "SignatureGuardrailResult",
+    "Snapshot",
+    "SourceCode",
+    "Started",
+    "Steering",
+    "Suspended",
+    "Terminated",
+    "Thought",
+    "Tool",
+    "ToolCall",
+    "ToolOutput",
+    "Trajectory",
+    "TrajectoryEventNotification",
+    "TrajectoryEventStream",
+    "TrajectoryList",
+    "TrajectoryStatus",
+    "WebFetch",
+    "WebFetchOutput",
+]

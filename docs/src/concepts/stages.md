@@ -273,23 +273,23 @@ when {
 
 Each stage evaluates a specific type of content:
 
-| Type                    | Used at stage | Description               |
-| :---------------------- | :------------ | :------------------------ |
-| **PromptContent**       | PRE_MODEL, POST_MODEL, PRE_RUN, POST_RUN | Text messages |
-| **ToolRequestContent**  | PRE_TOOL | Tool calls with arguments |
-| **ToolResponseContent** | POST_TOOL | Results from tools |
+| Type           | Description               |
+| :------------- | :------------------------ |
+| **Prompt**     | User/assistant text messages |
+| **ToolCall**   | Tool invocations with arguments |
+| **ToolOutput** | Results from tools |
 
 ```python
-from sondera import PromptContent, ToolRequestContent, ToolResponseContent
+from sondera import Prompt, PromptRole, ToolCall, ToolOutput
 
-# Text message (PRE_MODEL, POST_MODEL)
-prompt = PromptContent(text="What's the weather?")
+# User message
+prompt = Prompt(role=PromptRole.User, content="What's the weather?")
 
-# Tool call (PRE_TOOL)
-request = ToolRequestContent(tool_id="weather", args={"location": "SF"})
+# Tool call
+request = ToolCall(tool="weather", arguments='{"location": "SF"}')
 
-# Tool result (POST_TOOL)
-response = ToolResponseContent(tool_id="weather", response={"temp": 72})
+# Tool result
+response = ToolOutput.from_success(call_id="weather", output='{"temp": 72}')
 ```
 
 ---
