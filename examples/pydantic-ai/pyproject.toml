@@ -1,0 +1,34 @@
+[project]
+name = "sondera-examples-pydantic-ai"
+version = "0.1.0"
+description = "Pydantic AI agent examples using Sondera SDK"
+readme = "README.md"
+requires-python = ">=3.12, <3.15"
+dependencies = [
+    "sondera-archetypes",
+    "sondera-harness[pydantic-ai]",
+    "pydantic-ai-slim>=1.75.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pydantic_ai_examples"]
+
+[tool.uv.sources]
+sondera-archetypes = { workspace = true }
+sondera-harness = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+]
+openai = ["pydantic-ai-slim[openai]>=1.75.0"]
+anthropic = ["pydantic-ai-slim[anthropic]>=1.75.0"]
+google = ["pydantic-ai-slim[google]>=1.75.0"]
+all = [
+    "pydantic-ai-slim[openai,anthropic,google]>=1.75.0",
+]

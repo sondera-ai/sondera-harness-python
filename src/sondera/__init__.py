@@ -22,6 +22,7 @@ Framework Integrations:
     - sondera.langgraph: LangGraph middleware
     - sondera.adk: Google ADK plugin
     - sondera.strands: Strands lifecycle hooks
+    - sondera.pydantic: Pydantic AI governed toolset and provider
 
 Example:
     >>> from sondera import CedarPolicyHarness, Agent, AgentCard, ReActAgentCard, Tool

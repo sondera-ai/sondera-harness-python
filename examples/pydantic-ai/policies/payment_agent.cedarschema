@@ -1,0 +1,105 @@
+namespace payment_agent {
+  entity Agent = {
+    name: __cedar::String,
+    provider_id: __cedar::String,
+    tools: Set<Tool>
+  };
+
+  entity Message in [Trajectory] = {
+    content: __cedar::String,
+    role: Role
+  };
+
+  entity Role enum ["user", "model", "system", "tool"];
+
+  entity Tool = {
+    description: __cedar::String,
+    name: __cedar::String
+  };
+
+  entity Trajectory = {
+    step_count: __cedar::Long
+  };
+
+  action "Prompt" appliesTo {
+    principal: [Agent],
+    resource: [Message],
+    context: {}
+  };
+
+  action "get_customer_profile" appliesTo {
+    principal: [Agent],
+    resource: [Trajectory],
+    context: {
+      parameters?: {
+        customer_id: __cedar::String
+      },
+      parameters_json?: __cedar::String,
+      response?: {
+        cc_number?: __cedar::String,
+        customer_id?: __cedar::String,
+        email?: __cedar::String,
+        region?: __cedar::String
+      },
+      response_json?: __cedar::String
+    }
+  };
+
+  action "get_transactions" appliesTo {
+    principal: [Agent],
+    resource: [Trajectory],
+    context: {
+      parameters?: {
+        amount: __cedar::Long,
+        customer_id: __cedar::String
+      },
+      parameters_json?: __cedar::String,
+      response?: {
+        value: Set<{
+          amount?: __cedar::Long,
+          merchant_name?: __cedar::String,
+          transaction_id?: __cedar::String
+        }>
+      },
+      response_json?: __cedar::String
+    }
+  };
+
+  action "initiate_refund" appliesTo {
+    principal: [Agent],
+    resource: [Trajectory],
+    context: {
+      parameters?: {
+        amount: __cedar::Long,
+        transaction_id: __cedar::String
+      },
+      parameters_json?: __cedar::String,
+      response?: {
+        refunded_amount?: __cedar::Long,
+        status?: __cedar::String,
+        transaction_id?: __cedar::String
+      },
+      response_json?: __cedar::String
+    }
+  };
+
+  action "send_email" appliesTo {
+    principal: [Agent],
+    resource: [Trajectory],
+    context: {
+      parameters?: {
+        body: __cedar::String,
+        subject: __cedar::String,
+        to: __cedar::String
+      },
+      parameters_json?: __cedar::String,
+      response?: {
+        body?: __cedar::String,
+        status?: __cedar::String,
+        subject?: __cedar::String,
+        to?: __cedar::String
+      },
+      response_json?: __cedar::String
+    }
+  };
+}
