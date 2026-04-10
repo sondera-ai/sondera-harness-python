@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sondera-harness"
-version = "0.9.1"
+version = "0.10.0"
 description = "Sondera Harness SDK for Python - Agent governance and policy enforcement"
 readme = "README.md"
 requires-python = ">=3.12,<3.15"
@@ -56,12 +56,14 @@ ai = ["litellm>=1.30.0"]
 adk = ["google-adk>=1.22.0"]
 langgraph = ["langchain>=1.2.0", "langgraph>=1.0.5"]
 strands = ["strands-agents>=1.21.0"]
+pydantic-ai = ["pydantic-ai-slim>=1.75.0"]
 all = [
     "litellm>=1.30.0",
     "google-adk>=1.22.0",
     "langchain>=1.2.0",
     "langgraph>=1.0.5",
     "strands-agents>=1.21.0",
+    "pydantic-ai-slim>=1.75.0",
 ]
 
 [dependency-groups]
@@ -78,6 +80,7 @@ dev = [
 examples = [
     "sondera-examples-adk",
     "sondera-examples-langgraph",
+    "sondera-examples-pydantic-ai",
     "sondera-examples-strands",
     "sondera-examples-cedar",
     "sondera-examples-claude-code"
@@ -110,12 +113,14 @@ ignore = [
 # Required for ADK's function schema introspection.
 "examples/adk/**" = ["UP006", "UP035", "UP045"]  # Allow deprecated typing syntax (List, Optional, etc.)
 "examples/**" = ["S101"]  # assert is fine in example code
+"examples/pydantic-ai/src/pydantic_ai_examples/coding_assistant.py" = ["S108", "S602", "S603", "S607"]  # intentional shell/tmp usage
 "docs/**" = ["S101"]  # assert is fine in documentation notebooks
 "scripts/**" = ["S603", "S607"]  # subprocess calls in build scripts
 "src/sondera/harness/**" = ["S101"]  # type-narrowing asserts after _ensure_connected()
 "src/sondera/tui/**" = ["S110", "S112"]  # try-except-pass/continue for widget queries that may not be mounted
 "src/sondera/adk/analyze.py" = ["S110"]  # try-except-pass in type introspection
 "src/sondera/langgraph/**" = ["S101", "S110"]  # type-narrowing asserts, try-except-pass in type introspection
+"src/sondera/pydantic/**" = ["S101", "S110"]  # type-narrowing asserts, try-except-pass in type introspection
 "src/sondera/strands/analyze.py" = ["S110"]  # try-except-pass in type introspection
 "tests/*" = ["S101", "S108"]  # assert and temp file paths are fine in tests
 
@@ -161,6 +166,10 @@ root = "examples/claude-code/src"
 extraPaths = ["src"]
 
 [[tool.pyright.executionEnvironments]]
+root = "examples/pydantic-ai/src"
+extraPaths = ["src", "examples/archetypes/src"]
+
+[[tool.pyright.executionEnvironments]]
 root = "examples/strands/src"
 extraPaths = ["src", "examples/archetypes/src"]
 
@@ -178,6 +187,7 @@ members = [
     "examples/adk",
     "examples/claude-code",
  "examples/langgraph",
+ "examples/pydantic-ai",
  "examples/strands",
  "examples/archetypes",
  "examples/cedar",
@@ -189,5 +199,6 @@ sondera-archetypes = { workspace = true }
 sondera-examples-adk = { workspace = true }
 sondera-examples-langgraph = { workspace = true }
 sondera-examples-strands = { workspace = true }
+sondera-examples-pydantic-ai = { workspace = true }
 sondera-examples-cedar = { workspace = true }
 sondera-examples-claude-code = { workspace = true }
