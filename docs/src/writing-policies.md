@@ -753,8 +753,8 @@ async def test_policy_change_is_safe(agent, new_policies):
         for adj_step in traj.steps:
             new_result = await local.adjudicate(adj_step.event)
             # If old policy denied, new policy must also deny
-            if adj_step.adjudication.decision == Decision.Deny:
-                assert new_result.decision == Decision.Deny, (
+            if adj_step.adjudication.decision == Decision.DENY:
+                assert new_result.decision == Decision.DENY, (
                     f"Regression: previously denied action is now allowed"
                 )
         await local.finalize()

@@ -37,7 +37,7 @@ def mock_harness() -> MagicMock:
     """Create a mock harness for testing."""
     harness = MagicMock(spec=Harness)
     harness.adjudicate = AsyncMock(
-        return_value=Adjudicated(Decision.Allow, reason="Allowed")
+        return_value=Adjudicated(Decision.ALLOW, reason="Allowed")
     )
     harness.finalize = AsyncMock()
     harness.fail = AsyncMock()
@@ -168,7 +168,7 @@ class TestSonderaHarnessMiddlewareHooks:
         # Reset trajectory_id to None to simulate uninitialized state
         mock_middleware._harness.trajectory_id = None
         mock_middleware._harness.adjudicate.return_value = Adjudicated(
-            Decision.Allow, reason="Allowed"
+            Decision.ALLOW, reason="Allowed"
         )
 
         state = {"messages": [HumanMessage(content="Hello")]}
@@ -187,7 +187,7 @@ class TestSonderaHarnessMiddlewareHooks:
     ):
         """Test that abefore_agent jumps to end when adjudication denies with BLOCK strategy."""
         mock_middleware._harness.adjudicate.return_value = Adjudicated(
-            Decision.Deny, mode=Mode.Govern, reason="Blocked by policy"
+            Decision.DENY, mode=Mode.GOVERN, reason="Blocked by policy"
         )
 
         state = {"messages": [HumanMessage(content="Bad content")]}
@@ -210,7 +210,7 @@ class TestSonderaHarnessMiddlewareHooks:
             strategy=Strategy.STEER,
         )
         mock_harness.adjudicate.return_value = Adjudicated(
-            Decision.Deny, mode=Mode.Govern, reason="Please rephrase your request"
+            Decision.DENY, mode=Mode.GOVERN, reason="Please rephrase your request"
         )
 
         state = {"messages": [HumanMessage(content="Bad content")]}
@@ -230,7 +230,7 @@ class TestSonderaHarnessMiddlewareHooks:
     ):
         """Test that awrap_model_call allows execution when adjudication allows."""
         mock_middleware._harness.adjudicate.return_value = Adjudicated(
-            Decision.Allow, reason="Allowed"
+            Decision.ALLOW, reason="Allowed"
         )
 
         request = ModelRequest(
@@ -260,7 +260,7 @@ class TestSonderaHarnessMiddlewareHooks:
     ):
         """Test that awrap_model_call returns policy message on pre-model deny."""
         mock_middleware._harness.adjudicate.return_value = Adjudicated(
-            Decision.Deny, mode=Mode.Govern, reason="Pre-model blocked"
+            Decision.DENY, mode=Mode.GOVERN, reason="Pre-model blocked"
         )
 
         request = ModelRequest(
@@ -291,7 +291,7 @@ class TestSonderaHarnessMiddlewareHooks:
     ):
         """Test that awrap_tool_call allows execution when adjudication allows."""
         mock_middleware._harness.adjudicate.return_value = Adjudicated(
-            Decision.Allow, reason="Allowed"
+            Decision.ALLOW, reason="Allowed"
         )
 
         tool_request = ToolCallRequest(
@@ -319,7 +319,7 @@ class TestSonderaHarnessMiddlewareHooks:
     ):
         """Test that awrap_tool_call returns blocked message on pre-tool deny."""
         mock_middleware._harness.adjudicate.return_value = Adjudicated(
-            Decision.Deny, mode=Mode.Govern, reason="Tool not allowed"
+            Decision.DENY, mode=Mode.GOVERN, reason="Tool not allowed"
         )
 
         tool_request = ToolCallRequest(
@@ -357,8 +357,8 @@ class TestSonderaHarnessMiddlewareHooks:
         )
         # First call (pre-tool) denies, second call (post-tool) allows
         mock_harness.adjudicate.side_effect = [
-            Adjudicated(Decision.Deny, mode=Mode.Govern, reason="Tool concern"),
-            Adjudicated(Decision.Allow, reason="Allowed"),
+            Adjudicated(Decision.DENY, mode=Mode.GOVERN, reason="Tool concern"),
+            Adjudicated(Decision.ALLOW, reason="Allowed"),
         ]
 
         tool_request = ToolCallRequest(
@@ -390,8 +390,8 @@ class TestSonderaHarnessMiddlewareHooks:
         """Test that awrap_tool_call returns Command on post-tool deny with BLOCK strategy."""
         # First call (pre-tool) allows, second call (post-tool) denies
         mock_middleware._harness.adjudicate.side_effect = [
-            Adjudicated(Decision.Allow, reason="Pre-tool allowed"),
-            Adjudicated(Decision.Deny, mode=Mode.Govern, reason="Post-tool blocked"),
+            Adjudicated(Decision.ALLOW, reason="Pre-tool allowed"),
+            Adjudicated(Decision.DENY, mode=Mode.GOVERN, reason="Post-tool blocked"),
         ]
 
         tool_request = ToolCallRequest(
@@ -421,7 +421,7 @@ class TestSonderaHarnessMiddlewareHooks:
     ):
         """Test that aafter_agent finalizes the trajectory and preserves session_id."""
         mock_middleware._harness.adjudicate.return_value = Adjudicated(
-            Decision.Allow, reason="Allowed"
+            Decision.ALLOW, reason="Allowed"
         )
 
         state = {
@@ -443,7 +443,7 @@ class TestSonderaHarnessMiddlewareHooks:
     ):
         """Test that aafter_agent handles case with no final message gracefully."""
         mock_middleware._harness.adjudicate.return_value = Adjudicated(
-            Decision.Allow, reason="Allowed"
+            Decision.ALLOW, reason="Allowed"
         )
 
         state = {"messages": []}  # No messages
@@ -462,7 +462,7 @@ class TestSonderaHarnessMiddlewareHooks:
     ):
         """Test that abefore_agent reuses session_id from state on subsequent turns."""
         mock_middleware._harness.adjudicate.return_value = Adjudicated(
-            Decision.Allow, reason="Allowed"
+            Decision.ALLOW, reason="Allowed"
         )
 
         state = {
@@ -509,14 +509,14 @@ class TestStrategyEnum:
     """Tests for Strategy enum."""
 
     def test_strategy_values(self):
-        """Test Strategy enum values."""
-        assert Strategy.BLOCK.value == "block"
-        assert Strategy.STEER.value == "steer"
+        """Strategy variants serialise to their lowercase wire form."""
+        assert str(Strategy.BLOCK) == "block"
+        assert str(Strategy.STEER) == "steer"
 
-    def test_strategy_is_string_enum(self):
-        """Test that Strategy is a string enum."""
-        assert isinstance(Strategy.BLOCK, str)
-        assert Strategy.BLOCK == "block"
+    def test_strategy_string_construction(self):
+        """Strategy can be constructed from its lowercase wire form."""
+        assert Strategy("block") == Strategy.BLOCK
+        assert Strategy("steer") == Strategy.STEER
 
 
 class TestNonGoverningModePassthrough:
@@ -532,7 +532,7 @@ class TestNonGoverningModePassthrough:
     ):
         """abefore_agent with Monitor-mode deny should not block."""
         mock_middleware._harness.adjudicate.return_value = Adjudicated(
-            Decision.Deny, mode=Mode.Monitor, reason="Observed violation"
+            Decision.DENY, mode=Mode.MONITOR, reason="Observed violation"
         )
         state = {"messages": [HumanMessage(content="Bad content")]}
         result = await mock_middleware.abefore_agent(state, Runtime())
@@ -548,7 +548,7 @@ class TestNonGoverningModePassthrough:
     ):
         """abefore_agent with Steer-mode deny should not block."""
         mock_middleware._harness.adjudicate.return_value = Adjudicated(
-            Decision.Deny, mode=Mode.Steer, reason="Steering suggestion"
+            Decision.DENY, mode=Mode.STEER, reason="Steering suggestion"
         )
         state = {"messages": [HumanMessage(content="Questionable content")]}
         result = await mock_middleware.abefore_agent(state, Runtime())
@@ -562,7 +562,7 @@ class TestNonGoverningModePassthrough:
     ):
         """awrap_model_call with Monitor-mode pre-model deny should call the model normally."""
         mock_middleware._harness.adjudicate.return_value = Adjudicated(
-            Decision.Deny, mode=Mode.Monitor, reason="Observed"
+            Decision.DENY, mode=Mode.MONITOR, reason="Observed"
         )
         handler_called = False
 
@@ -595,7 +595,7 @@ class TestNonGoverningModePassthrough:
     ):
         """awrap_tool_call with Monitor-mode pre-tool deny should execute the tool."""
         mock_middleware._harness.adjudicate.return_value = Adjudicated(
-            Decision.Deny, mode=Mode.Monitor, reason="Observed"
+            Decision.DENY, mode=Mode.MONITOR, reason="Observed"
         )
         tool_request = ToolCallRequest(
             tool_call={"name": "my_tool", "args": {}, "id": "tc-1"},
@@ -628,8 +628,8 @@ class TestNonGoverningModePassthrough:
             harness=mock_harness, strategy=Strategy.BLOCK
         )
         mock_harness.adjudicate.side_effect = [
-            Adjudicated(Decision.Allow, reason="Pre-tool OK"),
-            Adjudicated(Decision.Deny, mode=Mode.Monitor, reason="Post-tool observed"),
+            Adjudicated(Decision.ALLOW, reason="Pre-tool OK"),
+            Adjudicated(Decision.DENY, mode=Mode.MONITOR, reason="Post-tool observed"),
         ]
         tool_request = ToolCallRequest(
             tool_call={"name": "my_tool", "args": {}, "id": "tc-1"},
@@ -656,7 +656,7 @@ class TestDenyReasonHelper:
     def test_returns_steering_explanation_when_present(self):
         """Steering explanation takes priority over reason."""
         adjudicated = Adjudicated(
-            Decision.Deny,
+            Decision.DENY,
             reason="Policy violation",
             steering=Steering(explanation="Please rephrase"),
         )
@@ -666,7 +666,7 @@ class TestDenyReasonHelper:
 
     def test_falls_back_to_deny_message_when_no_steering(self):
         """Falls back to deny_message when steering is absent."""
-        adjudicated = Adjudicated(Decision.Deny, reason="Policy violation")
+        adjudicated = Adjudicated(Decision.DENY, reason="Policy violation")
 
         result = _deny_reason(adjudicated, "default fallback")
         assert "Policy violation" in result or result == "default fallback"
@@ -674,7 +674,7 @@ class TestDenyReasonHelper:
     def test_falls_back_when_steering_has_no_explanation(self):
         """Falls back when steering exists but explanation is empty."""
         adjudicated = Adjudicated(
-            Decision.Deny,
+            Decision.DENY,
             reason="Policy violation",
             steering=Steering(explanation=""),
         )
@@ -692,7 +692,7 @@ class TestLogGuardrailsHelper:
         import logging
 
         log = MagicMock(spec=logging.Logger)
-        adjudicated = Adjudicated(Decision.Allow, reason="OK")
+        adjudicated = Adjudicated(Decision.ALLOW, reason="OK")
 
         _log_guardrails(log, adjudicated, "traj-1")
         log.warning.assert_not_called()
@@ -703,7 +703,7 @@ class TestLogGuardrailsHelper:
 
         log = MagicMock(spec=logging.Logger)
         adjudicated = Adjudicated(
-            Decision.Allow,
+            Decision.ALLOW,
             reason="OK",
             guardrails=GuardrailResults(
                 signature=SignatureGuardrailResult(triggered=False),
@@ -719,7 +719,7 @@ class TestLogGuardrailsHelper:
 
         log = MagicMock(spec=logging.Logger)
         adjudicated = Adjudicated(
-            Decision.Deny,
+            Decision.DENY,
             reason="YARA hit",
             guardrails=GuardrailResults(
                 signature=SignatureGuardrailResult(

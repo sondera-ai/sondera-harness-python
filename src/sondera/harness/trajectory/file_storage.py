@@ -136,12 +136,12 @@ class FileTrajectoryStorage(TrajectoryStorage):
     def _status_from_str(self, status_str: str) -> TrajectoryStatus:
         """Convert status string to TrajectoryStatus enum."""
         status_map = {
-            "running": TrajectoryStatus.Running,
-            "completed": TrajectoryStatus.Completed,
-            "failed": TrajectoryStatus.Failed,
-            "pending": TrajectoryStatus.Pending,
+            "running": TrajectoryStatus.RUNNING,
+            "completed": TrajectoryStatus.COMPLETED,
+            "failed": TrajectoryStatus.FAILED,
+            "pending": TrajectoryStatus.PENDING,
         }
-        return status_map.get(status_str.lower(), TrajectoryStatus.Running)
+        return status_map.get(status_str.lower(), TrajectoryStatus.RUNNING)
 
     def _read_full_trajectory(self, path: Path) -> AdjudicatedTrajectory | None:
         """Read JSONL file into an AdjudicatedTrajectory with all steps."""
@@ -346,7 +346,7 @@ class FileTrajectoryStorage(TrajectoryStorage):
             }
             f.write(json.dumps(step_data) + "\n")
 
-        if step.adjudication.decision in (Decision.Deny, Decision.Escalate):
+        if step.adjudication.decision in (Decision.DENY, Decision.ESCALATE):
             idx = step_index if step_index is not None else self._count_steps(path) - 1
             self._append_adjudication_record(agent_id, trajectory_id, step, idx)
 
@@ -355,7 +355,7 @@ class FileTrajectoryStorage(TrajectoryStorage):
         agent_id: str,
         trajectory_id: str,
         *,
-        status: TrajectoryStatus = TrajectoryStatus.Completed,
+        status: TrajectoryStatus = TrajectoryStatus.COMPLETED,
     ) -> None:
         path = self._trajectory_path(agent_id, trajectory_id)
         if not path.exists():
@@ -407,7 +407,7 @@ class FileTrajectoryStorage(TrajectoryStorage):
             )
         )
         for i, step in enumerate(trajectory.steps):
-            if step.adjudication.decision in (Decision.Deny, Decision.Escalate):
+            if step.adjudication.decision in (Decision.DENY, Decision.ESCALATE):
                 records.append(
                     {
                         "agent_id": trajectory.agent,

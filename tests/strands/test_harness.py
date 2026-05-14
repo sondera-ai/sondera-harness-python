@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, Mock
 
 import pytest
 
-from sondera import Adjudicated, Agent, Decision
+from sondera import Adjudicated, Agent, Decision, Mode
 
 # Skip this module if strands is not installed
 pytest.importorskip("strands", reason="strands package not installed")
@@ -190,9 +190,9 @@ class TestSonderaStrandsHarnessHooks:
 
     @pytest.mark.asyncio
     async def test_before_tool_call_blocks_on_deny(self, mock_harness: MagicMock):
-        """Test that tool call is blocked when adjudication denies."""
+        """Test that tool call is blocked when adjudication denies in Govern mode."""
         mock_harness.adjudicate.return_value = Adjudicated(
-            decision=Decision.Deny, reason="Tool not allowed"
+            decision=Decision.DENY, reason="Tool not allowed", mode=Mode.GOVERN
         )
         hook = SonderaHarnessHook(harness=mock_harness)
 
@@ -324,6 +324,152 @@ class TestSessionId:
         mock_harness.initialize.assert_awaited_once()
         call_kwargs = mock_harness.initialize.call_args[1]
         assert call_kwargs["session_id"] is None
+
+
+class TestModeAwareness:
+    """Tests for Mode-aware deny handling in tool callbacks."""
+
+    @pytest.mark.asyncio
+    async def test_before_tool_deny_monitor_allows(self, mock_harness: MagicMock):
+        """Deny in Monitor mode should NOT cancel the tool call."""
+        mock_harness.adjudicate = AsyncMock(
+            return_value=Adjudicated(
+                decision=Decision.DENY, reason="Would block", mode=Mode.MONITOR
+            )
+        )
+        hook = SonderaHarnessHook(harness=mock_harness)
+
+        mock_tool_use = {"name": "risky_tool", "input": {"arg": "val"}}
+        event = BeforeToolCallEvent(
+            agent=Mock(),
+            selected_tool=Mock(),
+            tool_use=mock_tool_use,
+            invocation_state={},
+        )
+
+        await hook._on_before_tool_call(event)
+
+        # Tool should NOT be cancelled in Monitor mode (default is False)
+        assert not event.cancel_tool
+
+    @pytest.mark.asyncio
+    async def test_before_tool_deny_govern_cancels(self, mock_harness: MagicMock):
+        """Deny in Govern mode should cancel the tool call."""
+        mock_harness.adjudicate = AsyncMock(
+            return_value=Adjudicated(
+                decision=Decision.DENY, reason="Blocked", mode=Mode.GOVERN
+            )
+        )
+        hook = SonderaHarnessHook(harness=mock_harness)
+
+        mock_tool_use = {"name": "risky_tool", "input": {}}
+        event = BeforeToolCallEvent(
+            agent=Mock(),
+            selected_tool=Mock(),
+            tool_use=mock_tool_use,
+            invocation_state={},
+        )
+
+        await hook._on_before_tool_call(event)
+
+        assert event.cancel_tool is not None
+        assert "Blocked" in event.cancel_tool
+
+    @pytest.mark.asyncio
+    async def test_after_tool_deny_govern_replaces_result(
+        self, mock_harness: MagicMock
+    ):
+        """Deny in Govern mode should replace the tool result."""
+        mock_harness.adjudicate = AsyncMock(
+            return_value=Adjudicated(
+                decision=Decision.DENY, reason="Output blocked", mode=Mode.GOVERN
+            )
+        )
+        hook = SonderaHarnessHook(harness=mock_harness)
+
+        event = AfterToolCallEvent(
+            agent=Mock(),
+            selected_tool=Mock(),
+            tool_use={"name": "some_tool", "toolUseId": "tid-1"},
+            result={"content": [{"text": "original output"}], "status": "success"},
+            invocation_state={},
+        )
+
+        await hook._on_after_tool_call(event)
+
+        assert event.result["status"] == "error"
+        assert "Output blocked" in event.result["content"][0]["text"]
+
+    @pytest.mark.asyncio
+    async def test_after_tool_deny_monitor_preserves_result(
+        self, mock_harness: MagicMock
+    ):
+        """Deny in Monitor mode should preserve the original tool result."""
+        mock_harness.adjudicate = AsyncMock(
+            return_value=Adjudicated(
+                decision=Decision.DENY, reason="Flagged", mode=Mode.MONITOR
+            )
+        )
+        hook = SonderaHarnessHook(harness=mock_harness)
+
+        original_result = {
+            "content": [{"text": "original output"}],
+            "status": "success",
+        }
+        event = AfterToolCallEvent(
+            agent=Mock(),
+            selected_tool=Mock(),
+            tool_use={"name": "some_tool", "toolUseId": "tid-1"},
+            result=original_result,
+            invocation_state={},
+        )
+
+        await hook._on_after_tool_call(event)
+
+        # Result should NOT be modified
+        assert event.result["status"] == "success"
+        assert event.result["content"][0]["text"] == "original output"
+
+
+class TestAfterModelCallAdjudication:
+    """Tests for after_model_call adjudication."""
+
+    @pytest.mark.asyncio
+    async def test_after_model_call_adjudicates_response(self, mock_harness: MagicMock):
+        """after_model_call should adjudicate the model response text."""
+        hook = SonderaHarnessHook(harness=mock_harness)
+
+        mock_stop_response = Mock()
+        mock_stop_response.message = {"content": "Model says hello"}
+
+        event = AfterModelCallEvent(
+            agent=Mock(), stop_response=mock_stop_response, exception=None
+        )
+
+        await hook._on_after_model_call(event)
+
+        mock_harness.adjudicate.assert_called_once()
+        # Verify it was called with a Prompt(role=PromptRole.ASSISTANT)
+        from sondera.types import PromptRole
+
+        call_args = mock_harness.adjudicate.call_args[0][0]
+        assert call_args.event.role == PromptRole.ASSISTANT
+
+    @pytest.mark.asyncio
+    async def test_after_model_call_skips_empty_content(self, mock_harness: MagicMock):
+        """after_model_call should skip adjudication when content is empty."""
+        hook = SonderaHarnessHook(harness=mock_harness)
+
+        mock_stop_response = Mock()
+        mock_stop_response.message = {"content": ""}
+
+        event = AfterModelCallEvent(
+            agent=Mock(), stop_response=mock_stop_response, exception=None
+        )
+
+        await hook._on_after_model_call(event)
+
+        mock_harness.adjudicate.assert_not_called()
 
 
 if __name__ == "__main__":

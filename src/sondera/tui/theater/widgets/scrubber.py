@@ -94,9 +94,9 @@ class ScrubberTimeline(Widget):
         """Get color for a decision."""
         from sondera.types import Decision
 
-        if decision == Decision.Deny:
+        if decision == Decision.DENY:
             return COLOR_DENY
-        elif decision == Decision.Escalate:
+        elif decision == Decision.ESCALATE:
             return COLOR_ESCALATE
         return COLOR_ALLOW
 

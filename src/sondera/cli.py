@@ -52,7 +52,7 @@ def login(base_url: str | None) -> None:
     # Step 1: Start localhost callback server
     server, port = start_callback_server()
 
-    # Step 2: Open browser to Clerk sign-in (pass port only, not full localhost URL)
+    # Step 2: Open browser to sign in (pass port only, not full localhost URL)
     auth_url = build_auth_url(base_url, port)
     click.echo("Opening browser to authenticate...")
     click.echo()

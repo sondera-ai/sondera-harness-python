@@ -283,7 +283,7 @@ Each stage evaluates a specific type of content:
 from sondera import Prompt, PromptRole, ToolCall, ToolOutput
 
 # User message
-prompt = Prompt(role=PromptRole.User, content="What's the weather?")
+prompt = Prompt(role=PromptRole.USER, content="What's the weather?")
 
 # Tool call
 request = ToolCall(tool="weather", arguments='{"location": "SF"}')

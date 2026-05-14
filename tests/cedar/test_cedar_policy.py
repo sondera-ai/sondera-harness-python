@@ -18,7 +18,7 @@ from sondera import (
     ToolOutput,
 )
 from sondera.harness.cedar.harness import CedarPolicyHarness
-from sondera.harness.cedar.schema import agent_to_cedar_schema
+from sondera.harness.cedar.schema import agent_to_cedar_schema, load_base_schema
 
 
 @pytest.fixture
@@ -101,7 +101,7 @@ def coding_agent() -> Agent:
     )
 
 
-def _tool_call_event(harness, tool_name: str, arguments: dict) -> Event:
+def _tool_call_event(harness, tool_name: str, arguments: dict | str) -> Event:
     """Helper to build a ToolCall event."""
     return Event(
         agent=harness.agent,
@@ -165,7 +165,7 @@ class TestCedarPolicyHarnessInit:
         permit(principal, action, resource);
 
         @id("duplicate-id")
-        forbid(principal, action == CodingAgent::Action::"read_file", resource);
+        forbid(principal, action == CodingAgent::Action::"PreToolUse", resource);
         """
         with caplog.at_level(logging.WARNING):
             CedarPolicyHarness(policy_set=policy, schema=schema)
@@ -297,7 +297,7 @@ class TestCedarPolicyHarnessLifecycle:
         mock_storage.finalize_trajectory.assert_called_once_with(
             coding_agent.id,
             tid,
-            status=TrajectoryStatus.Failed,
+            status=TrajectoryStatus.FAILED,
         )
 
     @pytest.mark.asyncio
@@ -359,7 +359,7 @@ class TestCedarPolicyHarnessPermitAll:
             _tool_call_event(permit_all_harness, "read_file", {"path": "/etc/passwd"})
         )
 
-        assert result.decision == Decision.Allow
+        assert result.decision == Decision.ALLOW
 
     @pytest.mark.asyncio
     async def test_allows_write_file(self, permit_all_harness, coding_agent):
@@ -374,7 +374,7 @@ class TestCedarPolicyHarnessPermitAll:
             )
         )
 
-        assert result.decision == Decision.Allow
+        assert result.decision == Decision.ALLOW
 
     @pytest.mark.asyncio
     async def test_allows_execute_command(self, permit_all_harness, coding_agent):
@@ -389,7 +389,7 @@ class TestCedarPolicyHarnessPermitAll:
             )
         )
 
-        assert result.decision == Decision.Allow
+        assert result.decision == Decision.ALLOW
 
     @pytest.mark.asyncio
     async def test_allows_tool_response(self, permit_all_harness, coding_agent):
@@ -404,7 +404,7 @@ class TestCedarPolicyHarnessPermitAll:
             )
         )
 
-        assert result.decision == Decision.Allow
+        assert result.decision == Decision.ALLOW
 
 
 class TestCedarPolicyHarnessDenyAll:
@@ -436,23 +436,23 @@ class TestCedarPolicyHarnessDenyAll:
             result = await deny_all_harness.adjudicate(
                 _tool_call_event(deny_all_harness, tool_name, args)
             )
-            assert result.decision == Decision.Deny, f"{tool_name} should be denied"
+            assert result.decision == Decision.DENY, f"{tool_name} should be denied"
 
 
 class TestCedarPolicyHarnessTypedParameters:
-    """Tests for policies using typed parameters."""
+    """Tests for policies using typed parameters and server-compatible context."""
 
     @pytest.mark.asyncio
-    async def test_deny_specific_path(self, coding_agent):
-        """Test policy that denies specific file paths."""
+    async def test_deny_specific_path_via_typed_parameters(self, coding_agent):
+        """Test policy that denies specific file paths using typed parameters (local extension)."""
         schema = agent_to_cedar_schema(coding_agent)
         policy = """
         @id("allow-all")
         permit(principal, action, resource);
 
         @id("deny-etc-passwd")
-        forbid(principal, action == CodingAgent::Action::"read_file", resource)
-        when { context.parameters.path == "/etc/passwd" };
+        forbid(principal, action == CodingAgent::Action::"PreToolUse", resource)
+        when { context.tool == "read_file" && context has parameters && context.parameters.path == "/etc/passwd" };
         """
         harness = CedarPolicyHarness(policy_set=policy, schema=schema)
         await harness.initialize(agent=coding_agent)
@@ -461,13 +461,40 @@ class TestCedarPolicyHarnessTypedParameters:
         result = await harness.adjudicate(
             _tool_call_event(harness, "read_file", {"path": "/etc/passwd"})
         )
-        assert result.decision == Decision.Deny
+        assert result.decision == Decision.DENY
 
         # Reading other files should be allowed
         result = await harness.adjudicate(
             _tool_call_event(harness, "read_file", {"path": "/tmp/safe.txt"})
         )
-        assert result.decision == Decision.Allow
+        assert result.decision == Decision.ALLOW
+
+    @pytest.mark.asyncio
+    async def test_deny_specific_path_via_arguments(self, coding_agent):
+        """Test policy that denies specific file paths using server-compatible context.arguments."""
+        schema = agent_to_cedar_schema(coding_agent)
+        policy = """
+        @id("allow-all")
+        permit(principal, action, resource);
+
+        @id("deny-etc-passwd")
+        forbid(principal, action == CodingAgent::Action::"PreToolUse", resource)
+        when { context.tool == "read_file" && context.arguments like "*/etc/passwd*" };
+        """
+        harness = CedarPolicyHarness(policy_set=policy, schema=schema)
+        await harness.initialize(agent=coding_agent)
+
+        # Reading /etc/passwd should be denied
+        result = await harness.adjudicate(
+            _tool_call_event(harness, "read_file", {"path": "/etc/passwd"})
+        )
+        assert result.decision == Decision.DENY
+
+        # Reading other files should be allowed
+        result = await harness.adjudicate(
+            _tool_call_event(harness, "read_file", {"path": "/tmp/safe.txt"})
+        )
+        assert result.decision == Decision.ALLOW
 
     @pytest.mark.asyncio
     async def test_deny_dangerous_commands(self, coding_agent):
@@ -478,12 +505,12 @@ class TestCedarPolicyHarnessTypedParameters:
         permit(principal, action, resource);
 
         @id("deny-rm-rf")
-        forbid(principal, action == CodingAgent::Action::"execute_command", resource)
-        when { context.parameters_json like "*rm -rf*" };
+        forbid(principal, action == CodingAgent::Action::"PreToolUse", resource)
+        when { context.tool == "execute_command" && context.arguments like "*rm -rf*" };
 
         @id("deny-sudo")
-        forbid(principal, action == CodingAgent::Action::"execute_command", resource)
-        when { context.parameters_json like "*sudo*" };
+        forbid(principal, action == CodingAgent::Action::"PreToolUse", resource)
+        when { context.tool == "execute_command" && context.arguments like "*sudo*" };
         """
         harness = CedarPolicyHarness(policy_set=policy, schema=schema)
         await harness.initialize(agent=coding_agent)
@@ -496,7 +523,7 @@ class TestCedarPolicyHarnessTypedParameters:
                 {"command": "rm -rf /", "timeout": 30},
             )
         )
-        assert result.decision == Decision.Deny
+        assert result.decision == Decision.DENY
 
         # sudo should be denied
         result = await harness.adjudicate(
@@ -506,7 +533,7 @@ class TestCedarPolicyHarnessTypedParameters:
                 {"command": "sudo apt install vim", "timeout": 60},
             )
         )
-        assert result.decision == Decision.Deny
+        assert result.decision == Decision.DENY
 
         # Safe commands should be allowed
         result = await harness.adjudicate(
@@ -516,7 +543,7 @@ class TestCedarPolicyHarnessTypedParameters:
                 {"command": "ls -la", "timeout": 10},
             )
         )
-        assert result.decision == Decision.Allow
+        assert result.decision == Decision.ALLOW
 
     @pytest.mark.asyncio
     async def test_allow_only_specific_directory(self, coding_agent):
@@ -524,18 +551,26 @@ class TestCedarPolicyHarnessTypedParameters:
         schema = agent_to_cedar_schema(coding_agent)
         policy = """
         @id("allow-read-workspace")
-        permit(principal, action == CodingAgent::Action::"read_file", resource)
-        when { context.parameters_json like "*\\"/workspace/*" };
+        permit(principal, action == CodingAgent::Action::"PreToolUse", resource)
+        when { context.tool == "read_file" && context.arguments like "*\\"/workspace/*" };
 
         @id("allow-write-workspace")
-        permit(principal, action == CodingAgent::Action::"write_file", resource)
-        when { context.parameters_json like "*\\"/workspace/*" };
+        permit(principal, action == CodingAgent::Action::"PreToolUse", resource)
+        when { context.tool == "write_file" && context.arguments like "*\\"/workspace/*" };
 
         @id("allow-search-code")
-        permit(principal, action == CodingAgent::Action::"search_code", resource);
+        permit(principal, action == CodingAgent::Action::"PreToolUse", resource)
+        when { context.tool == "search_code" };
 
         @id("allow-execute-command")
-        permit(principal, action == CodingAgent::Action::"execute_command", resource);
+        permit(principal, action == CodingAgent::Action::"PreToolUse", resource)
+        when { context.tool == "execute_command" };
+
+        @id("allow-tool-output")
+        permit(principal, action == CodingAgent::Action::"ToolOutput", resource);
+
+        @id("allow-prompt")
+        permit(principal, action == CodingAgent::Action::"Prompt", resource);
         """
         harness = CedarPolicyHarness(policy_set=policy, schema=schema)
         await harness.initialize(agent=coding_agent)
@@ -544,13 +579,232 @@ class TestCedarPolicyHarnessTypedParameters:
         result = await harness.adjudicate(
             _tool_call_event(harness, "read_file", {"path": "/workspace/src/main.py"})
         )
-        assert result.decision == Decision.Allow
+        assert result.decision == Decision.ALLOW
 
         # Reading from outside /workspace should be denied
         result = await harness.adjudicate(
             _tool_call_event(harness, "read_file", {"path": "/etc/shadow"})
         )
-        assert result.decision == Decision.Deny
+        assert result.decision == Decision.DENY
+
+    @pytest.mark.asyncio
+    async def test_tool_name_filtering(self, coding_agent):
+        """Test that context.tool correctly filters by tool name."""
+        schema = agent_to_cedar_schema(coding_agent)
+        policy = """
+        @id("allow-all")
+        permit(principal, action, resource);
+
+        @id("deny-write")
+        forbid(principal, action == CodingAgent::Action::"PreToolUse", resource)
+        when { context.tool == "write_file" };
+        """
+        harness = CedarPolicyHarness(policy_set=policy, schema=schema)
+        await harness.initialize(agent=coding_agent)
+
+        # write_file should be denied
+        result = await harness.adjudicate(
+            _tool_call_event(harness, "write_file", {"path": "/tmp/x", "content": "y"})
+        )
+        assert result.decision == Decision.DENY
+
+        # read_file should be allowed
+        result = await harness.adjudicate(
+            _tool_call_event(harness, "read_file", {"path": "/tmp/x"})
+        )
+        assert result.decision == Decision.ALLOW
+
+    @pytest.mark.asyncio
+    async def test_typed_parameters_parse_json_string_arguments(self, coding_agent):
+        """Provider-serialized JSON arguments still populate typed parameters."""
+        schema = agent_to_cedar_schema(coding_agent)
+        policy = """
+        @id("allow-all")
+        permit(principal, action, resource);
+
+        @id("deny-long-timeout")
+        forbid(principal, action == CodingAgent::Action::"PreToolUse", resource)
+        when {
+            context.tool == "execute_command" &&
+            context has parameters &&
+            context.parameters.timeout > 100
+        };
+        """
+        harness = CedarPolicyHarness(policy_set=policy, schema=schema)
+        await harness.initialize(agent=coding_agent)
+
+        result = await harness.adjudicate(
+            _tool_call_event(
+                harness,
+                "execute_command",
+                '{"command": "sleep", "timeout": 101}',
+            )
+        )
+        assert result.decision == Decision.DENY
+
+        result = await harness.adjudicate(
+            _tool_call_event(
+                harness,
+                "execute_command",
+                '{"command": "sleep", "timeout": 30}',
+            )
+        )
+        assert result.decision == Decision.ALLOW
+
+    @pytest.mark.asyncio
+    async def test_invalid_json_string_arguments_keep_arguments_policy(
+        self, coding_agent
+    ):
+        """Invalid JSON strings skip typed parameters but keep arguments matching."""
+        schema = agent_to_cedar_schema(coding_agent)
+        policy = """
+        @id("allow-all")
+        permit(principal, action, resource);
+
+        @id("deny-raw-danger")
+        forbid(principal, action == CodingAgent::Action::"PreToolUse", resource)
+        when { context.tool == "execute_command" && context.arguments like "*rm -rf*" };
+        """
+        harness = CedarPolicyHarness(policy_set=policy, schema=schema)
+        await harness.initialize(agent=coding_agent)
+
+        result = await harness.adjudicate(
+            _tool_call_event(harness, "execute_command", "command=rm -rf /")
+        )
+        assert result.decision == Decision.DENY
+
+
+class TestCedarPolicyHarnessDynamicTools:
+    """Tests for tool invocations whose name is not in the agent's tool list.
+
+    This covers dynamically-discovered tools (e.g., MCP) where the Cedar request
+    is built from a ToolCall whose tool name is not pre-registered on the agent.
+    """
+
+    @pytest.mark.asyncio
+    async def test_unknown_tool_call_evaluated_by_policy(self, coding_agent):
+        """A tool name not in the agent's card is still adjudicated correctly.
+
+        The harness must create a Tool entity on the fly and evaluate the
+        PreToolUse action with context.tool / context.arguments. Typed
+        context.parameters is absent (not in schema), but context.tool and
+        context.arguments are always available.
+        """
+        schema = agent_to_cedar_schema(coding_agent)
+        policy = """
+        @id("allow-all")
+        permit(principal, action, resource);
+
+        @id("deny-dynamic-dangerous")
+        forbid(principal, action == CodingAgent::Action::"PreToolUse", resource)
+        when { context.tool == "mcp__dangerous" };
+        """
+        harness = CedarPolicyHarness(policy_set=policy, schema=schema)
+        await harness.initialize(agent=coding_agent)
+
+        # A tool name not in the agent's card — deny policy should still fire
+        # because context.tool matches regardless of registration state.
+        result = await harness.adjudicate(
+            _tool_call_event(harness, "mcp__dangerous", {"payload": "anything"})
+        )
+        assert result.decision == Decision.DENY
+
+        # A different unregistered tool name should be allowed by the permit.
+        result = await harness.adjudicate(
+            _tool_call_event(harness, "mcp__harmless", {"q": "hello"})
+        )
+        assert result.decision == Decision.ALLOW
+
+    @pytest.mark.asyncio
+    async def test_unknown_tool_output_uses_content_only(self, coding_agent):
+        """ToolOutput for a call_id not matching any registered tool still works.
+
+        context.content is populated from the raw output; typed context.response
+        is absent because we can't look up the response schema. Policies using
+        context.content patterns remain enforceable.
+        """
+        schema = agent_to_cedar_schema(coding_agent)
+        policy = """
+        @id("allow-all")
+        permit(principal, action, resource);
+
+        @id("deny-leaked-token")
+        forbid(principal, action == CodingAgent::Action::"ToolOutput", resource)
+        when { context.content like "*TOKEN*" };
+        """
+        harness = CedarPolicyHarness(policy_set=policy, schema=schema)
+        await harness.initialize(agent=coding_agent)
+
+        # Output carrying a token from an unregistered tool should be denied.
+        result = await harness.adjudicate(
+            _tool_output_event(harness, "mcp__unknown", "SECRET_TOKEN=abc")
+        )
+        assert result.decision == Decision.DENY
+
+        # Benign output from an unregistered tool should be allowed.
+        result = await harness.adjudicate(
+            _tool_output_event(harness, "mcp__unknown", "ok")
+        )
+        assert result.decision == Decision.ALLOW
+
+
+class TestCedarPolicyHarnessNonObjectResponse:
+    """Tests for tools with non-object response_json_schema.
+
+    When a tool declares a primitive/array response schema, the runtime wraps
+    the response as {"value": <decoded>} in context.response. The current
+    _build_tool_output_context schema builder only merges Record responses,
+    so these tools fall back to content-only policies.
+    """
+
+    @pytest.fixture
+    def primitive_response_agent(self) -> Agent:
+        """Agent with a single tool that returns an integer (non-object)."""
+        return Agent(
+            id="CounterAgent",
+            provider="test",
+            card=AgentCard.react(
+                ReActAgentCard(
+                    tools=[
+                        Tool(
+                            name="get_count",
+                            description="Get a numeric count",
+                            parameters=[],
+                            response_json_schema='{"type": "integer"}',
+                        ),
+                    ],
+                )
+            ),
+        )
+
+    @pytest.mark.asyncio
+    async def test_content_policy_works_for_primitive_response(
+        self, primitive_response_agent: Agent
+    ):
+        """context.content-based policies work regardless of response type."""
+        schema = agent_to_cedar_schema(primitive_response_agent)
+        policy = """
+        @id("allow-all")
+        permit(principal, action, resource);
+
+        @id("deny-large-count")
+        forbid(principal, action == CounterAgent::Action::"ToolOutput", resource)
+        when { context.content like "*999*" };
+        """
+        harness = CedarPolicyHarness(policy_set=policy, schema=schema)
+        await harness.initialize(agent=primitive_response_agent)
+
+        # Integer response containing "999" should be denied via content match.
+        result = await harness.adjudicate(
+            _tool_output_event(harness, "get_count", "999")
+        )
+        assert result.decision == Decision.DENY
+
+        # Benign integer response should be allowed.
+        result = await harness.adjudicate(
+            _tool_output_event(harness, "get_count", "42")
+        )
+        assert result.decision == Decision.ALLOW
 
 
 class TestCedarPolicyHarnessResponseFiltering:
@@ -565,16 +819,16 @@ class TestCedarPolicyHarnessResponseFiltering:
         permit(principal, action, resource);
 
         @id("deny-password")
-        forbid(principal, action, resource)
-        when { context.response_json like "*password*" };
+        forbid(principal, action == CodingAgent::Action::"ToolOutput", resource)
+        when { context.content like "*password*" };
 
         @id("deny-api-key")
-        forbid(principal, action, resource)
-        when { context.response_json like "*api_key*" };
+        forbid(principal, action == CodingAgent::Action::"ToolOutput", resource)
+        when { context.content like "*api_key*" };
 
         @id("deny-secret")
-        forbid(principal, action, resource)
-        when { context.response_json like "*secret*" };
+        forbid(principal, action == CodingAgent::Action::"ToolOutput", resource)
+        when { context.content like "*secret*" };
         """
         harness = CedarPolicyHarness(policy_set=policy, schema=schema)
         await harness.initialize(agent=coding_agent)
@@ -587,7 +841,7 @@ class TestCedarPolicyHarnessResponseFiltering:
                 {"content": "DB_PASSWORD=secret123", "size": 20},
             )
         )
-        assert result.decision == Decision.Deny
+        assert result.decision == Decision.DENY
 
         # Response with api_key should be denied
         result = await harness.adjudicate(
@@ -597,7 +851,7 @@ class TestCedarPolicyHarnessResponseFiltering:
                 {"content": "api_key=abc123", "size": 15},
             )
         )
-        assert result.decision == Decision.Deny
+        assert result.decision == Decision.DENY
 
         # Safe response should be allowed
         result = await harness.adjudicate(
@@ -607,7 +861,7 @@ class TestCedarPolicyHarnessResponseFiltering:
                 {"content": "Hello World", "size": 11},
             )
         )
-        assert result.decision == Decision.Allow
+        assert result.decision == Decision.ALLOW
 
 
 class TestCedarPolicyHarnessNonToolContent:
@@ -622,10 +876,10 @@ class TestCedarPolicyHarnessNonToolContent:
         await harness.initialize(agent=coding_agent)
 
         result = await harness.adjudicate(
-            _prompt_event(harness, PromptRole.User, "Write a Python function")
+            _prompt_event(harness, PromptRole.USER, "Write a Python function")
         )
 
-        assert result.decision == Decision.Allow
+        assert result.decision == Decision.ALLOW
 
     @pytest.mark.asyncio
     async def test_denies_prompt_content_with_forbid_policy(self, coding_agent):
@@ -636,10 +890,10 @@ class TestCedarPolicyHarnessNonToolContent:
         await harness.initialize(agent=coding_agent)
 
         result = await harness.adjudicate(
-            _prompt_event(harness, PromptRole.User, "Write a Python function")
+            _prompt_event(harness, PromptRole.USER, "Write a Python function")
         )
 
-        assert result.decision == Decision.Deny
+        assert result.decision == Decision.DENY
 
 
 class TestCedarPolicyHarnessWithoutAgent:
@@ -696,7 +950,7 @@ class TestCedarPolicyHarnessInternalErrors:
             _tool_call_event(harness, "read_file", {"path": "/test"})
         )
         # Unknown policy IDs are skipped; falls through to default deny
-        assert result.decision == Decision.Deny
+        assert result.decision == Decision.DENY
 
 
 class TestCedarPolicyHarnessEscalate:
@@ -737,7 +991,8 @@ class TestCedarPolicyHarnessEscalate:
         @id("escalate-execute")
         {escalate_annotation}
         @description("Commands require approval")
-        forbid(principal, action == CodingAgent::Action::"execute_command", resource);
+        forbid(principal, action == CodingAgent::Action::"PreToolUse", resource)
+        when {{ context.tool == "execute_command" }};
         """
         harness = CedarPolicyHarness(policy_set=policy, schema=schema)
         await harness.initialize(agent=coding_agent)
@@ -746,7 +1001,7 @@ class TestCedarPolicyHarnessEscalate:
             _tool_call_event(harness, "execute_command", {"command": "ls"})
         )
 
-        assert result.decision == Decision.Escalate
+        assert result.decision == Decision.ESCALATE
         assert len(result.metadata) == 1
         pm = result.metadata[0]
         assert pm.policy_id == "escalate-execute"
@@ -764,10 +1019,12 @@ class TestCedarPolicyHarnessEscalate:
 
         @id("escalate-execute")
         @escalate
-        forbid(principal, action == CodingAgent::Action::"execute_command", resource);
+        forbid(principal, action == CodingAgent::Action::"PreToolUse", resource)
+        when { context.tool == "execute_command" };
 
         @id("hard-deny-execute")
-        forbid(principal, action == CodingAgent::Action::"execute_command", resource);
+        forbid(principal, action == CodingAgent::Action::"PreToolUse", resource)
+        when { context.tool == "execute_command" };
         """
         harness = CedarPolicyHarness(policy_set=policy, schema=schema)
         await harness.initialize(agent=coding_agent)
@@ -776,7 +1033,7 @@ class TestCedarPolicyHarnessEscalate:
             _tool_call_event(harness, "execute_command", {"command": "ls"})
         )
 
-        assert result.decision == Decision.Deny
+        assert result.decision == Decision.DENY
         # metadata should only contain the hard deny policy, not the escalate one
         policy_ids = [p.policy_id for p in result.metadata]
         assert "hard-deny-execute" in policy_ids
@@ -795,12 +1052,14 @@ class TestCedarPolicyHarnessEscalate:
         @id("escalate-1")
         @escalate("team-a")
         @description("Reason A")
-        forbid(principal, action == CodingAgent::Action::"execute_command", resource);
+        forbid(principal, action == CodingAgent::Action::"PreToolUse", resource)
+        when { context.tool == "execute_command" };
 
         @id("escalate-2")
         @escalate("team-b")
         @description("Reason B")
-        forbid(principal, action == CodingAgent::Action::"execute_command", resource);
+        forbid(principal, action == CodingAgent::Action::"PreToolUse", resource)
+        when { context.tool == "execute_command" };
         """
         harness = CedarPolicyHarness(policy_set=policy, schema=schema)
         await harness.initialize(agent=coding_agent)
@@ -809,7 +1068,7 @@ class TestCedarPolicyHarnessEscalate:
             _tool_call_event(harness, "execute_command", {"command": "ls"})
         )
 
-        assert result.decision == Decision.Escalate
+        assert result.decision == Decision.ESCALATE
         sorted_metadata = sorted(result.metadata, key=lambda p: p.policy_id)
         assert len(sorted_metadata) == 2
         assert sorted_metadata[0].policy_id == "escalate-1"
@@ -831,7 +1090,8 @@ class TestCedarPolicyHarnessEscalate:
 
         @id("escalate-execute")
         @escalate
-        forbid(principal, action == CodingAgent::Action::"execute_command", resource);
+        forbid(principal, action == CodingAgent::Action::"PreToolUse", resource)
+        when { context.tool == "execute_command" };
         """
         harness = CedarPolicyHarness(policy_set=policy, schema=schema)
         await harness.initialize(agent=coding_agent)
@@ -841,4 +1101,78 @@ class TestCedarPolicyHarnessEscalate:
             _tool_call_event(harness, "read_file", {"path": "/tmp/test"})
         )
 
-        assert result.decision == Decision.Allow
+        assert result.decision == Decision.ALLOW
+
+
+class TestCedarSchemaAlignment:
+    """Tests verifying schema alignment between local and server models."""
+
+    def test_schema_has_pre_tool_use_action(self, coding_agent):
+        """Schema must contain PreToolUse action."""
+        schema = agent_to_cedar_schema(coding_agent)
+        ns = schema.root["CodingAgent"]
+        assert "PreToolUse" in ns.actions
+
+    def test_schema_has_tool_output_action(self, coding_agent):
+        """Schema must contain ToolOutput action."""
+        schema = agent_to_cedar_schema(coding_agent)
+        ns = schema.root["CodingAgent"]
+        assert "ToolOutput" in ns.actions
+
+    def test_schema_has_prompt_action(self, coding_agent):
+        """Schema must contain Prompt action."""
+        schema = agent_to_cedar_schema(coding_agent)
+        ns = schema.root["CodingAgent"]
+        assert "Prompt" in ns.actions
+
+    def test_schema_has_no_per_tool_actions(self, coding_agent):
+        """Schema must NOT contain per-tool actions (old model)."""
+        schema = agent_to_cedar_schema(coding_agent)
+        ns = schema.root["CodingAgent"]
+        for tool_name in ["read_file", "write_file", "execute_command", "search_code"]:
+            assert tool_name not in ns.actions
+
+    def test_tool_entity_is_child_of_trajectory(self, coding_agent):
+        """Tool entity type must have memberOfTypes including Trajectory."""
+        schema = agent_to_cedar_schema(coding_agent)
+        ns = schema.root["CodingAgent"]
+        assert "Trajectory" in ns.entityTypes["Tool"].memberOfTypes
+
+    def test_pre_tool_use_context_has_tool_and_arguments(self, coding_agent):
+        """PreToolUse context must include server-compatible tool and arguments fields."""
+        schema = agent_to_cedar_schema(coding_agent)
+        ns = schema.root["CodingAgent"]
+        ctx = ns.actions["PreToolUse"].appliesTo.context
+        assert "tool" in ctx.attributes
+        assert "arguments" in ctx.attributes
+        assert ctx.attributes["tool"].type == "String"
+        assert ctx.attributes["arguments"].type == "String"
+
+    def test_tool_output_context_has_content(self, coding_agent):
+        """ToolOutput context must include server-compatible content field."""
+        schema = agent_to_cedar_schema(coding_agent)
+        ns = schema.root["CodingAgent"]
+        ctx = ns.actions["ToolOutput"].appliesTo.context
+        assert "content" in ctx.attributes
+        assert ctx.attributes["content"].type == "String"
+
+    def test_pre_tool_use_resource_is_tool(self, coding_agent):
+        """PreToolUse resource type must be Tool."""
+        schema = agent_to_cedar_schema(coding_agent)
+        ns = schema.root["CodingAgent"]
+        assert "Tool" in ns.actions["PreToolUse"].appliesTo.resourceTypes
+
+    def test_tool_output_resource_is_trajectory(self, coding_agent):
+        """ToolOutput resource type must be Trajectory."""
+        schema = agent_to_cedar_schema(coding_agent)
+        ns = schema.root["CodingAgent"]
+        assert "Trajectory" in ns.actions["ToolOutput"].appliesTo.resourceTypes
+
+    def test_load_base_schema(self):
+        """load_base_schema() should return the static cedarschema file contents."""
+        content = load_base_schema()
+        assert "PreToolUse" in content
+        assert "ToolOutput" in content
+        assert "Prompt" in content
+        assert "entity Agent" in content
+        assert "entity Tool" in content

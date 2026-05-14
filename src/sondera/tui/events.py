@@ -355,7 +355,7 @@ def violations_from_events(events: list[Event]) -> list[ViolationRecord]:
         if not isinstance(ev.event, Adjudicated):
             continue
         adj = ev.event
-        if adj.decision not in (Decision.Deny, Decision.Escalate):
+        if adj.decision not in (Decision.DENY, Decision.ESCALATE):
             continue
         records.append(
             ViolationRecord(

@@ -624,7 +624,7 @@ async def _exec_list_violations(
             t.name
             for t in trajectories
             if any(
-                s.decision in (Decision.Deny, Decision.Escalate)
+                s.decision in (Decision.DENY, Decision.ESCALATE)
                 for s in correlate_events(t.events or [])
             )
         ]
@@ -638,7 +638,7 @@ async def _exec_list_violations(
                 a_name = agents_map.get(full_agent_id, full_agent_id[:16])
                 event_steps = correlate_events(full.events or [])
                 for i, step in enumerate(event_steps):
-                    if step.decision in (Decision.Deny, Decision.Escalate):
+                    if step.decision in (Decision.DENY, Decision.ESCALATE):
                         decision_str = _enum_str(step.decision).upper()
                         v: dict[str, Any] = {
                             "decision": decision_str,
@@ -861,7 +861,7 @@ async def _exec_navigate_to_trajectory(
         violations = [
             g.display_index
             for g in groups
-            if g.decision in (Decision.Deny, Decision.Escalate)
+            if g.decision in (Decision.DENY, Decision.ESCALATE)
         ]
         if not violations:
             return {"error": "No violations in this trajectory."}
@@ -1030,7 +1030,7 @@ async def _exec_navigate_to_violation(
             )
             for t in trajectories:
                 steps = correlate_events(t.events or [])
-                if any(s.decision in (Decision.Deny, Decision.Escalate) for s in steps):
+                if any(s.decision in (Decision.DENY, Decision.ESCALATE) for s in steps):
                     violated_tid = t.name
                     break
         except Exception as e:
@@ -1048,7 +1048,7 @@ async def _exec_navigate_to_violation(
                     continue
                 event_steps = correlate_events(full.events or [])
                 for i, step in enumerate(event_steps):
-                    if step.decision in (Decision.Deny, Decision.Escalate):
+                    if step.decision in (Decision.DENY, Decision.ESCALATE):
                         violated_tid = tid
                         initial_step = i
                         break
@@ -1072,7 +1072,7 @@ async def _exec_navigate_to_violation(
     if initial_step is None:
         event_steps = correlate_events(trajectory.events or [])
         for i, step in enumerate(event_steps):
-            if step.decision in (Decision.Deny, Decision.Escalate):
+            if step.decision in (Decision.DENY, Decision.ESCALATE):
                 initial_step = i
                 break
 
@@ -1188,9 +1188,9 @@ def _count_decisions(
     """Count (allow, deny, escalate) decisions across EventSteps."""
     allow_n = deny_n = escalate_n = 0
     for s in event_steps:
-        if s.decision == Decision.Deny:
+        if s.decision == Decision.DENY:
             deny_n += 1
-        elif s.decision == Decision.Escalate:
+        elif s.decision == Decision.ESCALATE:
             escalate_n += 1
         else:
             allow_n += 1
@@ -1232,7 +1232,7 @@ def _serialize_adjudicated_trajectory(
     violation_indices: list[int] = []
     allow_indices: list[int] = []
     for i, step in enumerate(event_steps):
-        if step.decision in (Decision.Deny, Decision.Escalate):
+        if step.decision in (Decision.DENY, Decision.ESCALATE):
             violation_indices.append(i)
         else:
             allow_indices.append(i)

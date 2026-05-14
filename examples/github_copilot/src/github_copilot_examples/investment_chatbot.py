@@ -352,7 +352,7 @@ class SonderaCopilotHook:
             f"[SonderaHarness] User message adjudication for trajectory {self._harness.trajectory_id}"
         )
 
-        if adjudication.decision == Decision.Deny:
+        if adjudication.decision == Decision.DENY:
             self._log.warning(
                 f"[SonderaHarness] User message flagged: {adjudication.reason}"
             )
@@ -376,7 +376,7 @@ class SonderaCopilotHook:
             f"[SonderaHarness] Assistant message adjudication for trajectory {self._harness.trajectory_id}"
         )
 
-        if adjudication.decision == Decision.Deny:
+        if adjudication.decision == Decision.DENY:
             self._log.warning(
                 f"[SonderaHarness] Assistant message flagged: {adjudication.reason}"
             )
@@ -406,7 +406,7 @@ class SonderaCopilotHook:
             f"[SonderaHarness] Tool execution start adjudication for trajectory {self._harness.trajectory_id}"
         )
 
-        if adjudication.decision == Decision.Deny:
+        if adjudication.decision == Decision.DENY:
             self._log.warning(
                 f"[SonderaHarness] Tool '{tool_name}' execution flagged: {adjudication.reason}"
             )
@@ -429,7 +429,7 @@ class SonderaCopilotHook:
             f"[SonderaHarness] Tool execution complete adjudication for trajectory {self._harness.trajectory_id}"
         )
 
-        if adjudication.decision == Decision.Deny:
+        if adjudication.decision == Decision.DENY:
             self._log.warning(
                 f"[SonderaHarness] Tool '{tool_name}' result flagged: {adjudication.reason}"
             )

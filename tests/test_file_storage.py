@@ -26,7 +26,7 @@ def _trajectory(
     return Trajectory(
         name=trajectory_id,
         agent=agent_id,
-        status=TrajectoryStatus.Running,
+        status=TrajectoryStatus.RUNNING,
     )
 
 
@@ -36,7 +36,7 @@ def _adjudicated_trajectory(
     return AdjudicatedTrajectory(
         id=trajectory_id,
         agent=agent_id,
-        status=TrajectoryStatus.Running,
+        status=TrajectoryStatus.RUNNING,
         steps=[],
     )
 

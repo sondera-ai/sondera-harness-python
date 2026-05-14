@@ -114,18 +114,18 @@ def _status_icon(status: str, c: ThemeColors) -> tuple[str, str]:
 
 def _decision_bright(decision: Decision, c: ThemeColors) -> str:
     """Return the bright color for a decision."""
-    if decision == Decision.Deny:
+    if decision == Decision.DENY:
         return c.error
-    if decision == Decision.Escalate:
+    if decision == Decision.ESCALATE:
         return c.warning
     return c.primary
 
 
 def _decision_dim(decision: Decision, c: ThemeColors) -> str:
     """Return the dim background color for a decision."""
-    if decision == Decision.Deny:
+    if decision == Decision.DENY:
         return c.dim_deny
-    if decision == Decision.Escalate:
+    if decision == Decision.ESCALATE:
         return c.dim_escalate
     return c.dim_allow
 
@@ -356,11 +356,11 @@ def _format_ms(ms: float) -> str:
 
 def _worst_decision(*decisions: Decision) -> Decision:
     """Return the most severe decision (DENY > ESCALATE > ALLOW)."""
-    if Decision.Deny in decisions:
-        return Decision.Deny
-    if Decision.Escalate in decisions:
-        return Decision.Escalate
-    return Decision.Allow
+    if Decision.DENY in decisions:
+        return Decision.DENY
+    if Decision.ESCALATE in decisions:
+        return Decision.ESCALATE
+    return Decision.ALLOW
 
 
 def _content_line_count(text: str) -> int:
@@ -424,7 +424,7 @@ class StepGroup:
     icon: str
     step_indices: list[int] = field(default_factory=list)
     primary_index: int = 0
-    decision: Decision = field(default_factory=lambda: Decision.Allow)
+    decision: Decision = field(default_factory=lambda: Decision.ALLOW)
     duration_ms: float | None = None
     tool_id: str | None = None
     tool_use_id: str | None = None
@@ -806,10 +806,10 @@ def _enrich_step_groups(groups: list[StepGroup], steps: list[EventStep]) -> None
         prev_file_path = g.file_path
 
         # Deny reason, stage, and policies from first denied step in group
-        if g.decision in (Decision.Deny, Decision.Escalate):
+        if g.decision in (Decision.DENY, Decision.ESCALATE):
             for si in g.step_indices:
                 s = steps[si]
-                if s.decision in (Decision.Deny, Decision.Escalate):
+                if s.decision in (Decision.DENY, Decision.ESCALATE):
                     g.deny_reason = s.reason or s.deny_message
                     g.deny_policies = s.policies
                     stage = s.stage
@@ -1051,7 +1051,7 @@ def _event_step_as_content(step: EventStep) -> _EventStepContent:
 
 
 def _render_tool_request(
-    content: object, c: ThemeColors, decision: Decision = Decision.Allow
+    content: object, c: ThemeColors, decision: Decision = Decision.ALLOW
 ) -> Text:
     """Render a ToolRequestContent as formatted Rich Text."""
     tool_id = str(_get(content, "tool_id", "unknown"))
@@ -1061,7 +1061,7 @@ def _render_tool_request(
         args = {}
 
     text = Text()
-    if decision == Decision.Deny:
+    if decision == Decision.DENY:
         text.append(display_name, style=f"bold {c.error} on {c.error_bg}")
         text.append(" request", style=c.error)
     else:
@@ -1160,7 +1160,7 @@ def _render_tool_request(
 def _render_tool_response(
     content: object,
     c: ThemeColors,
-    decision: Decision = Decision.Allow,
+    decision: Decision = Decision.ALLOW,
     file_path: str | None = None,
 ) -> Text:
     """Render a ToolResponseContent as formatted Rich Text."""
@@ -1169,7 +1169,7 @@ def _render_tool_response(
     response = _get(content, "response", None)
 
     text = Text()
-    if decision == Decision.Deny:
+    if decision == Decision.DENY:
         text.append(display_name, style=f"bold {c.error} on {c.error_bg}")
         text.append(" response", style=c.error)
     else:
@@ -1367,9 +1367,9 @@ def _render_step_content(step: EventStep, step_index: int, c: ThemeColors) -> St
     else:
         rich_text = Text(step.text or str(step.payload))
 
-    if decision == Decision.Deny:
+    if decision == Decision.DENY:
         css_class = "step-deny"
-    elif decision == Decision.Escalate:
+    elif decision == Decision.ESCALATE:
         css_class = "step-escalate"
     else:
         css_class = "step-allow"
@@ -1391,9 +1391,9 @@ def _render_merged_tool_card(
     text = Text()
 
     # Inline deny/escalate reason and policy info
-    if group.decision in (Decision.Deny, Decision.Escalate):
-        accent = c.error if group.decision == Decision.Deny else c.warning
-        label = "DENIED" if group.decision == Decision.Deny else "ESCALATED"
+    if group.decision in (Decision.DENY, Decision.ESCALATE):
+        accent = c.error if group.decision == Decision.DENY else c.warning
+        label = "DENIED" if group.decision == Decision.DENY else "ESCALATED"
         if group.deny_stage:
             stage_label = {"pre_tool": "PRE_TOOL", "post_tool": "POST_TOOL"}.get(
                 group.deny_stage, group.deny_stage.upper()
@@ -1443,7 +1443,7 @@ def _render_merged_tool_card(
                     text.append("\n")
 
     # Show Scanned context (description + intent) when available and step allowed
-    if group.decision == Decision.Allow and (
+    if group.decision == Decision.ALLOW and (
         group.scan_description or group.scan_intent
     ):
         scan_parts: list[str] = []
@@ -1489,9 +1489,9 @@ def _render_merged_tool_card(
         text.append_text(response_text)
 
     # CSS class based on worst decision
-    if group.decision == Decision.Deny:
+    if group.decision == Decision.DENY:
         css_class = "step-deny"
-    elif group.decision == Decision.Escalate:
+    elif group.decision == Decision.ESCALATE:
         css_class = "step-escalate"
     else:
         css_class = "step-allow"
@@ -1584,9 +1584,9 @@ def _render_prompt_card(group: StepGroup, c: ThemeColors) -> Static:
     """Render a user prompt card with lightweight markdown formatting."""
     header = Text()
     # Show adjudication badge for denied/escalated prompts
-    if group.decision in (Decision.Deny, Decision.Escalate):
-        accent = c.error if group.decision == Decision.Deny else c.warning
-        label = "DENIED" if group.decision == Decision.Deny else "ESCALATED"
+    if group.decision in (Decision.DENY, Decision.ESCALATE):
+        accent = c.error if group.decision == Decision.DENY else c.warning
+        label = "DENIED" if group.decision == Decision.DENY else "ESCALATED"
         header.append(f" {label} ", style=f"bold {c.fg} on {accent}")
         header.append(" ", style="")
         if group.deny_policies:
@@ -1688,14 +1688,14 @@ def _render_step_row(group: StepGroup, selected: bool, c: ThemeColors) -> Text:
 
     if group.is_prompt:
         # Show deny/escalate indicator for blocked prompts
-        if group.decision == Decision.Deny:
+        if group.decision == Decision.DENY:
             text.append("\u2717 ", style=c.error)
-        elif group.decision == Decision.Escalate:
+        elif group.decision == Decision.ESCALATE:
             text.append("\u26a0 ", style=c.warning)
         icon_style = c.fg_secondary if group.role == "model" else c.prompt_blue
-        if group.decision == Decision.Deny:
+        if group.decision == Decision.DENY:
             icon_style = c.error
-        elif group.decision == Decision.Escalate:
+        elif group.decision == Decision.ESCALATE:
             icon_style = c.warning
         text.append(f"{group.icon} ", style=icon_style)
         preview = group.prompt_text[:30].replace("\n", " ")
@@ -1705,10 +1705,10 @@ def _render_step_row(group: StepGroup, selected: bool, c: ThemeColors) -> Text:
     else:
         # Decision icon + tool name
         display_name = _clean_tool_name(group.tool_id or group.label)
-        if group.decision == Decision.Deny:
+        if group.decision == Decision.DENY:
             text.append("\u2717 ", style=c.error)
             text.append(display_name, style=c.error)
-        elif group.decision == Decision.Escalate:
+        elif group.decision == Decision.ESCALATE:
             text.append("\u26a0 ", style=c.warning)
             text.append(display_name, style=c.warning)
         else:
@@ -1727,11 +1727,11 @@ def _render_step_row(group: StepGroup, selected: bool, c: ThemeColors) -> Text:
             text.append(f"  {preview}", style=c.fg_dim)
 
         # Scan intent badge (e.g. "investigate", "implement") when available
-        if group.scan_intent and group.decision == Decision.Allow:
+        if group.scan_intent and group.decision == Decision.ALLOW:
             text.append(f"  [{group.scan_intent}]", style=c.fg_muted)
 
         # Mode badge for non-default modes (Monitor shows observed-only, Steer shows steering)
-        if (mode := group.mode) is not None and mode != Mode.Govern:
+        if (mode := group.mode) is not None and mode != Mode.GOVERN:
             text.append(f"  {str(mode).upper()}", style=c.fg_muted)
 
         # Duration
@@ -1766,7 +1766,7 @@ class DecisionMinimap(Widget):
             return text
 
         # Build suffix: [N/total  M denied]
-        denied = sum(1 for g in self._groups if g.decision == Decision.Deny)
+        denied = sum(1 for g in self._groups if g.decision == Decision.DENY)
         counter = f"[{self.current_index + 1}/{total}"
         if denied > 0:
             counter += f"  {denied} denied"
@@ -1787,7 +1787,7 @@ class DecisionMinimap(Widget):
                     text.append("\u2588", style=color)
         else:
             bucket_count = max(1, available)
-            pos_worst: list[Decision] = [Decision.Allow] * bucket_count
+            pos_worst: list[Decision] = [Decision.ALLOW] * bucket_count
             for i, group in enumerate(self._groups):
                 pos = i * bucket_count // total
                 pos_worst[pos] = _worst_decision(pos_worst[pos], group.decision)
@@ -1934,7 +1934,7 @@ class TrajectoryScreen(SectionNavMixin, Screen):
         self._violation_indices = [
             g.display_index
             for g in self._step_groups
-            if g.decision in (Decision.Deny, Decision.Escalate)
+            if g.decision in (Decision.DENY, Decision.ESCALATE)
         ]
 
         # Extend searchable text used by the '/' search feature
@@ -2079,7 +2079,7 @@ class TrajectoryScreen(SectionNavMixin, Screen):
         self._violation_indices: list[int] = [
             g.display_index
             for g in self._step_groups
-            if g.decision in (Decision.Deny, Decision.Escalate)
+            if g.decision in (Decision.DENY, Decision.ESCALATE)
         ]
 
         # Search state
@@ -2168,8 +2168,8 @@ class TrajectoryScreen(SectionNavMixin, Screen):
                 )
 
         # Line 2: violations or clean status (count from grouped steps, not raw)
-        denied = sum(1 for g in self._step_groups if g.decision == Decision.Deny)
-        escalated = sum(1 for g in self._step_groups if g.decision == Decision.Escalate)
+        denied = sum(1 for g in self._step_groups if g.decision == Decision.DENY)
+        escalated = sum(1 for g in self._step_groups if g.decision == Decision.ESCALATE)
 
         if denied > 0 or escalated > 0:
             text.append("\n")
@@ -2238,7 +2238,7 @@ class TrajectoryScreen(SectionNavMixin, Screen):
                     row_classes = "step-row"
                     if selected:
                         row_classes += " step-row--selected"
-                    if group.decision == Decision.Deny:
+                    if group.decision == Decision.DENY:
                         row_classes += " step-row--denied"
                     yield Static(
                         _render_step_row(group, selected, c),

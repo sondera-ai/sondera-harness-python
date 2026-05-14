@@ -201,9 +201,9 @@ class ViolationsFeed(Widget):
                 trajectory_ids={r.trajectory_id for r in records},
             )
 
-            if decision == Decision.Deny:
+            if decision == Decision.DENY:
                 deny_groups.append(group)
-            elif decision == Decision.Escalate:
+            elif decision == Decision.ESCALATE:
                 escalate_groups.append(group)
 
         return deny_groups, escalate_groups
@@ -312,9 +312,9 @@ class ViolationsFeed(Widget):
             text.append("  ")
 
         # Decision icon
-        if group.decision == Decision.Deny:
+        if group.decision == Decision.DENY:
             text.append("\u2717 ", style=f"bold {c.error}")
-        elif group.decision == Decision.Escalate:
+        elif group.decision == Decision.ESCALATE:
             text.append("\u26a0 ", style=f"bold {c.warning}")
 
         # Agent name

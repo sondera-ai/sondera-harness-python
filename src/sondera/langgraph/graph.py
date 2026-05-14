@@ -458,9 +458,9 @@ class SonderaGraph:
         adjudicated = await self._harness.adjudicate(event)
 
         if (
-            adjudicated.decision is Decision.Deny
+            adjudicated.decision is Decision.DENY
             and self._enforce
-            and adjudicated.mode == Mode.Govern
+            and adjudicated.mode == Mode.GOVERN
         ):
             raise GuardrailViolationError(
                 event_type=event.event_type,

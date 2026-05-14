@@ -986,11 +986,11 @@ class TrajectoryTheater(Screen):
         role_class = event.role
 
         # Format decision with full word
-        if event.decision == Decision.Deny:
+        if event.decision == Decision.DENY:
             dec_symbol, dec_text = "✗", "DENY"
-        elif event.decision == Decision.Escalate:
+        elif event.decision == Decision.ESCALATE:
             dec_symbol, dec_text = "⚠", "ESCALATE"
-        elif event.decision == Decision.Allow:
+        elif event.decision == Decision.ALLOW:
             dec_symbol, dec_text = "✓", "ALLOW"
         else:
             dec_symbol, dec_text = "?", "?"
@@ -998,7 +998,7 @@ class TrajectoryTheater(Screen):
 
         # Format content - show rule reason and policy IDs for DENY/ESCALATE
         content = self._format_content(event)
-        if event.decision == Decision.Deny:
+        if event.decision == Decision.DENY:
             # Show reason and policy IDs prominently before content
             reason_text = event.reason or "blocked"
             if event.policy_ids:
@@ -1006,7 +1006,7 @@ class TrajectoryTheater(Screen):
                 display_content = f"[bold #BF616A]«{reason_text}»[/] [dim #BF616A]({policies})[/] {content}"
             else:
                 display_content = f"[bold #BF616A]«{reason_text}»[/] {content}"
-        elif event.decision == Decision.Escalate:
+        elif event.decision == Decision.ESCALATE:
             reason_text = event.reason or "escalated"
             if event.policy_ids:
                 policies = ", ".join(event.policy_ids)

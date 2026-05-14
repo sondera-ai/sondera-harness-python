@@ -4,6 +4,7 @@ This module provides the ClaudeCodeHooks class that processes Claude Code
 hook events and evaluates them against Cedar policies for Write and Edit tools.
 """
 
+import json
 import logging
 from pathlib import Path
 
@@ -74,25 +75,37 @@ class ClaudeCodeHooks:
 
     def _evaluate(
         self,
-        action_name: str,
+        tool_name: str,
         session_id: str,
         parameters: dict,
     ) -> HookResponse:
         agent_uid = EntityUid(f"{_CEDAR_NAMESPACE}::Agent", session_id)
-        action_uid = EntityUid(f"{_CEDAR_NAMESPACE}::Action", action_name)
+        action_uid = EntityUid(f"{_CEDAR_NAMESPACE}::Action", "PreToolUse")
         trajectory_uid = EntityUid(f"{_CEDAR_NAMESPACE}::Trajectory", "default")
+        tool_uid = EntityUid(f"{_CEDAR_NAMESPACE}::Tool", tool_name)
+
+        context_data: dict[str, object] = {
+            "tool": tool_name,
+            "arguments": json.dumps(parameters),
+            "parameters": parameters,
+        }
 
         request = Request(
             principal=agent_uid,
             action=action_uid,
-            resource=trajectory_uid,
-            context=Context({"parameters": parameters}),
+            resource=tool_uid,
+            context=Context(context_data),
         )
 
         authorizer = Authorizer(
             entities=[
-                Entity(agent_uid, {"name": "claude_code", "provider_id": "anthropic"}),
-                Entity(trajectory_uid, {}),
+                Entity(agent_uid, {"name": "claude_code", "provider": "anthropic"}),
+                Entity(trajectory_uid, {"step_count": 0}),
+                Entity(
+                    tool_uid,
+                    {"name": tool_name, "description": ""},
+                    [trajectory_uid],
+                ),
             ],
             schema=self._schema,
         )
@@ -100,8 +113,8 @@ class ClaudeCodeHooks:
         response = authorizer.is_authorized(request, self._policy_set)
 
         _LOGGER.debug(
-            "Cedar evaluation: action=%s decision=%s reasons=%s",
-            action_name,
+            "Cedar evaluation: tool=%s decision=%s reasons=%s",
+            tool_name,
             response.decision,
             response.reason,
         )

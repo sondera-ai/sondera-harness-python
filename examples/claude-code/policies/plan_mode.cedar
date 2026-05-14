@@ -6,6 +6,10 @@
 // operations when permission_mode == "plan". In plan mode, Claude Code should
 // only explore the codebase (read, search, etc.) and not make any modifications.
 //
+// NOTE: The typed parameters extension (context.parameters) is a local-only
+// feature. These policies work with the local CedarPolicyHarness but typed
+// parameter checks are not available on the remote server harness.
+//
 // ============================================================================
 
 // ============================================================================
@@ -15,10 +19,11 @@
 @id("forbid-write-in-plan-mode")
 forbid(
     principal,
-    action == claude_code::Action::"Write",
+    action == claude_code::Action::"PreToolUse",
     resource
 )
 when {
+    context.tool == "Write" &&
     context has parameters &&
     context.parameters has permission_mode &&
     context.parameters.permission_mode == "plan"
@@ -31,10 +36,11 @@ unless {
 @id("forbid-edit-in-plan-mode")
 forbid(
     principal,
-    action == claude_code::Action::"Edit",
+    action == claude_code::Action::"PreToolUse",
     resource
 )
 when {
+    context.tool == "Edit" &&
     context has parameters &&
     context.parameters has permission_mode &&
     context.parameters.permission_mode == "plan"

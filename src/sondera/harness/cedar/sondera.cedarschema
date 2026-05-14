@@ -1,0 +1,78 @@
+// Sondera public Cedar schema for agent governance.
+//
+// Defines the entity model and actions used by both the local
+// CedarPolicyHarness (Python SDK) and the remote server harness.
+// Policies written against this schema are portable between local
+// development and production deployment.
+//
+// This is a minimal public subset of the server schema. Advanced
+// server-side context fields are omitted from the public schema.
+
+// ─────────────────────────────────────────────────────
+// Entity types
+// ─────────────────────────────────────────────────────
+
+// Principal: the AI agent executing actions.
+entity Agent = {
+    provider: String,
+};
+
+// Role of a message in the conversation.
+entity Role enum ["user", "model", "system", "tool"];
+
+// A single message in the agent conversation.
+// Created as a child of Trajectory when a Prompt event is processed.
+entity Message in [Trajectory] = {
+    content: String,
+    role: Role,
+};
+
+// The agent's execution trajectory — a sequence of actions and
+// observations within a session.
+entity Trajectory = {
+    step_count: Long,
+};
+
+// A tool being invoked by the agent. Used as the resource for
+// PreToolUse actions. Child of Trajectory.
+entity Tool in [Trajectory] = {
+    name: String,
+    description: String,
+};
+
+// ─────────────────────────────────────────────────────
+// Actions
+// ─────────────────────────────────────────────────────
+
+// Prompt: user or system prompt submission.
+// Resource is the Message entity.
+action "Prompt" appliesTo {
+    principal: [Agent],
+    resource: [Message],
+};
+
+// PreToolUse: agent requests a tool invocation (pre-execution).
+// Resource is the Tool entity (e.g., Tool::"Grep").
+// Context carries the tool name and JSON-serialized arguments.
+action "PreToolUse" appliesTo {
+    principal: [Agent],
+    resource: [Tool],
+    context: {
+        // Name of the tool being invoked.
+        tool: String,
+        // Tool call arguments serialized as a JSON string.
+        arguments: String,
+    },
+};
+
+// ToolOutput: result of a tool invocation (post-execution).
+// Resource is the Trajectory entity.
+// Context carries the serialized tool output.
+action "ToolOutput" appliesTo {
+    principal: [Agent],
+    resource: [Trajectory],
+    context: {
+        // Serialized tool output content.
+        content: String,
+    },
+};

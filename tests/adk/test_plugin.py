@@ -38,7 +38,7 @@ def mock_harness() -> MagicMock:
     harness.initialize = AsyncMock()
     harness.finalize = AsyncMock()
     harness.adjudicate = AsyncMock(
-        return_value=Adjudicated(decision=Decision.Allow, reason="Allowed")
+        return_value=Adjudicated(decision=Decision.ALLOW, reason="Allowed")
     )
     return harness
 
@@ -149,7 +149,7 @@ class TestOnUserMessageCallback:
     async def test_deny(self, plugin, invocation_context, mock_harness):
         # Return Deny for user prompt
         mock_harness.adjudicate = AsyncMock(
-            return_value=Adjudicated(decision=Decision.Deny, reason="Blocked")
+            return_value=Adjudicated(decision=Decision.DENY, reason="Blocked")
         )
         message = genai_types.Content(
             role="user", parts=[genai_types.Part.from_text(text="bad input")]
@@ -165,7 +165,7 @@ class TestOnUserMessageCallback:
         self, plugin, invocation_context, mock_harness, caplog
     ):
         mock_harness.adjudicate = AsyncMock(
-            return_value=Adjudicated(decision=Decision.Escalate, reason="Needs review")
+            return_value=Adjudicated(decision=Decision.ESCALATE, reason="Needs review")
         )
         message = genai_types.Content(
             role="user", parts=[genai_types.Part.from_text(text="borderline")]
@@ -240,12 +240,43 @@ async def initialized_plugin(plugin, invocation_context, mock_harness):
 
 class TestBeforeModelCallback:
     @pytest.mark.asyncio
-    async def test_allow(self, initialized_plugin, callback_context, mock_harness):
+    async def test_skips_when_prompt_already_adjudicated(
+        self, initialized_plugin, callback_context, mock_harness
+    ):
+        """Regression: on_user_message_callback already emits the user prompt once
+        per turn; before_model_callback fires on every LLM round-trip (including
+        post-tool continuations), so it must dedupe when the last user message is
+        the same one that was just gated."""
+        # initialized_plugin fixture already ran on_user_message_callback with "init",
+        # which populated the user-role dedupe key.
+        request = LlmRequest(
+            model="gemini-2.5-flash",
+            contents=[
+                genai_types.Content(
+                    role="user",
+                    parts=[genai_types.Part.from_text(text="init")],
+                ),
+            ],
+        )
+        result = await initialized_plugin.before_model_callback(
+            callback_context=callback_context, llm_request=request
+        )
+        assert result is None
+        mock_harness.adjudicate.assert_not_awaited()
+        assert initialized_plugin._current_model_name == "gemini-2.5-flash"
+
+    @pytest.mark.asyncio
+    async def test_adjudicates_modified_prompt(
+        self, initialized_plugin, callback_context, mock_harness
+    ):
+        """When an agent modifies the user message before dispatch to the model,
+        the new content differs from what on_user_message_callback gated and must
+        be re-adjudicated."""
         request = LlmRequest(
             contents=[
                 genai_types.Content(
                     role="user",
-                    parts=[genai_types.Part.from_text(text="What is my balance?")],
+                    parts=[genai_types.Part.from_text(text="rewritten by agent")],
                 ),
             ]
         )
@@ -256,17 +287,46 @@ class TestBeforeModelCallback:
         mock_harness.adjudicate.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_deny(self, initialized_plugin, callback_context, mock_harness):
-        mock_harness.adjudicate = AsyncMock(
-            return_value=Adjudicated(
-                decision=Decision.Deny, reason="Model call blocked"
-            )
+    async def test_adjudicates_agent_role_content(
+        self, initialized_plugin, callback_context, mock_harness
+    ):
+        """In multi-agent / sub-agent handoffs the outgoing request's last
+        content can be role='model' (agent-generated). It must still be gated."""
+        request = LlmRequest(
+            contents=[
+                genai_types.Content(
+                    role="model",
+                    parts=[genai_types.Part.from_text(text="delegated by sub-agent")],
+                ),
+            ]
         )
-        request = LlmRequest(contents=[])
         result = await initialized_plugin.before_model_callback(
             callback_context=callback_context, llm_request=request
         )
-        assert result is not None
+        assert result is None
+        mock_harness.adjudicate.assert_awaited_once()
+        assert initialized_plugin._last_assistant_prompt == "delegated by sub-agent"
+
+    @pytest.mark.asyncio
+    async def test_deny_modified_prompt_returns_llm_response(
+        self, initialized_plugin, callback_context, mock_harness
+    ):
+        mock_harness.adjudicate = AsyncMock(
+            return_value=Adjudicated(
+                decision=Decision.DENY, reason="Model call blocked"
+            )
+        )
+        request = LlmRequest(
+            contents=[
+                genai_types.Content(
+                    role="user",
+                    parts=[genai_types.Part.from_text(text="forbidden content")],
+                ),
+            ]
+        )
+        result = await initialized_plugin.before_model_callback(
+            callback_context=callback_context, llm_request=request
+        )
         assert isinstance(result, LlmResponse)
         assert result.content.parts[0].text == "Model call blocked"
 
@@ -293,7 +353,7 @@ class TestAfterModelCallback:
     @pytest.mark.asyncio
     async def test_deny(self, initialized_plugin, callback_context, mock_harness):
         mock_harness.adjudicate = AsyncMock(
-            return_value=Adjudicated(decision=Decision.Deny, reason="Response blocked")
+            return_value=Adjudicated(decision=Decision.DENY, reason="Response blocked")
         )
         response = LlmResponse(
             content=genai_types.Content(
@@ -351,7 +411,7 @@ class TestToolCallbacks:
     ):
         mock_harness.adjudicate = AsyncMock(
             return_value=Adjudicated(
-                decision=Decision.Deny, reason="Tool not permitted"
+                decision=Decision.DENY, reason="Tool not permitted"
             )
         )
         result = await initialized_plugin.before_tool_callback(
@@ -380,7 +440,7 @@ class TestToolCallbacks:
     ):
         mock_harness.adjudicate = AsyncMock(
             return_value=Adjudicated(
-                decision=Decision.Deny, reason="Result contains PII"
+                decision=Decision.DENY, reason="Result contains PII"
             )
         )
         result = await initialized_plugin.after_tool_callback(
@@ -398,7 +458,7 @@ class TestToolCallbacks:
     ):
         mock_harness.adjudicate = AsyncMock(
             return_value=Adjudicated(
-                decision=Decision.Escalate, reason="Needs approval"
+                decision=Decision.ESCALATE, reason="Needs approval"
             )
         )
         with caplog.at_level(logging.WARNING):

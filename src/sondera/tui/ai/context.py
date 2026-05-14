@@ -132,8 +132,8 @@ def extract_trajectory_context(screen: TrajectoryScreen) -> str:
     # Count decisions from grouped steps
     from sondera.types import Decision
 
-    denied = sum(1 for g in screen._step_groups if g.decision == Decision.Deny)
-    escalated = sum(1 for g in screen._step_groups if g.decision == Decision.Escalate)
+    denied = sum(1 for g in screen._step_groups if g.decision == Decision.DENY)
+    escalated = sum(1 for g in screen._step_groups if g.decision == Decision.ESCALATE)
     allowed = len(screen._step_groups) - denied - escalated
     lines.append(f"  Denied: {denied}  Escalated: {escalated}  Allowed: {allowed}")
 

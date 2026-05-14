@@ -24,7 +24,7 @@ def mock_harness() -> MagicMock:
     """Create a mock harness for testing."""
     harness = MagicMock(spec=Harness)
     harness.adjudicate = AsyncMock(
-        return_value=Adjudicated(Decision.Allow, reason="Allowed")
+        return_value=Adjudicated(Decision.ALLOW, reason="Allowed")
     )
     harness.finalize = AsyncMock()
     harness.fail = AsyncMock()
@@ -173,7 +173,7 @@ class TestAinvoke:
         """Mock DENY adjudication, verify GuardrailViolationError."""
         mock_harness.adjudicate = AsyncMock(
             return_value=Adjudicated(
-                Decision.Deny, mode=Mode.Govern, reason="Blocked by policy"
+                Decision.DENY, mode=Mode.GOVERN, reason="Blocked by policy"
             )
         )
 
@@ -196,7 +196,7 @@ class TestAinvoke:
         """DENY with enforce=False should not raise."""
         mock_harness.adjudicate = AsyncMock(
             return_value=Adjudicated(
-                Decision.Deny, mode=Mode.Govern, reason="Blocked by policy"
+                Decision.DENY, mode=Mode.GOVERN, reason="Blocked by policy"
             )
         )
 
@@ -452,7 +452,7 @@ class TestFailPath:
     ):
         """A GuardrailViolationError should call finalize (not fail) and re-raise."""
         mock_harness.adjudicate = AsyncMock(
-            return_value=Adjudicated(Decision.Deny, mode=Mode.Govern, reason="Blocked")
+            return_value=Adjudicated(Decision.DENY, mode=Mode.GOVERN, reason="Blocked")
         )
 
         async def mock_astream(input, config=None, stream_mode=None, **kwargs):

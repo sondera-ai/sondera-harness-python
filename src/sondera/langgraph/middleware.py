@@ -6,7 +6,6 @@ import json
 import logging
 import uuid
 from collections.abc import Awaitable, Callable
-from enum import StrEnum
 from typing import Any
 
 from langchain.agents import AgentState
@@ -30,6 +29,7 @@ from sondera.types import (
     Mode,
     Prompt,
     PromptRole,
+    Strategy,
     ToolCall,
     ToolOutput,
 )
@@ -44,22 +44,6 @@ except ImportError:
 from sondera.harness import Harness
 
 _LOGGER = logging.getLogger(__name__)
-
-
-class Strategy(StrEnum):
-    """Local enforcement strategy applied when the policy engine denies a request.
-
-    Note:
-        ``Strategy`` is only applied when the server-side ``Mode`` is
-        ``Mode.Govern``.  Deny verdicts returned in ``Mode.Monitor`` or
-        ``Mode.Steer`` are treated as *observe-only* and the request is
-        allowed through regardless of this setting.
-    """
-
-    BLOCK = "block"
-    """Jump to end immediately when a policy violation is detected."""
-    STEER = "steer"
-    """Allow continuation with modified content when a policy violation is detected."""
 
 
 class State(AgentState):
@@ -80,7 +64,7 @@ class SonderaHarnessMiddleware(AgentMiddleware[State]):
     Mode precedence:
         The server-side ``Mode`` attached to each ``Adjudicated`` verdict takes
         precedence over the local ``Strategy`` setting.  Only verdicts with
-        ``mode == Mode.Govern`` are enforced; ``Mode.Monitor`` and ``Mode.Steer``
+        ``mode == Mode.GOVERN`` are enforced; ``Mode.MONITOR`` and ``Mode.STEER``
         verdicts are logged but do **not** block or modify execution.  This means
         you can safely deploy with ``strategy=Strategy.BLOCK`` in a staging
         environment where the server is running in ``Monitor`` mode, and the
@@ -210,8 +194,8 @@ class SonderaHarnessMiddleware(AgentMiddleware[State]):
 
         _log_guardrails(self._log, adjudicated, self._harness.trajectory_id)
 
-        if adjudicated.decision == Decision.Deny:
-            if adjudicated.mode != Mode.Govern:
+        if adjudicated.decision == Decision.DENY:
+            if adjudicated.mode != Mode.GOVERN:
                 self._log.info(
                     "[SonderaHarness] Non-enforcing mode (%s) deny for trajectory %s — allowing",
                     adjudicated.mode,
@@ -220,7 +204,7 @@ class SonderaHarnessMiddleware(AgentMiddleware[State]):
                 return updates if updates else None
             reason = _deny_reason(adjudicated, "Policy violation")
             self._log.warning(
-                f"[SonderaHarness] Policy violation detected (strategy={self._strategy.value}): "
+                f"[SonderaHarness] Policy violation detected (strategy={self._strategy}): "
                 f"{reason}"
             )
             if self._strategy == Strategy.BLOCK:
@@ -237,7 +221,7 @@ class SonderaHarnessMiddleware(AgentMiddleware[State]):
                 **updates,
             }
 
-        if adjudicated.decision == Decision.Escalate:
+        if adjudicated.decision == Decision.ESCALATE:
             self._log.info(
                 f"[SonderaHarness] Escalation flagged for trajectory "
                 f"{self._harness.trajectory_id}: {adjudicated.reason}"
@@ -269,13 +253,13 @@ class SonderaHarnessMiddleware(AgentMiddleware[State]):
             )
             pre_adjudicated = await self._harness.adjudicate(
                 self._make_event(
-                    Prompt(_message_to_text(request.messages[-1]), PromptRole.Assistant)
+                    Prompt(_message_to_text(request.messages[-1]), PromptRole.ASSISTANT)
                 ),
             )
 
             _log_guardrails(self._log, pre_adjudicated, self._harness.trajectory_id)
-            if pre_adjudicated.decision == Decision.Deny:
-                if pre_adjudicated.mode != Mode.Govern:
+            if pre_adjudicated.decision == Decision.DENY:
+                if pre_adjudicated.mode != Mode.GOVERN:
                     _LOGGER.info(
                         "[SonderaHarness] Non-enforcing mode (%s) pre-model deny — allowing",
                         pre_adjudicated.mode,
@@ -283,7 +267,7 @@ class SonderaHarnessMiddleware(AgentMiddleware[State]):
                 else:
                     reason = _deny_reason(pre_adjudicated, "Policy violation")
                     _LOGGER.warning(
-                        f"[SonderaHarness] Pre-model policy violation (strategy={self._strategy.value}): "
+                        f"[SonderaHarness] Pre-model policy violation (strategy={self._strategy}): "
                         f"{reason}"
                     )
                     message = AIMessage(
@@ -296,7 +280,7 @@ class SonderaHarnessMiddleware(AgentMiddleware[State]):
                             result=[message],
                             structured_response=None,
                         )
-            elif pre_adjudicated.decision == Decision.Escalate:
+            elif pre_adjudicated.decision == Decision.ESCALATE:
                 self._log.info(
                     f"[SonderaHarness] Pre-model escalation flagged for trajectory "
                     f"{self._harness.trajectory_id}: {pre_adjudicated.reason}"
@@ -310,7 +294,7 @@ class SonderaHarnessMiddleware(AgentMiddleware[State]):
         for message in response.result:
             if isinstance(message, AIMessage):
                 post_adjudicated = await self._harness.adjudicate(
-                    self._make_event(Prompt(message.text, PromptRole.Assistant)),
+                    self._make_event(Prompt(message.text, PromptRole.ASSISTANT)),
                 )
                 self._log.info(
                     f"[SonderaHarness] Post-model Adjudication for trajectory {self._harness.trajectory_id}"
@@ -318,8 +302,8 @@ class SonderaHarnessMiddleware(AgentMiddleware[State]):
                 _log_guardrails(
                     self._log, post_adjudicated, self._harness.trajectory_id
                 )
-                if post_adjudicated.decision == Decision.Deny:
-                    if post_adjudicated.mode != Mode.Govern:
+                if post_adjudicated.decision == Decision.DENY:
+                    if post_adjudicated.mode != Mode.GOVERN:
                         self._log.info(
                             "[SonderaHarness] Non-enforcing mode (%s) post-model deny — allowing",
                             post_adjudicated.mode,
@@ -328,7 +312,7 @@ class SonderaHarnessMiddleware(AgentMiddleware[State]):
                     else:
                         reason = _deny_reason(post_adjudicated, "Policy violation")
                         self._log.warning(
-                            f"[SonderaHarness] Post-model policy violation (strategy={self._strategy.value}): "
+                            f"[SonderaHarness] Post-model policy violation (strategy={self._strategy}): "
                             f"{reason}"
                         )
                         message = AIMessage(
@@ -342,7 +326,7 @@ class SonderaHarnessMiddleware(AgentMiddleware[State]):
                                 structured_response=response.structured_response,
                             )
                 else:
-                    if post_adjudicated.decision == Decision.Escalate:
+                    if post_adjudicated.decision == Decision.ESCALATE:
                         self._log.info(
                             f"[SonderaHarness] Post-model escalation flagged for trajectory "
                             f"{self._harness.trajectory_id}: {post_adjudicated.reason}"
@@ -400,8 +384,8 @@ class SonderaHarnessMiddleware(AgentMiddleware[State]):
         )
         _log_guardrails(self._log, pre_adjudicated, self._harness.trajectory_id)
 
-        if pre_adjudicated.decision == Decision.Deny:
-            if pre_adjudicated.mode != Mode.Govern:
+        if pre_adjudicated.decision == Decision.DENY:
+            if pre_adjudicated.mode != Mode.GOVERN:
                 self._log.info(
                     "[SonderaHarness] Non-enforcing mode (%s) pre-tool deny for %s — allowing",
                     pre_adjudicated.mode,
@@ -413,7 +397,7 @@ class SonderaHarnessMiddleware(AgentMiddleware[State]):
                 )
                 self._log.warning(
                     f"[SonderaHarness] Pre-tool policy violation for {tool_name} "
-                    f"(strategy={self._strategy.value}): {reason}"
+                    f"(strategy={self._strategy}): {reason}"
                 )
                 if self._strategy == Strategy.BLOCK:
                     return Command(
@@ -435,7 +419,7 @@ class SonderaHarnessMiddleware(AgentMiddleware[State]):
                     name=tool_name,
                 )
 
-        if pre_adjudicated.decision == Decision.Escalate:
+        if pre_adjudicated.decision == Decision.ESCALATE:
             self._log.info(
                 f"[SonderaHarness] Pre-tool escalation flagged for {tool_name} in trajectory "
                 f"{self._harness.trajectory_id}: {pre_adjudicated.reason}"
@@ -459,8 +443,8 @@ class SonderaHarnessMiddleware(AgentMiddleware[State]):
             )
             _log_guardrails(self._log, post_adjudicated, self._harness.trajectory_id)
 
-            if post_adjudicated.decision == Decision.Deny:
-                if post_adjudicated.mode != Mode.Govern:
+            if post_adjudicated.decision == Decision.DENY:
+                if post_adjudicated.mode != Mode.GOVERN:
                     self._log.info(
                         "[SonderaHarness] Non-enforcing mode (%s) post-tool deny for %s — allowing",
                         post_adjudicated.mode,
@@ -472,7 +456,7 @@ class SonderaHarnessMiddleware(AgentMiddleware[State]):
                     )
                     self._log.warning(
                         f"[SonderaHarness] Post-tool policy violation for {tool_name} "
-                        f"(strategy={self._strategy.value}): {reason}"
+                        f"(strategy={self._strategy}): {reason}"
                     )
                     if self._strategy == Strategy.BLOCK:
                         return Command(
@@ -494,7 +478,7 @@ class SonderaHarnessMiddleware(AgentMiddleware[State]):
                         name=tool_name,
                     )
 
-            if post_adjudicated.decision == Decision.Escalate:
+            if post_adjudicated.decision == Decision.ESCALATE:
                 self._log.info(
                     f"[SonderaHarness] Post-tool escalation flagged for {tool_name} in trajectory "
                     f"{self._harness.trajectory_id}: {post_adjudicated.reason}"

@@ -73,12 +73,12 @@ class StepEvent(Message):
     @property
     def is_denied(self) -> bool:
         """True if this step was denied by policy."""
-        return self.decision == Decision.Deny
+        return self.decision == Decision.DENY
 
     @property
     def is_escalated(self) -> bool:
         """True if this step requires escalation."""
-        return self.decision == Decision.Escalate
+        return self.decision == Decision.ESCALATE
 
 
 @dataclass

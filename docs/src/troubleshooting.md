@@ -182,7 +182,7 @@ async def test_blocks_rm_rf(harness):
         event=ToolCall(tool="Bash", arguments='{"command": "rm -rf /"}'),
     )
     result = await harness.adjudicate(event)
-    assert result.decision == Decision.Deny
+    assert result.decision == Decision.DENY
 
 @pytest.mark.asyncio
 async def test_allows_safe_commands(harness):
@@ -191,7 +191,7 @@ async def test_allows_safe_commands(harness):
         event=ToolCall(tool="Bash", arguments='{"command": "ls -la"}'),
     )
     result = await harness.adjudicate(event)
-    assert result.decision == Decision.Allow
+    assert result.decision == Decision.ALLOW
 ```
 
 Run with:

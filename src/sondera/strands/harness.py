@@ -18,6 +18,7 @@ from sondera.strands.analyze import format_strands_agent
 from sondera.types import (
     Decision,
     Event,
+    Mode,
     Prompt,
     PromptRole,
     ToolCall,
@@ -161,7 +162,7 @@ class SonderaHarnessHook(HookProvider):
                 return
 
             content = self._extract_text_from_event(event)
-            prompt = Prompt(role=PromptRole.User, content=content)
+            prompt = Prompt(role=PromptRole.USER, content=content)
             harness_event = Event(
                 agent=self._harness.agent,
                 trajectory_id=self._harness.trajectory_id,
@@ -172,7 +173,7 @@ class SonderaHarnessHook(HookProvider):
                 f"[SonderaHarness] Before model adjudication for trajectory {self._harness.trajectory_id}"
             )
 
-            if adjudication.decision == Decision.Deny:
+            if adjudication.decision == Decision.DENY:
                 self._log.warning(
                     f"[SonderaHarness] Model call blocked: {adjudication.reason}"
                 )
@@ -194,7 +195,7 @@ class SonderaHarnessHook(HookProvider):
             if not content:
                 return
 
-            prompt = Prompt(role=PromptRole.Assistant, content=content)
+            prompt = Prompt(role=PromptRole.ASSISTANT, content=content)
             harness_event = Event(
                 agent=self._harness.agent,
                 trajectory_id=self._harness.trajectory_id,
@@ -205,7 +206,7 @@ class SonderaHarnessHook(HookProvider):
                 f"[SonderaHarness] After model adjudication for trajectory {self._harness.trajectory_id}"
             )
 
-            if adjudication.decision == Decision.Deny:
+            if adjudication.decision == Decision.DENY:
                 self._log.warning(
                     f"[SonderaHarness] Model response blocked: {adjudication.reason}"
                 )
@@ -248,12 +249,21 @@ class SonderaHarnessHook(HookProvider):
                 f"[SonderaHarness] Before tool adjudication for trajectory {self._harness.trajectory_id}"
             )
 
-            if adjudication.decision == Decision.Deny:
-                # Cancel the tool call using Strands' cancel_tool mechanism
-                event.cancel_tool = f"Tool blocked by policy: {adjudication.reason}"
-                self._log.warning(
-                    f"[SonderaHarness] Blocked tool '{tool_name}': {adjudication.reason}"
-                )
+            if adjudication.decision == Decision.DENY:
+                if adjudication.mode == Mode.GOVERN:
+                    # Cancel the tool call using Strands' cancel_tool mechanism
+                    event.cancel_tool = f"Tool blocked by policy: {adjudication.reason}"
+                    self._log.warning(
+                        "[SonderaHarness] Blocked tool '%s': %s",
+                        tool_name,
+                        adjudication.reason,
+                    )
+                else:
+                    self._log.info(
+                        "[SonderaHarness] Tool '%s' deny (mode=%s) -- allowing",
+                        tool_name,
+                        adjudication.mode,
+                    )
         except Exception as e:
             self._log.error(
                 f"[SonderaHarness] Error in before_tool_call: {e}", exc_info=True
@@ -296,18 +306,25 @@ class SonderaHarnessHook(HookProvider):
                 f"[SonderaHarness] After tool adjudication for trajectory {self._harness.trajectory_id}"
             )
 
-            if adjudication.decision == Decision.Deny:
-                # Modify the result to indicate policy violation
-                event.result = {
-                    "content": [
-                        {"text": f"Tool result blocked: {adjudication.reason}"}
-                    ],
-                    "status": "error",
-                    "toolUseId": tool_use_id,
-                }
-                self._log.warning(
-                    f"[SonderaHarness] Tool result blocked: {adjudication.reason}"
-                )
+            if adjudication.decision == Decision.DENY:
+                if adjudication.mode == Mode.GOVERN:
+                    # Modify the result to indicate policy violation
+                    event.result = {
+                        "content": [
+                            {"text": f"Tool result blocked: {adjudication.reason}"}
+                        ],
+                        "status": "error",
+                        "toolUseId": tool_use_id,
+                    }
+                    self._log.warning(
+                        "[SonderaHarness] Tool result blocked: %s",
+                        adjudication.reason,
+                    )
+                else:
+                    self._log.info(
+                        "[SonderaHarness] Post-tool deny (mode=%s) -- allowing",
+                        adjudication.mode,
+                    )
         except Exception as e:
             self._log.error(
                 f"[SonderaHarness] Error in after_tool_call: {e}", exc_info=True

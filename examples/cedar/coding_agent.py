@@ -24,34 +24,23 @@ policy_set = PolicySet("""
 @id("allow-prompts")
 permit(principal, action == Coding_Agent::Action::"Prompt", resource);
 
-// Allow all read operations - reading is generally safe
-@id("allow-read")
-permit(principal, action == Coding_Agent::Action::"Read", resource);
+// Allow all tool invocations by default (restricted by forbid rules below)
+@id("allow-tool-use")
+permit(principal, action == Coding_Agent::Action::"PreToolUse", resource);
 
-// Allow file pattern searches
-@id("allow-glob")
-permit(principal, action == Coding_Agent::Action::"Glob", resource);
-
-// Allow code searches
-@id("allow-grep")
-permit(principal, action == Coding_Agent::Action::"Grep", resource);
-
-// Allow all write operations by default (will be restricted by forbid rules)
-@id("allow-write")
-permit(principal, action == Coding_Agent::Action::"Write", resource);
-
-// Allow all edit operations by default (will be restricted by forbid rules)
-@id("allow-edit")
-permit(principal, action == Coding_Agent::Action::"Edit", resource);
+// Allow all tool outputs
+@id("allow-tool-output")
+permit(principal, action == Coding_Agent::Action::"ToolOutput", resource);
 
 // Forbid writing to sensitive configuration files
 @id("forbid-sensitive-write")
 forbid(
   principal,
-  action == Coding_Agent::Action::"Write",
+  action == Coding_Agent::Action::"PreToolUse",
   resource
 )
 when {
+  context.tool == "Write" &&
   context has parameters &&
   (context.parameters.file_path like "*.env*" ||
    context.parameters.file_path like "*.git/*" ||
@@ -63,28 +52,26 @@ when {
 @id("forbid-sensitive-edit")
 forbid(
   principal,
-  action == Coding_Agent::Action::"Edit",
+  action == Coding_Agent::Action::"PreToolUse",
   resource
 )
 when {
+  context.tool == "Edit" &&
   context has parameters &&
   (context.parameters.file_path like "*.env*" ||
    context.parameters.file_path like "*id_rsa*" ||
    context.parameters.file_path like "*.pem*")
 };
 
-// Allow all bash commands by default (will be restricted by forbid rules)
-@id("allow-bash")
-permit(principal, action == Coding_Agent::Action::"Bash", resource);
-
 // Forbid dangerous bash commands that could cause data loss
 @id("forbid-dangerous-bash")
 forbid(
   principal,
-  action == Coding_Agent::Action::"Bash",
+  action == Coding_Agent::Action::"PreToolUse",
   resource
 )
 when {
+  context.tool == "Bash" &&
   context has parameters &&
   (context.parameters.command like "*rm -rf /*" ||
    context.parameters.command like "*mkfs*" ||
@@ -92,22 +79,15 @@ when {
    context.parameters.command like "*> /dev/sda*")
 };
 
-// Allow all web searches by default
-@id("allow-web-search")
-permit(principal, action == Coding_Agent::Action::"WebSearch", resource);
-
-// Allow all web fetches by default (will be restricted by forbid rules)
-@id("allow-web-fetch")
-permit(principal, action == Coding_Agent::Action::"WebFetch", resource);
-
 // Forbid fetching from untrusted domains
 @id("forbid-untrusted-fetch")
 forbid(
   principal,
-  action == Coding_Agent::Action::"WebFetch",
+  action == Coding_Agent::Action::"PreToolUse",
   resource
 )
 when {
+  context.tool == "WebFetch" &&
   context has parameters &&
   (context.parameters.url like "*pastebin*" ||
    context.parameters.url like "*raw.githubusercontent.com*")
@@ -143,7 +123,7 @@ async def main():
         _event(harness, Prompt(role="user", content="Hello world!"))
     )
     logger.success(f"User prompt. Decision: {result.decision}")
-    assert result.decision == Decision.Allow
+    assert result.decision == Decision.ALLOW
 
     result = await harness.adjudicate(
         _event(
@@ -154,7 +134,7 @@ async def main():
         )
     )
     logger.success(f"Reading a file. ({result.decision})")
-    assert result.decision == Decision.Allow
+    assert result.decision == Decision.ALLOW
 
     result = await harness.adjudicate(
         _event(
@@ -169,7 +149,7 @@ async def main():
         )
     )
     logger.error(f"Writing to .env file (should be forbidden). ({result.decision})")
-    assert result.decision == Decision.Deny
+    assert result.decision == Decision.DENY
 
     result = await harness.adjudicate(
         _event(
@@ -184,7 +164,7 @@ async def main():
         )
     )
     logger.success(f"Writing to test file. ({result.decision})")
-    assert result.decision == Decision.Allow
+    assert result.decision == Decision.ALLOW
 
     result = await harness.adjudicate(
         _event(
@@ -193,7 +173,7 @@ async def main():
         )
     )
     logger.error(f"Dangerous bash command (should be forbidden). ({result.decision})")
-    assert result.decision == Decision.Deny
+    assert result.decision == Decision.DENY
 
     result = await harness.adjudicate(
         _event(
@@ -202,7 +182,7 @@ async def main():
         )
     )
     logger.success(f"Safe bash command (git). ({result.decision})")
-    assert result.decision == Decision.Allow
+    assert result.decision == Decision.ALLOW
 
     result = await harness.adjudicate(
         _event(
@@ -218,7 +198,7 @@ async def main():
         )
     )
     logger.error(f"Editing SSH key (should be forbidden). ({result.decision})")
-    assert result.decision == Decision.Deny
+    assert result.decision == Decision.DENY
 
     result = await harness.adjudicate(
         _event(
@@ -227,7 +207,7 @@ async def main():
         )
     )
     logger.success(f"Glob search. ({result.decision})")
-    assert result.decision == Decision.Allow
+    assert result.decision == Decision.ALLOW
 
     result = await harness.adjudicate(
         _event(
@@ -239,7 +219,7 @@ async def main():
         )
     )
     logger.success(f"WebSearch for documentation. ({result.decision})")
-    assert result.decision == Decision.Allow
+    assert result.decision == Decision.ALLOW
 
     result = await harness.adjudicate(
         _event(
@@ -254,7 +234,7 @@ async def main():
         )
     )
     logger.error(f"WebFetch from pastebin (should be forbidden). ({result.decision})")
-    assert result.decision == Decision.Deny
+    assert result.decision == Decision.DENY
 
     logger.info(
         "Writing output schema and policy files: coding.cedarschema, coding.cedar"

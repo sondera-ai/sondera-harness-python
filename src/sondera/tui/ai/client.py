@@ -14,6 +14,8 @@ from typing import Any
 
 import litellm
 
+from sondera._serde import to_json_str
+
 # Suppress LiteLLM's noisy debug logging in the TUI
 logging.getLogger("LiteLLM").setLevel(logging.WARNING)
 logging.getLogger("litellm").setLevel(logging.WARNING)
@@ -448,7 +450,7 @@ async def stream_ask_with_tools(
                 {
                     "role": "tool",
                     "tool_call_id": tc_data["id"],
-                    "content": json.dumps(result),
+                    "content": to_json_str(result),
                 }
             )
         # Local models (ollama, vllm) get stuck in tool-call loops;

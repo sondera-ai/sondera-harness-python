@@ -461,7 +461,7 @@ class AgentScreen(SectionNavMixin, Screen):
             return None
         steps = correlate_events(trajectory.events)
         for i, step in enumerate(steps):
-            if step.decision == Decision.Deny:
+            if step.decision == Decision.DENY:
                 return i
         return None
 

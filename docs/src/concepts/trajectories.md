@@ -106,7 +106,7 @@ if failed:
     # 3. Find what went wrong
     for adj_step in trajectory.steps:
         if adj_step.adjudication.decision == Decision.DENY:
-            print(f"DENIED at {adj_step.step.stage.value}:")
+            print(f"DENIED at {adj_step.step.stage}:")
             print(f"  Action: {adj_step.step.content}")
             print(f"  Reason: {adj_step.adjudication.reason}")
 
@@ -214,10 +214,10 @@ adj_step.message                 # "Allow: reason" or "Deny: reason"
 ```python
 from sondera import TrajectoryStatus
 
-TrajectoryStatus.Pending    # Created but not started
-TrajectoryStatus.Running    # Currently executing
-TrajectoryStatus.Completed  # Finished successfully
-TrajectoryStatus.Failed     # Finished with error
+TrajectoryStatus.PENDING    # Created but not started
+TrajectoryStatus.RUNNING    # Currently executing
+TrajectoryStatus.COMPLETED  # Finished successfully
+TrajectoryStatus.FAILED     # Finished with error
 ```
 
 ---
@@ -263,7 +263,7 @@ await harness.finalize()
 trajectory = await harness.get_trajectory(trajectory_id)
 if trajectory:
     for adj_step in trajectory.steps:
-        print(f"{adj_step.step.stage.value}: {adj_step.adjudication.decision.value}")
+        print(f"{adj_step.step.stage}: {adj_step.adjudication.decision}")
 ```
 
 #### Listing and Filtering

@@ -50,13 +50,13 @@ class CedarPolicyHarness(AbstractHarness):
     """CedarPolicyHarness is a local policy-as-code harness for Agent Scaffolds.
 
     Uses Cedar policy language to evaluate tool invocations against a policy set.
-    The schema is generated from the agent's tools using schema.py, with each tool
-    becoming a Cedar action with typed parameters and response context.
+    The schema uses the server-aligned action model: PreToolUse, ToolOutput, and
+    Prompt actions, with tool name as a context field rather than the action name.
 
     Actions:
-        - Each tool becomes an action (e.g., MyAgent::Action::"my_tool")
-        - ToolCall: Evaluates tool action with 'parameters' context
-        - ToolOutput: Evaluates tool action with 'response' context
+        - PreToolUse: Fires on ToolCall events (resource: Tool::"<tool_name>")
+        - ToolOutput: Fires on ToolOutput events (resource: Trajectory)
+        - Prompt: Fires on Prompt events (resource: Message)
 
     Example policy to allow all tool invocations for an agent named "MyAgent":
         permit(principal, action, resource)
@@ -65,16 +65,16 @@ class CedarPolicyHarness(AbstractHarness):
     Example policy to deny a specific tool:
         forbid(
             principal,
-            action == MyAgent::Action::"dangerous_tool",
+            action == MyAgent::Action::"PreToolUse",
             resource
-        );
+        ) when { context.tool == "dangerous_tool" };
 
-    Example policy with parameter constraints:
+    Example policy with argument constraints:
         forbid(
             principal,
-            action == MyAgent::Action::"bash",
+            action == MyAgent::Action::"PreToolUse",
             resource
-        ) when { context.parameters.command like "*rm -rf*" };
+        ) when { context.tool == "bash" && context.arguments like "*rm -rf*" };
     """
 
     def __init__(
@@ -145,8 +145,6 @@ class CedarPolicyHarness(AbstractHarness):
             raise ValueError("Schema must have at least one namespace")
         # Authorizer will be initialized with entities when agent is set
         self._authorizer: Authorizer | None = None
-        # Cache for pre-parsed tool response schemas (tool_name -> parsed schema dict)
-        self._tool_response_schemas: dict[str, dict[str, object]] = {}
         # Cache for tool lookup by name (populated in _build_authorizer)
         self._tools_by_name: dict[str, Tool] = {}
 
@@ -155,9 +153,12 @@ class CedarPolicyHarness(AbstractHarness):
         if not self._trajectory_id:
             raise RuntimeError("_build_authorizer called without trajectory_id")
 
+        trajectory_uid = EntityUid(
+            f"{self._namespace}::Trajectory", self._trajectory_id
+        )
         entities: list[Entity] = [
             Entity(
-                EntityUid(f"{self._namespace}::Trajectory", self._trajectory_id),
+                trajectory_uid,
                 {
                     "step_count": self._trajectory_step_count,
                 },
@@ -167,9 +168,8 @@ class CedarPolicyHarness(AbstractHarness):
         if self._agent:
             agent_uid = EntityUid(f"{self._namespace}::Agent", self._agent.id)
 
-            # Add tool entities from agent's card and pre-parse response schemas
+            # Add tool entities as children of the trajectory
             tool_entities: list[EntityUid] = []
-            self._tool_response_schemas = {}
             self._tools_by_name = {}
             for tool in _agent_tools(self._agent):
                 tool_name = tool.name
@@ -180,15 +180,11 @@ class CedarPolicyHarness(AbstractHarness):
                         "name": tool_name,
                         "description": tool.description or "",
                     },
+                    [trajectory_uid],
                 )
                 tool_entities.append(tool_uid)
                 entities.append(tool_entity)
                 self._tools_by_name[tool_name] = tool
-                # Pre-parse response JSON schema for use in _tool_output_request
-                if tool.response_json_schema:
-                    self._tool_response_schemas[tool_name] = json.loads(
-                        tool.response_json_schema
-                    )
 
             agent_entity = Entity(
                 agent_uid,
@@ -255,7 +251,7 @@ class CedarPolicyHarness(AbstractHarness):
         trajectory = Trajectory(
             name=self._trajectory_id,
             agent=self._agent.id if self._agent else "unknown",
-            status=TrajectoryStatus.Running,
+            status=TrajectoryStatus.RUNNING,
         )
         self._storage.init_trajectory(trajectory)
         self._logger.debug("Initialized trajectory %s", self._trajectory_id)
@@ -288,7 +284,7 @@ class CedarPolicyHarness(AbstractHarness):
                 self._storage.finalize_trajectory(
                     self._agent.id,
                     self._trajectory_id,
-                    status=TrajectoryStatus.Failed,
+                    status=TrajectoryStatus.FAILED,
                 )
             self._logger.debug("Failed trajectory %s: %s", self._trajectory_id, reason)
         finally:
@@ -302,13 +298,10 @@ class CedarPolicyHarness(AbstractHarness):
         """Adjudicate an event using Cedar policies.
 
         Evaluates Cedar policies based on the event payload type:
-        - ToolCall: Evaluates tool action with 'parameters' context
-        - ToolOutput: Evaluates tool action with 'response' context
-        - Prompt: Evaluates Prompt action with message content
+        - ToolCall: Action::\"PreToolUse\" with Tool resource, context.tool + context.arguments
+        - ToolOutput: Action::\"ToolOutput\" with Trajectory resource, context.content
+        - Prompt: Action::\"Prompt\" with Message resource
         - Other event types: Allowed by default
-
-        The action name matches the tool name (sanitized for Cedar), and context
-        contains typed parameters/response based on the tool's JSON schema.
 
         Args:
             event: The event to adjudicate.
@@ -342,9 +335,9 @@ class CedarPolicyHarness(AbstractHarness):
         else:
             # Other event types (Started, Completed, etc.) are allowed by default
             adjudication = Adjudicated(
-                decision=Decision.Allow,
+                decision=Decision.ALLOW,
                 reason="Non-policy event allowed by default",
-                mode=Mode.Govern,
+                mode=Mode.GOVERN,
             )
             self._persist_step(event, adjudication)
             return adjudication
@@ -435,31 +428,31 @@ class CedarPolicyHarness(AbstractHarness):
 
         if str(response.decision) == "Allow":
             return Adjudicated(
-                decision=Decision.Allow,
+                decision=Decision.ALLOW,
                 reason="Allowed by all policies",
-                mode=Mode.Govern,
+                mode=Mode.GOVERN,
             )
 
         # Cedar decision was DENY - determine if hard DENY or ESCALATE
         if has_deny:
             return Adjudicated(
-                decision=Decision.Deny,
+                decision=Decision.DENY,
                 reason="; ".join(reasons) if reasons else "Denied by policy",
                 metadata=deny_policies,
-                mode=Mode.Govern,
+                mode=Mode.GOVERN,
             )
         if has_escalate:
             return Adjudicated(
-                decision=Decision.Escalate,
+                decision=Decision.ESCALATE,
                 reason="; ".join(reasons) if reasons else "Escalated by policy",
                 metadata=escalate_policies,
-                mode=Mode.Govern,
+                mode=Mode.GOVERN,
             )
         # Default deny because no policies matched
         return Adjudicated(
-            decision=Decision.Deny,
+            decision=Decision.DENY,
             reason="No matching permit policy",
-            mode=Mode.Govern,
+            mode=Mode.GOVERN,
         )
 
     def _prompt_request(
@@ -494,30 +487,67 @@ class CedarPolicyHarness(AbstractHarness):
         trajectory_uid: EntityUid,
         tool_call: ToolCall,
     ) -> Request:
-        """Create a Cedar request for a ToolCall event."""
-        tool_name = tool_call.tool
-        action_name = tool_name.replace(" ", "_").replace("-", "_")
-        action_uid = EntityUid(f"{self._namespace}::Action", action_name)
+        """Create a Cedar request for a ToolCall event.
 
-        # Build context with parameters
+        Uses Action::"PreToolUse" with Tool::"<tool_name>" as resource.
+        Context contains server-compatible fields (tool, arguments) and
+        optionally typed parameters as a local extension.
+        """
+        if not self._authorizer:
+            raise RuntimeError("_tool_call_request called without authorizer")
+
+        tool_name = tool_call.tool
+        action_uid = EntityUid(f"{self._namespace}::Action", "PreToolUse")
+
+        # Create or upsert Tool entity as child of Trajectory
+        tool_entity_uid = EntityUid(f"{self._namespace}::Tool", tool_name)
+        tool_def = self._tools_by_name.get(tool_name)
+        tool_entity = Entity(
+            tool_entity_uid,
+            {
+                "name": tool_name,
+                "description": (tool_def.description or "") if tool_def else "",
+            },
+            [trajectory_uid],
+        )
+        self._authorizer.upsert_entity(tool_entity)
+
+        arguments_json, parameters = self._tool_call_arguments_context(
+            tool_call.arguments
+        )
+
+        # Build context: server-compatible fields + optional typed parameters
         context_data: dict[str, object] = {
-            "parameters_json": json.dumps(tool_call.arguments),
+            "tool": tool_name,
+            "arguments": arguments_json,
         }
-        # Check if tool has typed parameters schema
-        if self._agent:
-            tool = self._tools_by_name.get(tool_name)
-            if tool and tool.parameters_json_schema:
-                context_data["parameters"] = tool_call.arguments
+        # Add typed parameters as optional local extension
+        if tool_def and tool_def.parameters_json_schema and parameters is not None:
+            context_data["parameters"] = parameters
 
         context = Context(context_data, schema=self._schema, action=action_uid)
 
         return Request(
             principal=agent_uid,
             action=action_uid,
-            resource=trajectory_uid,
+            resource=tool_entity_uid,
             context=context,
             schema=self._schema,
         )
+
+    def _tool_call_arguments_context(
+        self, arguments: Any
+    ) -> tuple[str, dict[str, Any] | None]:
+        """Return server-compatible JSON text and typed parameters, if available."""
+        if isinstance(arguments, str):
+            try:
+                parsed = json.loads(arguments)
+            except json.JSONDecodeError:
+                return arguments, None
+            return arguments, parsed if isinstance(parsed, dict) else None
+
+        arguments_json = json.dumps(arguments)
+        return arguments_json, arguments if isinstance(arguments, dict) else None
 
     def _tool_output_request(
         self,
@@ -525,27 +555,32 @@ class CedarPolicyHarness(AbstractHarness):
         trajectory_uid: EntityUid,
         tool_output: ToolOutput,
     ) -> Request:
-        """Create a Cedar request for a ToolOutput event."""
-        # Tool name is in call_id (this could be improved in the protocol)
-        tool_name = tool_output.call_id
-        action_name = tool_name.replace(" ", "_").replace("-", "_")
-        action_uid = EntityUid(f"{self._namespace}::Action", action_name)
+        """Create a Cedar request for a ToolOutput event.
 
-        # Build context with response
+        Uses Action::"ToolOutput" with Trajectory as resource.
+        Context contains server-compatible 'content' field and optionally
+        typed 'response' as a local extension.
+        """
+        tool_name = tool_output.call_id
+        action_uid = EntityUid(f"{self._namespace}::Action", "ToolOutput")
+
+        # Build context: server-compatible content + optional typed response
         context_data: dict[str, object] = {
-            "response_json": tool_output.output,
+            "content": tool_output.output,
         }
-        # Check if tool has typed response schema
-        if tool_name in self._tool_response_schemas:
-            response_schema = self._tool_response_schemas[tool_name]
+        # Add typed response as optional local extension. Only Record-type
+        # responses are included; this mirrors _build_tool_output_context in
+        # schema.py which only merges Record attributes into the response
+        # field. Non-object responses (primitives, arrays) fall back to
+        # content-only policies.
+        tool_def = self._tools_by_name.get(tool_name)
+        if tool_def and tool_def.response_json_schema:
             try:
-                response_obj = json.loads(tool_output.output)
-                if response_schema.get("type") not in ["object", "OBJECT"]:
-                    context_data["response"] = {"value": response_obj}
-                else:
-                    context_data["response"] = response_obj
+                response_schema = json.loads(tool_def.response_json_schema)
+                if response_schema.get("type") in ["object", "OBJECT"]:
+                    context_data["response"] = json.loads(tool_output.output)
             except json.JSONDecodeError:
-                pass  # Keep only response_json
+                pass  # Keep only content
 
         context = Context(context_data, schema=self._schema, action=action_uid)
 

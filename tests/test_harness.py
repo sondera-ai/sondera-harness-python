@@ -258,7 +258,7 @@ class TestAdjudicate:
     async def test_passes_event_through_to_client(
         self, initialized_harness: SonderaRemoteHarness
     ):
-        expected = Adjudicated(HCDecision.Allow, reason="ok")
+        expected = Adjudicated(HCDecision.ALLOW, reason="ok")
         initialized_harness._client.adjudicate = AsyncMock(return_value=expected)
 
         event = Event(
@@ -275,7 +275,7 @@ class TestAdjudicate:
         self, initialized_harness: SonderaRemoteHarness
     ):
         expected = Adjudicated(
-            HCDecision.Deny,
+            HCDecision.DENY,
             reason="blocked",
             metadata=[
                 HCPolicyMetadata(policy_id="p1", description="no bash", metadata={})
@@ -290,7 +290,7 @@ class TestAdjudicate:
         )
         result = await initialized_harness.adjudicate(event)
 
-        assert result.decision == HCDecision.Deny
+        assert result.decision == HCDecision.DENY
         assert result.reason == "blocked"
         assert len(result.metadata) == 1
         assert result.metadata[0].policy_id == "p1"
@@ -315,7 +315,7 @@ class TestAdjudicate:
             event=Prompt.user("Hello"),
         )
         result = await initialized_harness.adjudicate(event)
-        assert result.decision == HCDecision.Allow
+        assert result.decision == HCDecision.ALLOW
 
     async def test_works_with_thought_event(
         self, initialized_harness: SonderaRemoteHarness
@@ -330,7 +330,7 @@ class TestAdjudicate:
             event=Thought("I should look up the docs"),
         )
         result = await initialized_harness.adjudicate(event)
-        assert result.decision == HCDecision.Allow
+        assert result.decision == HCDecision.ALLOW
 
     async def test_works_with_tool_output_event(
         self, initialized_harness: SonderaRemoteHarness
@@ -345,7 +345,7 @@ class TestAdjudicate:
             event=ToolOutput.from_success("Bash", "file.txt"),
         )
         result = await initialized_harness.adjudicate(event)
-        assert result.decision == HCDecision.Allow
+        assert result.decision == HCDecision.ALLOW
 
 
 class TestAdjudicates:
@@ -353,8 +353,8 @@ class TestAdjudicates:
         self, initialized_harness: SonderaRemoteHarness
     ):
         expected = [
-            Adjudicated(HCDecision.Allow, reason="ok"),
-            Adjudicated(HCDecision.Deny, reason="blocked"),
+            Adjudicated(HCDecision.ALLOW, reason="ok"),
+            Adjudicated(HCDecision.DENY, reason="blocked"),
         ]
         initialized_harness._client.adjudicates = AsyncMock(return_value=expected)
 
@@ -385,9 +385,9 @@ class TestAdjudicates:
         self, initialized_harness: SonderaRemoteHarness
     ):
         verdicts = [
-            Adjudicated(HCDecision.Allow, reason="ok"),
-            Adjudicated(HCDecision.Deny, reason="blocked"),
-            Adjudicated(HCDecision.Allow, reason="ok"),
+            Adjudicated(HCDecision.ALLOW, reason="ok"),
+            Adjudicated(HCDecision.DENY, reason="blocked"),
+            Adjudicated(HCDecision.ALLOW, reason="ok"),
         ]
         initialized_harness._client.adjudicates = AsyncMock(return_value=verdicts)
 
@@ -395,16 +395,16 @@ class TestAdjudicates:
         results = await initialized_harness.adjudicates(events)
 
         assert len(results) == 3
-        assert results[0].decision == HCDecision.Allow
-        assert results[1].decision == HCDecision.Deny
-        assert results[2].decision == HCDecision.Allow
+        assert results[0].decision == HCDecision.ALLOW
+        assert results[1].decision == HCDecision.DENY
+        assert results[2].decision == HCDecision.ALLOW
 
 
 class TestListAdjudications:
     async def test_extracts_adjudicated_from_events(
         self, harness: SonderaRemoteHarness
     ):
-        adj = Adjudicated(HCDecision.Deny, reason="blocked")
+        adj = Adjudicated(HCDecision.DENY, reason="blocked")
 
         adj_event = MagicMock(spec=Event)
         adj_event.event = adj
@@ -581,9 +581,9 @@ class TestIntegrationLifecycle:
             Event(agent=agent, trajectory_id=tid, event=Prompt.user("Hello"))
         )
         assert result.decision in (
-            HCDecision.Allow,
-            HCDecision.Deny,
-            HCDecision.Escalate,
+            HCDecision.ALLOW,
+            HCDecision.DENY,
+            HCDecision.ESCALATE,
         )
 
         # ToolCall

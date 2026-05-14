@@ -41,7 +41,7 @@ class AdjudicatedTrajectory(BaseModel):
 
     id: str
     agent: str  # Agent ID
-    status: TrajectoryStatus = TrajectoryStatus.Running
+    status: TrajectoryStatus = TrajectoryStatus.RUNNING
     session_id: str | None = None
     steps: list[AdjudicatedStep] = []
 
@@ -137,6 +137,6 @@ class TrajectoryStorage(ABC):
         agent_id: str,
         trajectory_id: str,
         *,
-        status: TrajectoryStatus = TrajectoryStatus.Completed,
+        status: TrajectoryStatus = TrajectoryStatus.COMPLETED,
     ) -> None:
         """Mark trajectory as COMPLETED (or override with a different status)."""

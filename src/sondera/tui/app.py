@@ -361,10 +361,10 @@ class SonderaApp(SectionNavMixin, App):
         # Update header counts
         header = self.query_one(DashboardHeader)
         header.violation_count = sum(
-            1 for v in violation_records if v.decision == Decision.Deny
+            1 for v in violation_records if v.decision == Decision.DENY
         )
         header.awaiting_count = sum(
-            1 for v in violation_records if v.decision == Decision.Escalate
+            1 for v in violation_records if v.decision == Decision.ESCALATE
         )
         header.total_agents = len(agents)
 
@@ -410,13 +410,13 @@ class SonderaApp(SectionNavMixin, App):
             traj_tid = adj_ev.trajectory_id or ""
             if (
                 isinstance(adj_payload, Adjudicated)
-                and adj_payload.decision == Decision.Deny
+                and adj_payload.decision == Decision.DENY
             ):
                 agent_denied[agent_aid] += 1
                 agent_denied_trajectories.setdefault(agent_aid, set()).add(traj_tid)
             elif (
                 isinstance(adj_payload, Adjudicated)
-                and adj_payload.decision == Decision.Escalate
+                and adj_payload.decision == Decision.ESCALATE
             ):
                 agent_awaiting[agent_aid] += 1
 
@@ -549,7 +549,7 @@ class SonderaApp(SectionNavMixin, App):
         """Append a Deny/Escalate adjudication event to state and refresh the violations feed."""
         if not isinstance(event.event, Adjudicated):
             return
-        if event.event.decision not in (Decision.Deny, Decision.Escalate):
+        if event.event.decision not in (Decision.DENY, Decision.ESCALATE):
             return
         event_id = event.event_id or ""
         if event_id in self._seen_adj_ids:
@@ -563,10 +563,10 @@ class SonderaApp(SectionNavMixin, App):
         with contextlib.suppress(Exception):
             header = self.query_one(DashboardHeader)
             header.violation_count = sum(
-                1 for v in violation_records if v.decision == Decision.Deny
+                1 for v in violation_records if v.decision == Decision.DENY
             )
             header.awaiting_count = sum(
-                1 for v in violation_records if v.decision == Decision.Escalate
+                1 for v in violation_records if v.decision == Decision.ESCALATE
             )
 
     async def _refresh_agent_from_trajectory(self, traj_id: str) -> None:
@@ -606,10 +606,10 @@ class SonderaApp(SectionNavMixin, App):
                 continue
             adj_payload = adj_ev.event
             if isinstance(adj_payload, Adjudicated):
-                if adj_payload.decision == Decision.Deny:
+                if adj_payload.decision == Decision.DENY:
                     denied_count += 1
                     denied_traj_ids.add(adj_ev.trajectory_id or "")
-                elif adj_payload.decision == Decision.Escalate:
+                elif adj_payload.decision == Decision.ESCALATE:
                     awaiting_count += 1
 
         with contextlib.suppress(Exception):

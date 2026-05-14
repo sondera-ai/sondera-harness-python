@@ -5,7 +5,6 @@ This plugin implements the ADK BasePlugin callback patterns for policy enforceme
 guardrails, and security controls across agent workflows using the Harness ABC.
 """
 
-import json
 import logging
 from typing import Any, cast
 
@@ -21,6 +20,7 @@ from google.adk.tools.base_tool import BaseTool
 from google.adk.tools.tool_context import ToolContext
 from google.genai import types as genai_types
 
+from sondera._serde import to_json_str
 from sondera.adk.analyze import format
 from sondera.harness.abc import Harness
 from sondera.types import (
@@ -115,6 +115,11 @@ class SonderaHarnessPlugin(BasePlugin):
         # Current state
         self._current_model_name: str | None = None
         self._active_session_id: str | None = None
+        # ADK fires before_model_callback on every LLM round-trip (including
+        # post-tool continuations), so it must dedupe against prompts that
+        # on_user_message_callback / after_model_callback already emitted.
+        self._last_user_prompt: str | None = None
+        self._last_assistant_prompt: str | None = None
 
     @property
     def trajectory_id(self) -> str | None:
@@ -141,6 +146,8 @@ class SonderaHarnessPlugin(BasePlugin):
             session_id: Optional session identifier to group trajectories.
         """
         await self._harness.initialize(agent=agent, session_id=session_id)
+        self._last_user_prompt = None
+        self._last_assistant_prompt = None
         self._log.debug(
             "[SonderaHarness] Trajectory created for agent %s: %s",
             self._harness.agent.id if self._harness.agent else "unknown",
@@ -224,18 +231,19 @@ class SonderaHarnessPlugin(BasePlugin):
 
         # Adjudicate user input
         adjudication = await self._adjudicate(
-            Prompt(role=PromptRole.User, content=content)
+            Prompt(role=PromptRole.USER, content=content)
         )
+        self._last_user_prompt = content
         self._log.info(
             "[SonderaHarness] User message adjudication for trajectory %s",
             self.trajectory_id,
         )
 
-        if adjudication.decision == Decision.Deny:
+        if adjudication.decision == Decision.DENY:
             return genai_types.Content(
                 parts=[genai_types.Part(text=adjudication.reason)]
             )
-        if adjudication.decision == Decision.Escalate:
+        if adjudication.decision == Decision.ESCALATE:
             self._log.warning(
                 "[SonderaHarness] ESCALATE: %s (trajectory %s)",
                 adjudication.reason,
@@ -309,32 +317,48 @@ class SonderaHarnessPlugin(BasePlugin):
             self.trajectory_id,
         )
 
-        # Extract the last user message from the request contents
-        content = ""
-        if llm_request.contents:
-            for c in reversed(llm_request.contents):
-                if c.role == "user":
-                    content = _extract_text(c)
-                    break
-
-        # Capture model name for metadata (also store for after_model_callback)
         self._current_model_name = llm_request.model
 
-        adjudication = await self._adjudicate(
-            Prompt(role=PromptRole.User, content=content)
-        )
+        # Pick the newest content with text; tool-call / function-response
+        # parts carry none, so they're naturally skipped. Sub-agent handoffs
+        # surface as role="model" and must still be gated.
+        content = ""
+        role: PromptRole | None = None
+        if llm_request.contents:
+            for c in reversed(llm_request.contents):
+                text = _extract_text(c)
+                if not text:
+                    continue
+                content = text
+                role = PromptRole.ASSISTANT if c.role == "model" else PromptRole.USER
+                break
+
+        if role is None:
+            return None
+
+        if role == PromptRole.USER:
+            if content == self._last_user_prompt:
+                return None
+        elif content == self._last_assistant_prompt:
+            return None
+
+        adjudication = await self._adjudicate(Prompt(role=role, content=content))
+        if role == PromptRole.USER:
+            self._last_user_prompt = content
+        else:
+            self._last_assistant_prompt = content
         self._log.info(
             "[SonderaHarness] Before model adjudication for trajectory %s",
             self.trajectory_id,
         )
 
-        if adjudication.decision == Decision.Deny:
+        if adjudication.decision == Decision.DENY:
             return LlmResponse(
                 content=genai_types.Content(
                     parts=[genai_types.Part(text=adjudication.reason)]
                 )
             )
-        if adjudication.decision == Decision.Escalate:
+        if adjudication.decision == Decision.ESCALATE:
             self._log.warning(
                 "[SonderaHarness] ESCALATE: %s (trajectory %s)",
                 adjudication.reason,
@@ -367,20 +391,21 @@ class SonderaHarnessPlugin(BasePlugin):
             return None
 
         adjudication = await self._adjudicate(
-            Prompt(role=PromptRole.Assistant, content=content)
+            Prompt(role=PromptRole.ASSISTANT, content=content)
         )
+        self._last_assistant_prompt = content
         self._log.info(
             "[SonderaHarness] After model adjudication for trajectory %s",
             self.trajectory_id,
         )
 
-        if adjudication.decision == Decision.Deny:
+        if adjudication.decision == Decision.DENY:
             return LlmResponse(
                 content=genai_types.Content(
                     parts=[genai_types.Part(text=adjudication.reason)]
                 )
             )
-        if adjudication.decision == Decision.Escalate:
+        if adjudication.decision == Decision.ESCALATE:
             self._log.warning(
                 "[SonderaHarness] ESCALATE: %s (trajectory %s)",
                 adjudication.reason,
@@ -422,9 +447,9 @@ class SonderaHarnessPlugin(BasePlugin):
             adjudication,
         )
 
-        if adjudication.decision == Decision.Deny:
+        if adjudication.decision == Decision.DENY:
             return {"error": f"Tool blocked: {adjudication.reason}"}
-        if adjudication.decision == Decision.Escalate:
+        if adjudication.decision == Decision.ESCALATE:
             self._log.warning(
                 "[SonderaHarness] ESCALATE: %s (trajectory %s)",
                 adjudication.reason,
@@ -459,7 +484,7 @@ class SonderaHarnessPlugin(BasePlugin):
             # There's already an error from the before_tool callback, skip adjudication.
             return result
 
-        output = result if isinstance(result, str) else json.dumps(result)
+        output = to_json_str(result)
         adjudication = await self._adjudicate(
             ToolOutput.from_success(call_id=tool.name, output=output)
         )
@@ -469,9 +494,9 @@ class SonderaHarnessPlugin(BasePlugin):
             adjudication,
         )
 
-        if adjudication.decision == Decision.Deny:
+        if adjudication.decision == Decision.DENY:
             return {"error": f"Tool result blocked: {adjudication.reason}"}
-        if adjudication.decision == Decision.Escalate:
+        if adjudication.decision == Decision.ESCALATE:
             self._log.warning(
                 "[SonderaHarness] ESCALATE: %s (trajectory %s)",
                 adjudication.reason,

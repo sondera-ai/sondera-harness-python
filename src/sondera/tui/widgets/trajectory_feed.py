@@ -209,11 +209,11 @@ def _last_active_dt(trajectory: Trajectory) -> datetime:
 
 def _worst_decision(a: Decision, b: Decision) -> Decision:
     """DENY > ESCALATE > ALLOW."""
-    if a == Decision.Deny or b == Decision.Deny:
-        return Decision.Deny
-    if a == Decision.Escalate or b == Decision.Escalate:
-        return Decision.Escalate
-    return Decision.Allow
+    if a == Decision.DENY or b == Decision.DENY:
+        return Decision.DENY
+    if a == Decision.ESCALATE or b == Decision.ESCALATE:
+        return Decision.ESCALATE
+    return Decision.ALLOW
 
 
 def _get_event_steps(trajectory: Trajectory) -> list[EventStep]:
@@ -235,12 +235,12 @@ def _count_violations(
     denied = 0
     escalated = 0
     for indices in _iter_step_groups(steps):
-        group_decision = Decision.Allow
+        group_decision = Decision.ALLOW
         for idx in indices:
             group_decision = _worst_decision(group_decision, steps[idx].decision)
-        if group_decision == Decision.Deny:
+        if group_decision == Decision.DENY:
             denied += 1
-        elif group_decision == Decision.Escalate:
+        elif group_decision == Decision.ESCALATE:
             escalated += 1
     return denied, escalated
 
@@ -298,7 +298,7 @@ def _activity_snippet(
 
     # Priority: show denied step content if any violations exist
     for step in reversed(steps):
-        if step.decision == Decision.Deny:
+        if step.decision == Decision.DENY:
             ct = step.content_type
             if ct in ("tool_request", "prompt"):
                 return _format_step_snippet(step, max_len)

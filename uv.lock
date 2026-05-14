@@ -15,6 +15,7 @@ members = [
     "sondera-examples-cedar",
     "sondera-examples-claude-code",
     "sondera-examples-langgraph",
+    "sondera-examples-pydantic-ai",
     "sondera-examples-strands",
     "sondera-harness",
 ]
@@ -182,7 +183,7 @@ wheels = [
 
 [[package]]
 name = "anthropic"
-version = "0.86.0"
+version = "0.97.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -194,9 +195,9 @@ dependencies = [
     { name = "sniffio" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/37/7a/8b390dc47945d3169875d342847431e5f7d5fa716b2e37494d57cfc1db10/anthropic-0.86.0.tar.gz", hash = "sha256:60023a7e879aa4fbb1fed99d487fe407b2ebf6569603e5047cfe304cebdaa0e5", size = 583820, upload-time = "2026-03-18T18:43:08.017Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/14/93/f66ea8bfe39f2e6bb9da8e27fa5457ad2520e8f7612dfc547b17fad55c4d/anthropic-0.97.0.tar.gz", hash = "sha256:021e79fd8e21e90ad94dc5ba2bbbd8b1599f424f5b1fab6c06204009cab764be", size = 669502, upload-time = "2026-04-23T20:52:34.445Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/63/5f/67db29c6e5d16c8c9c4652d3efb934d89cb750cad201539141781d8eae14/anthropic-0.86.0-py3-none-any.whl", hash = "sha256:9d2bbd339446acce98858c5627d33056efe01f70435b22b63546fe7edae0cd57", size = 469400, upload-time = "2026-03-18T18:43:06.526Z" },
+    { url = "https://files.pythonhosted.org/packages/53/b6/8e851369fa661ad0fef2ae6266bf3b7d52b78ccf011720058f4adaca59e2/anthropic-0.97.0-py3-none-any.whl", hash = "sha256:8a1a472dfabcfc0c52ff6a3eecf724ac7e07107a2f6e2367be55ceb42f5d5613", size = 662126, upload-time = "2026-04-23T20:52:32.377Z" },
 ]
 
 [[package]]
@@ -1045,6 +1046,19 @@ wheels = [
 ]
 
 [[package]]
+name = "genai-prices"
+version = "0.0.56"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "httpx" },
+    { name = "pydantic" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/44/6b/94b3018a672c7775edfb485f0fed8f6068fba75e49b067e8a1ac5eb96764/genai_prices-0.0.56.tar.gz", hash = "sha256:ac24b16a84d0ab97539bfa48dfa4649689de8e3ce71c12ebacef29efb1998045", size = 65872, upload-time = "2026-03-20T20:33:00.732Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a3/f6/8ef7e4c286deb2709d11ca96a5237caae3ef4876ab3c48095856cfd2df30/genai_prices-0.0.56-py3-none-any.whl", hash = "sha256:dbe86be8f3f556bed1b72209ed36851fec8b01793b3b220f42921a4e7da945f6", size = 68966, upload-time = "2026-03-20T20:33:02.555Z" },
+]
+
+[[package]]
 name = "ghp-import"
 version = "2.1.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1648,6 +1662,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/f3/fd/d05a4b7acd0154ed758797f0a43b4c0962a843bedfe980115e842c5b2d08/greenlet-3.3.2-cp314-cp314t-musllinux_1_2_aarch64.whl", hash = "sha256:1fb39a11ee2e4d94be9a76671482be9398560955c9e568550de0224e41104727", size = 1618857, upload-time = "2026-02-20T20:49:37.309Z" },
     { url = "https://files.pythonhosted.org/packages/6f/e1/50ee92a5db521de8f35075b5eff060dd43d39ebd46c2181a2042f7070385/greenlet-3.3.2-cp314-cp314t-musllinux_1_2_x86_64.whl", hash = "sha256:20154044d9085151bc309e7689d6f7ba10027f8f5a8c0676ad398b951913d89e", size = 1680010, upload-time = "2026-02-20T20:21:13.427Z" },
     { url = "https://files.pythonhosted.org/packages/29/4b/45d90626aef8e65336bed690106d1382f7a43665e2249017e9527df8823b/greenlet-3.3.2-cp314-cp314t-win_amd64.whl", hash = "sha256:c04c5e06ec3e022cbfe2cd4a846e1d4e50087444f875ff6d2c2ad8445495cf1a", size = 237086, upload-time = "2026-02-20T20:20:45.786Z" },
+]
+
+[[package]]
+name = "griffelib"
+version = "2.0.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/9d/82/74f4a3310cdabfbb10da554c3a672847f1ed33c6f61dd472681ce7f1fe67/griffelib-2.0.2.tar.gz", hash = "sha256:3cf20b3bc470e83763ffbf236e0076b1211bac1bc67de13daf494640f2de707e", size = 166461, upload-time = "2026-03-27T11:34:51.091Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/11/8c/c9138d881c79aa0ea9ed83cbd58d5ca75624378b38cee225dcf5c42cc91f/griffelib-2.0.2-py3-none-any.whl", hash = "sha256:925c857658fb1ba40c0772c37acbc2ab650bd794d9c1b9726922e36ea4117ea1", size = 142357, upload-time = "2026-03-27T11:34:46.275Z" },
 ]
 
 [[package]]
@@ -2337,6 +2360,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/e6/79/b492be13542aebd62aafc0490e4d5d6e8e00ce54240bcabf5c3e46b1a49b/litellm-1.82.4.tar.gz", hash = "sha256:9c52b1c0762cb0593cdc97b26a8e05004e19b03f394ccd0f42fac82eff0d4980", size = 17378196, upload-time = "2026-03-18T01:18:05.378Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/ec/ad/7eaa1121c6b191f2f5f2e8c7379823ece6ec83741a4b3c81b82fe2832401/litellm-1.82.4-py3-none-any.whl", hash = "sha256:d37c34a847e7952a146ed0e2888a24d3edec7787955c6826337395e755ad5c4b", size = 15559801, upload-time = "2026-03-18T01:18:02.026Z" },
+]
+
+[[package]]
+name = "logfire-api"
+version = "4.31.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/08/a2/8d5a3c1c282d5f2bd9f5e9ddd5288d1414a53301ce389af9016b6d82bd50/logfire_api-4.31.0.tar.gz", hash = "sha256:fc4b01257ebd4ce297ad374ed201eb1a9213b999f6ae6df45cfca5bd0ef378f8", size = 77838, upload-time = "2026-03-27T19:00:47.545Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/26/27/9372b7492b3e146908d520f8599909311cd930175801ad219171fafc6f3e/logfire_api-4.31.0-py3-none-any.whl", hash = "sha256:3c1f502fd4eb8ef0996427a5cf275fd8f327f38600650a1f53071a8171c812db", size = 123402, upload-time = "2026-03-27T19:00:44.952Z" },
 ]
 
 [[package]]
@@ -3685,6 +3717,36 @@ email = [
 ]
 
 [[package]]
+name = "pydantic-ai-slim"
+version = "1.87.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "genai-prices" },
+    { name = "griffelib" },
+    { name = "httpx" },
+    { name = "opentelemetry-api" },
+    { name = "pydantic" },
+    { name = "pydantic-graph" },
+    { name = "typing-inspection" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/bb/f9/76c7943f208b09b320dc65a000689929df6a5d3b143d56b48deade6db486/pydantic_ai_slim-1.87.0.tar.gz", hash = "sha256:25822985ca21d6f2995310da915080fc3f75763aec82e815a3388257b06d6b84", size = 573802, upload-time = "2026-04-25T01:09:21.678Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d1/90/810dbc478bf063677cf56babc4404f2f0c59794017a5022ac93345a26d75/pydantic_ai_slim-1.87.0-py3-none-any.whl", hash = "sha256:6a9b4f9bcac3709ef47f3b3cda70446c002eb55901038a50d6224ee6743fe31a", size = 732159, upload-time = "2026-04-25T01:09:13.025Z" },
+]
+
+[package.optional-dependencies]
+anthropic = [
+    { name = "anthropic" },
+]
+google = [
+    { name = "google-genai" },
+]
+openai = [
+    { name = "openai" },
+    { name = "tiktoken" },
+]
+
+[[package]]
 name = "pydantic-core"
 version = "2.41.5"
 source = { registry = "https://pypi.org/simple" }
@@ -3753,6 +3815,21 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/aa/81/05e400037eaf55ad400bcd318c05bb345b57e708887f07ddb2d20e3f0e98/pydantic_core-2.41.5-graalpy312-graalpy250_312_native-macosx_11_0_arm64.whl", hash = "sha256:aabf5777b5c8ca26f7824cb4a120a740c9588ed58df9b2d196ce92fba42ff8dc", size = 1915388, upload-time = "2025-11-04T13:42:52.215Z" },
     { url = "https://files.pythonhosted.org/packages/6e/0d/e3549b2399f71d56476b77dbf3cf8937cec5cd70536bdc0e374a421d0599/pydantic_core-2.41.5-graalpy312-graalpy250_312_native-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:c007fe8a43d43b3969e8469004e9845944f1a80e6acd47c150856bb87f230c56", size = 1942879, upload-time = "2025-11-04T13:42:56.483Z" },
     { url = "https://files.pythonhosted.org/packages/f7/07/34573da085946b6a313d7c42f82f16e8920bfd730665de2d11c0c37a74b5/pydantic_core-2.41.5-graalpy312-graalpy250_312_native-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:76d0819de158cd855d1cbb8fcafdf6f5cf1eb8e470abe056d5d161106e38062b", size = 2139017, upload-time = "2025-11-04T13:42:59.471Z" },
+]
+
+[[package]]
+name = "pydantic-graph"
+version = "1.87.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "httpx" },
+    { name = "logfire-api" },
+    { name = "pydantic" },
+    { name = "typing-inspection" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/98/fa/b2306c6dbb06e4dfe6ce6b7c5a28b82bee536d965e1dd1800b49c386b389/pydantic_graph-1.87.0.tar.gz", hash = "sha256:0f44848f8e83908ce372491c32ef349dfaf05e29f39fade0bae9309ab4f015cd", size = 59251, upload-time = "2026-04-25T01:09:23.989Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2c/9a/e99edfa37527ee04c14db7fc4b8da3f8e9c913f91c541a4b2d08438b461e/pydantic_graph-1.87.0-py3-none-any.whl", hash = "sha256:fd39e4e852808e36163474fe2af48e88a046b5e5e00596730f33c17d2429b7d2", size = 73063, upload-time = "2026-04-25T01:09:16.493Z" },
 ]
 
 [[package]]
@@ -4595,6 +4672,51 @@ ollama = [{ name = "langchain-community" }]
 openai = [{ name = "langchain-openai" }]
 
 [[package]]
+name = "sondera-examples-pydantic-ai"
+version = "0.1.0"
+source = { editable = "examples/pydantic-ai" }
+dependencies = [
+    { name = "pydantic-ai-slim" },
+    { name = "sondera-archetypes" },
+    { name = "sondera-harness", extra = ["pydantic-ai"] },
+]
+
+[package.dev-dependencies]
+all = [
+    { name = "pydantic-ai-slim", extra = ["anthropic", "google", "openai"] },
+]
+anthropic = [
+    { name = "pydantic-ai-slim", extra = ["anthropic"] },
+]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+]
+google = [
+    { name = "pydantic-ai-slim", extra = ["google"] },
+]
+openai = [
+    { name = "pydantic-ai-slim", extra = ["openai"] },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "pydantic-ai-slim", specifier = ">=1.78.0" },
+    { name = "sondera-archetypes", editable = "examples/archetypes" },
+    { name = "sondera-harness", extras = ["pydantic-ai"], editable = "." },
+]
+
+[package.metadata.requires-dev]
+all = [{ name = "pydantic-ai-slim", extras = ["openai", "anthropic", "google"], specifier = ">=1.78.0" }]
+anthropic = [{ name = "pydantic-ai-slim", extras = ["anthropic"], specifier = ">=1.78.0" }]
+dev = [
+    { name = "pytest", specifier = ">=8.0.0" },
+    { name = "pytest-asyncio", specifier = ">=0.23.0" },
+]
+google = [{ name = "pydantic-ai-slim", extras = ["google"], specifier = ">=1.78.0" }]
+openai = [{ name = "pydantic-ai-slim", extras = ["openai"], specifier = ">=1.78.0" }]
+
+[[package]]
 name = "sondera-examples-strands"
 version = "0.1.0"
 source = { editable = "examples/strands" }
@@ -4627,7 +4749,7 @@ dev = [
 
 [[package]]
 name = "sondera-harness"
-version = "0.9.0"
+version = "0.10.0"
 source = { editable = "." }
 dependencies = [
     { name = "cedar-python", extra = ["mcp"] },
@@ -4652,11 +4774,15 @@ all = [
     { name = "langchain" },
     { name = "langgraph" },
     { name = "litellm" },
+    { name = "pydantic-ai-slim" },
     { name = "strands-agents" },
 ]
 langgraph = [
     { name = "langchain" },
     { name = "langgraph" },
+]
+pydantic-ai = [
+    { name = "pydantic-ai-slim" },
 ]
 strands = [
     { name = "strands-agents" },
@@ -4678,6 +4804,7 @@ examples = [
     { name = "sondera-examples-cedar" },
     { name = "sondera-examples-claude-code" },
     { name = "sondera-examples-langgraph" },
+    { name = "sondera-examples-pydantic-ai" },
     { name = "sondera-examples-strands" },
 ]
 
@@ -4696,13 +4823,15 @@ requires-dist = [
     { name = "litellm", marker = "extra == 'ai'", specifier = ">=1.30.0" },
     { name = "litellm", marker = "extra == 'all'", specifier = ">=1.30.0" },
     { name = "pydantic", specifier = ">=2.12.0" },
+    { name = "pydantic-ai-slim", marker = "extra == 'all'", specifier = ">=1.78.0" },
+    { name = "pydantic-ai-slim", marker = "extra == 'pydantic-ai'", specifier = ">=1.78.0" },
     { name = "pydantic-settings", specifier = ">=2.12.0" },
-    { name = "sondera-harness-client", specifier = "==0.1.0.dev219" },
+    { name = "sondera-harness-client", specifier = ">=0.1.0.dev487" },
     { name = "strands-agents", marker = "extra == 'all'", specifier = ">=1.21.0" },
     { name = "strands-agents", marker = "extra == 'strands'", specifier = ">=1.21.0" },
     { name = "textual", specifier = ">=6.11.0" },
 ]
-provides-extras = ["ai", "adk", "langgraph", "strands", "all"]
+provides-extras = ["ai", "adk", "langgraph", "strands", "pydantic-ai", "all"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -4720,20 +4849,24 @@ examples = [
     { name = "sondera-examples-cedar", editable = "examples/cedar" },
     { name = "sondera-examples-claude-code", editable = "examples/claude-code" },
     { name = "sondera-examples-langgraph", editable = "examples/langgraph" },
+    { name = "sondera-examples-pydantic-ai", editable = "examples/pydantic-ai" },
     { name = "sondera-examples-strands", editable = "examples/strands" },
 ]
 
 [[package]]
 name = "sondera-harness-client"
-version = "0.1.0.dev219"
+version = "0.1.0.dev487"
 source = { registry = "https://pypi.org/simple" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f9/2d/2e5835ab04d396ebfd84d507520f4e7d49eaa0f9f67151d2f1aa938c795f/sondera_harness_client-0.1.0.dev219-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:047ddb4c9d0f0dc44b8d8dfec04213964adcc1ef82568b4b2010b6855555c6fd", size = 4986060, upload-time = "2026-03-19T17:29:28.881Z" },
-    { url = "https://files.pythonhosted.org/packages/1f/2d/d501ecb146666de46c2fb64b2de403812a0084530ff3979503ec74913b1f/sondera_harness_client-0.1.0.dev219-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:b8d7fac6d75ce571811cb1b0b44e1cfaa9e8b9e2c726141fd7a854343397e169", size = 5291501, upload-time = "2026-03-19T17:29:30.361Z" },
-    { url = "https://files.pythonhosted.org/packages/7e/1b/0ac6d0a32d4da4ee299d74c2f9715a94ff6b25d7b07a6cb17298910ffcf5/sondera_harness_client-0.1.0.dev219-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:7a33e925b65b5bcfa185627db00fd4c47570bc67914d592295a9f291935e3a2a", size = 4985512, upload-time = "2026-03-19T17:29:31.836Z" },
-    { url = "https://files.pythonhosted.org/packages/66/07/cff465f6669d608c1b591bc69cc7a9ddff8b9eb10c42c2d17085ad485c7a/sondera_harness_client-0.1.0.dev219-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:e5e72ddf9f8b6a7f606e1285bbed71a22697149d3cf9e1eaac2ff195b11b30ed", size = 5290769, upload-time = "2026-03-19T17:29:33.838Z" },
-    { url = "https://files.pythonhosted.org/packages/c3/aa/6711574f6991f50c3c02fb6388068ab8d36e345915f9bcc38aa1d54fec61/sondera_harness_client-0.1.0.dev219-cp314-cp314-macosx_11_0_arm64.whl", hash = "sha256:b03736c978a0e96507d50afc62f5bb1d2b5cbc1867f90a667d28a3ad004afa86", size = 4991222, upload-time = "2026-03-19T17:29:35.226Z" },
-    { url = "https://files.pythonhosted.org/packages/05/47/fa92f291519c558a8dc066fd505d978949b63ff5c6e20a7107a4a0487b75/sondera_harness_client-0.1.0.dev219-cp314-cp314-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:b461f927e05095c5285103e909da1b618c557f3bfec20b90c5937ba5af240417", size = 5307451, upload-time = "2026-03-19T17:29:36.986Z" },
+    { url = "https://files.pythonhosted.org/packages/17/50/a95fd06a5e9e3522d3402512cc1ee871e6bc3f7fc7aa1e97ef4ba867ab4e/sondera_harness_client-0.1.0.dev487-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:4ba859940e3767bf7b32bf1a16aec6bbabcf4d0330313af3b1b41be8fe185798", size = 7119487, upload-time = "2026-05-07T15:21:11.991Z" },
+    { url = "https://files.pythonhosted.org/packages/a0/78/918712cf80e75ee2c7a9f88628ff1a910ebfdfa87487ca1e552f4c5a9e09/sondera_harness_client-0.1.0.dev487-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:98ddad1d681be7397ceaca42f194f83f24e0d9f6337c8ad54050fe9e9efc9793", size = 7613199, upload-time = "2026-05-07T15:21:13.595Z" },
+    { url = "https://files.pythonhosted.org/packages/74/eb/c6cd479cdfd22d6a98dfb2cce32ffa7002c0845106d2535c8a2b279e4382/sondera_harness_client-0.1.0.dev487-cp312-cp312-manylinux_2_28_aarch64.whl", hash = "sha256:158aee105317ca71469800ab7ef999cb6093a6071a4cb65e84600c1922460eb5", size = 5666222, upload-time = "2026-05-07T15:21:15.421Z" },
+    { url = "https://files.pythonhosted.org/packages/d8/9a/fba89ae10bbeb474fbdd4a531bc82c41793197e9df87a832936e1330be12/sondera_harness_client-0.1.0.dev487-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:77deb8472383090b318e1120ca214ef4debb7f557070efb4b844d82a40d2e565", size = 7119792, upload-time = "2026-05-07T15:21:17.036Z" },
+    { url = "https://files.pythonhosted.org/packages/ba/77/f82cde652d8cfb9434ce66dc7d7ac197497158962c23d2f57aedd6dbd450/sondera_harness_client-0.1.0.dev487-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:f6e7d77fd96b2922c60efb6c9532bbb61614052c9e1d66c0ea468d9e532abe50", size = 7612536, upload-time = "2026-05-07T15:21:18.769Z" },
+    { url = "https://files.pythonhosted.org/packages/a8/e8/b7c79a5e5b926e70a21c69a9aeea4d388e3450d270d53c68a1f567556c31/sondera_harness_client-0.1.0.dev487-cp313-cp313-manylinux_2_28_aarch64.whl", hash = "sha256:9e178b0a9e45a7b013e6e18bc1be7711da086942e4781b4b74be71f9cb2506fc", size = 5666574, upload-time = "2026-05-07T15:21:20.546Z" },
+    { url = "https://files.pythonhosted.org/packages/09/91/5e76b269bf46a596f9749acb09f87dfeb76c115b41ea126cf769b4dc8087/sondera_harness_client-0.1.0.dev487-cp314-cp314-macosx_11_0_arm64.whl", hash = "sha256:0d9bab238f29962969b0ed7cd65248132e1e466f113317c831c06aaa2c718364", size = 7119598, upload-time = "2026-05-07T15:21:22.258Z" },
+    { url = "https://files.pythonhosted.org/packages/ef/79/15392fa46d7dd2059771cd479b8d1573651a9d0427476aadf8b27072f37d/sondera_harness_client-0.1.0.dev487-cp314-cp314-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:7f91e2398b8dba0454a9baad11f5eae97cbc5bb965029620b77bfe32f3e7a0e2", size = 7597337, upload-time = "2026-05-07T15:21:23.611Z" },
+    { url = "https://files.pythonhosted.org/packages/95/24/2726970c9f8eb06adbbab7c8f67fd80b8931f368532f7e93a6479bf0a696/sondera_harness_client-0.1.0.dev487-cp314-cp314-manylinux_2_28_aarch64.whl", hash = "sha256:98ba3694ba36393095a511b982119a665a7af2ab8110c79c5c14207b49049058", size = 5662619, upload-time = "2026-05-07T15:21:25.399Z" },
 ]
 
 [[package]]

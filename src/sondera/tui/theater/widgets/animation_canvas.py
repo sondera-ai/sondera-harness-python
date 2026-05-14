@@ -298,9 +298,9 @@ class AnimationCanvas(Widget):
         """Add a point for this step."""
         from sondera.types import Decision
 
-        if event.decision == Decision.Allow:
+        if event.decision == Decision.ALLOW:
             decision = 0
-        elif event.decision == Decision.Deny:
+        elif event.decision == Decision.DENY:
             decision = 1
         else:  # Escalate
             decision = 2

@@ -133,7 +133,7 @@ class TrajectoryPlayer(Widget):
             trajectory = Trajectory(
                 name=traj_data.get("name", ""),
                 agent=traj_data.get("agent", ""),
-                status=TrajectoryStatus.Running,
+                status=TrajectoryStatus.RUNNING,
             )
             trajectories.append(trajectory)
 

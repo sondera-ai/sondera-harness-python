@@ -7,11 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.9.1] - 2026-04-08
+## [0.10.0] - 2026-05-13
+
+### Changed
+
+- Renamed the browser-login callback parameter to the provider-neutral
+  `__session_token`.
+- Updated `sondera-harness-client` to v0.1.0.dev487.
+- Consolidated type imports: all `sondera_harness_client` types now import
+  through the `sondera.types` module.
+
+### Added
+
+- New types exported from `sondera.types`: `AgentIntent`, `EventScanResult`,
+  `HarnessErrorPolicy`, `IfcGuardrailResult`, `MessageType`, `Signal`,
+  `SignalCategory`, `SignalFocus`, `SignalSeverity`, `Strategy`,
+  `TranscriptDigest`, `TranscriptOutcome`, `TranscriptPhase`,
+  `TranscriptScanResult`.
+
+### Removed
+
+- Removed acceptance of the legacy provider-specific browser-login callback
+  parameter from the CLI auth flow. This is an intentional hard cut: stale
+  callbacks now prompt a fresh auth flow instead of preserving the old callback
+  boundary.
 
 ### Fixed
 
-- Pass `trajectory_id` in Started event to prevent trajectory fragmentation across all SDK providers
+- Improved the CLI auth callback error message so stale or invalid login
+  callbacks direct users to retry the browser login flow instead of failing
+  with an ambiguous missing-token response.
 
 ## [0.9.0] - 2026-04-07
 

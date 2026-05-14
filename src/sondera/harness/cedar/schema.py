@@ -1,4 +1,6 @@
+import importlib.resources
 import json
+import logging
 from typing import Any
 
 from cedar.schema import (
@@ -12,6 +14,8 @@ from cedar.schema import (
 )
 
 from sondera.types import Agent, Tool
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def openai_json_schema_to_cedar_type(json_schema_str: str | None) -> SchemaType | None:
@@ -82,70 +86,6 @@ def json_schema_to_cedar_type(schema: dict[str, Any]) -> SchemaType:
         return SchemaType(type="String")
 
 
-def tool_to_action(tool: Tool) -> Action:
-    """Convert a Tool to a Cedar Action.
-
-    Creates an Action with context containing both parameters and response.
-    Both are always included and marked as optional since they may not be
-    present in all requests (parameters for PRE_TOOL, response for POST_TOOL).
-
-    If a typed schema is available, it's used. Otherwise, a JSON string fallback
-    is provided for flexibility (parameters_json/response_json).
-    """
-    context_attributes: dict[str, SchemaType] = {}
-
-    # Add parameters to context - use typed schema if available
-    if tool.parameters_json_schema:
-        params_type = openai_json_schema_to_cedar_type(tool.parameters_json_schema)
-        if params_type and params_type.type == "Record" and params_type.attributes:
-            # Use the parameters directly as a Record type, mark as optional
-            params_type.required = False
-            context_attributes["parameters"] = params_type
-        elif params_type:
-            # Wrap non-record parameters
-            wrapped_type = SchemaType(
-                type="Record", attributes={"value": params_type}, required=False
-            )
-            context_attributes["parameters"] = wrapped_type
-
-    # Always add parameters_json as a string fallback
-    context_attributes["parameters_json"] = SchemaType(type="String", required=False)
-
-    # Add response to context - use typed schema if available
-    if tool.response_json_schema:
-        response_type = openai_json_schema_to_cedar_type(tool.response_json_schema)
-        if (
-            response_type
-            and response_type.type == "Record"
-            and response_type.attributes
-        ):
-            # Use the response directly as a Record type, mark as optional
-            response_type.required = False
-            context_attributes["response"] = response_type
-        elif response_type:
-            # For simple types, wrap in a Record
-            wrapped_type = SchemaType(
-                type="Record", attributes={"value": response_type}, required=False
-            )
-            context_attributes["response"] = wrapped_type
-
-    # Always add response_json as a string fallback
-    context_attributes["response_json"] = SchemaType(type="String", required=False)
-
-    # Create context with both typed and string representations
-    context = SchemaType(type="Record", attributes=context_attributes)
-
-    # Create the action with appliesTo configuration
-    # Default to Agent as principal and Tool as resource
-    action = Action(
-        appliesTo=AppliesTo(
-            principalTypes=["Agent"], resourceTypes=["Trajectory"], context=context
-        )
-    )
-
-    return action
-
-
 def _agent_tools(agent: Agent) -> list[Tool]:
     """Extract tools from an Agent's card."""
     if agent.card and agent.card.react_card:
@@ -153,12 +93,129 @@ def _agent_tools(agent: Agent) -> list[Tool]:
     return []
 
 
+def _schema_type_signature(schema_type: SchemaType) -> dict[str, Any]:
+    """Return the type shape without required/optional metadata."""
+    signature: dict[str, Any] = {
+        "type": schema_type.type,
+        "name": schema_type.name,
+    }
+    if schema_type.element is not None:
+        signature["element"] = _schema_type_signature(schema_type.element)
+    if schema_type.attributes:
+        signature["attributes"] = {
+            name: _schema_type_signature(attr)
+            for name, attr in sorted(schema_type.attributes.items())
+        }
+    return signature
+
+
+def _build_pre_tool_use_context(tools: list[Tool]) -> SchemaType:
+    """Build the PreToolUse action context type.
+
+    Always includes server-compatible fields:
+    - tool: String (tool name)
+    - arguments: String (JSON-serialized arguments)
+
+    Optionally includes a typed 'parameters' record merging all tools'
+    parameter schemas (local-only extension for typed policy checks).
+    """
+    context_attributes: dict[str, SchemaType] = {
+        "tool": SchemaType(type="String"),
+        "arguments": SchemaType(type="String"),
+    }
+
+    # Merge typed parameter schemas from all tools as optional extension.
+    # Conflicting flat field names are omitted so later tool calls do not
+    # fail Cedar schema validation against a first-seen type.
+    merged_params: dict[str, SchemaType] = {}
+    merged_param_sources: dict[str, str] = {}
+    conflicted_params: set[str] = set()
+    for tool in tools:
+        if tool.parameters_json_schema:
+            params_type = openai_json_schema_to_cedar_type(tool.parameters_json_schema)
+            if params_type and params_type.type == "Record" and params_type.attributes:
+                for attr_name, attr_type in params_type.attributes.items():
+                    if attr_name in conflicted_params:
+                        continue
+
+                    if attr_name not in merged_params:
+                        # Mark all merged fields as optional since they come
+                        # from different tools
+                        attr_type.required = False
+                        merged_params[attr_name] = attr_type
+                        merged_param_sources[attr_name] = tool.name
+                        continue
+
+                    if _schema_type_signature(
+                        merged_params[attr_name]
+                    ) != _schema_type_signature(attr_type):
+                        previous_tool = merged_param_sources[attr_name]
+                        _LOGGER.warning(
+                            "Omitting typed Cedar parameter '%s' because tools "
+                            "'%s' and '%s' define incompatible types; use "
+                            "context.arguments for that field.",
+                            attr_name,
+                            previous_tool,
+                            tool.name,
+                        )
+                        del merged_params[attr_name]
+                        del merged_param_sources[attr_name]
+                        conflicted_params.add(attr_name)
+
+    if merged_params:
+        context_attributes["parameters"] = SchemaType(
+            type="Record", attributes=merged_params, required=False
+        )
+
+    return SchemaType(type="Record", attributes=context_attributes)
+
+
+def _build_tool_output_context(tools: list[Tool]) -> SchemaType:
+    """Build the ToolOutput action context type.
+
+    Always includes server-compatible fields:
+    - content: String (serialized tool output)
+
+    Optionally includes a typed 'response' record merging all tools'
+    response schemas (local-only extension for typed policy checks).
+    """
+    context_attributes: dict[str, SchemaType] = {
+        "content": SchemaType(type="String"),
+    }
+
+    # Merge typed response schemas from all tools as optional extension
+    merged_response: dict[str, SchemaType] = {}
+    for tool in tools:
+        if tool.response_json_schema:
+            response_type = openai_json_schema_to_cedar_type(tool.response_json_schema)
+            if (
+                response_type
+                and response_type.type == "Record"
+                and response_type.attributes
+            ):
+                for attr_name, attr_type in response_type.attributes.items():
+                    if attr_name not in merged_response:
+                        attr_type.required = False
+                        merged_response[attr_name] = attr_type
+
+    if merged_response:
+        context_attributes["response"] = SchemaType(
+            type="Record", attributes=merged_response, required=False
+        )
+
+    return SchemaType(type="Record", attributes=context_attributes)
+
+
 def agent_to_cedar_schema(agent: Agent) -> CedarSchema:
-    """Convert an Agent to a Cedar Schema.
+    """Convert an Agent to a Cedar Schema aligned with the server model.
 
     Creates a namespace named after the agent containing:
-    - Default entity types (Agent, Tool)
-    - Actions for each tool with parameters/response in context
+    - Entity types: Agent, Tool (in Trajectory), Role, Message, Trajectory
+    - Actions: PreToolUse (resource: Tool), ToolOutput (resource: Trajectory),
+      Prompt (resource: Message)
+
+    The action model matches the server harness so policies are portable
+    between local evaluation and remote deployment.
     """
 
     # Create entity types
@@ -182,7 +239,8 @@ def agent_to_cedar_schema(agent: Agent) -> CedarSchema:
                     "name": SchemaType(type="String"),
                     "description": SchemaType(type="String"),
                 },
-            )
+            ),
+            memberOfTypes=["Trajectory"],
         ),
         "Role": EntityType(enum=["user", "model", "system", "tool"]),
         "Message": EntityType(
@@ -205,16 +263,31 @@ def agent_to_cedar_schema(agent: Agent) -> CedarSchema:
         ),
     }
 
-    # Create actions from agent card tools
-    actions: dict[str, Action] = {}
-    for tool in _agent_tools(agent):
-        # Use tool name as action name, sanitized for Cedar
-        action_name = tool.name.replace(" ", "_").replace("-", "_")
-        actions[action_name] = tool_to_action(tool)
+    tools = _agent_tools(agent)
 
-    actions["Prompt"] = Action(
-        appliesTo=AppliesTo(principalTypes=["Agent"], resourceTypes=["Message"])
-    )
+    # Create canonical actions aligned with server model
+    actions: dict[str, Action] = {
+        "PreToolUse": Action(
+            appliesTo=AppliesTo(
+                principalTypes=["Agent"],
+                resourceTypes=["Tool"],
+                context=_build_pre_tool_use_context(tools),
+            )
+        ),
+        "ToolOutput": Action(
+            appliesTo=AppliesTo(
+                principalTypes=["Agent"],
+                resourceTypes=["Trajectory"],
+                context=_build_tool_output_context(tools),
+            )
+        ),
+        "Prompt": Action(
+            appliesTo=AppliesTo(
+                principalTypes=["Agent"],
+                resourceTypes=["Message"],
+            )
+        ),
+    }
 
     # Create namespace definition
     namespace_name = agent.id.replace(" ", "_").replace("-", "_")
@@ -226,3 +299,16 @@ def agent_to_cedar_schema(agent: Agent) -> CedarSchema:
     validate(schema)
 
     return schema
+
+
+def load_base_schema() -> str:
+    """Load the static sondera.cedarschema from the package.
+
+    Returns:
+        The cedarschema file contents as a string.
+    """
+    return (
+        importlib.resources.files("sondera.harness.cedar")
+        .joinpath("sondera.cedarschema")
+        .read_text(encoding="utf-8")
+    )

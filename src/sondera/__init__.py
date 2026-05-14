@@ -22,6 +22,7 @@ Framework Integrations:
     - sondera.langgraph: LangGraph middleware
     - sondera.adk: Google ADK plugin
     - sondera.strands: Strands lifecycle hooks
+    - sondera.pydantic: Pydantic AI governed toolset and provider
 
 Example:
     >>> from sondera import CedarPolicyHarness, Agent, AgentCard, ReActAgentCard, Tool
@@ -83,6 +84,7 @@ from sondera.types import (
     FileOpType,
     GuardrailResults,
     HarnessClient,
+    HarnessErrorPolicy,
     Mode,
     Parameter,
     PolicyMetadata,
@@ -99,6 +101,7 @@ from sondera.types import (
     SourceCode,
     Started,
     Steering,
+    Strategy,
     Suspended,
     Terminated,
     Thought,
@@ -114,7 +117,7 @@ from sondera.types import (
     WebFetchOutput,
 )
 
-__version__ = "0.6.0"
+__version__ = "0.10.0"
 
 __all__ = [
     # Harness implementations
@@ -144,6 +147,7 @@ __all__ = [
     "FileOperation",
     "FileOperationResult",
     "GuardrailResults",
+    "HarnessErrorPolicy",
     "HarnessClient",
     "Mode",
     "Parameter",
@@ -160,6 +164,7 @@ __all__ = [
     "Snapshot",
     "SourceCode",
     "Started",
+    "Strategy",
     "Steering",
     "Suspended",
     "Terminated",

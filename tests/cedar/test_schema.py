@@ -9,8 +9,8 @@ from sondera import Agent, AgentCard, Parameter, ReActAgentCard, Tool
 from sondera.harness.cedar.schema import (
     agent_to_cedar_schema,
     json_schema_to_cedar_type,
+    load_base_schema,
     openai_json_schema_to_cedar_type,
-    tool_to_action,
 )
 
 
@@ -196,107 +196,6 @@ class TestOpenaiJsonSchemaToCedarType:
         assert result.attributes["filters"].type == "Set"
 
 
-class TestToolToAction:
-    """Tests for tool_to_action conversion."""
-
-    def test_basic_tool(self):
-        """Test conversion of a basic tool."""
-        tool = Tool(
-            id="test_tool",
-            name="test_tool",
-            description="A test tool",
-            parameters=[
-                Parameter(name="input", description="Input value", param_type="string")
-            ],
-        )
-        action = tool_to_action(tool)
-
-        assert action.appliesTo is not None
-        assert action.appliesTo.principalTypes == ["Agent"]
-        assert action.appliesTo.resourceTypes == ["Trajectory"]
-
-    def test_tool_with_parameters_schema(self):
-        """Test tool with parameters JSON schema."""
-        tool = Tool(
-            id="read_file",
-            name="read_file",
-            description="Read a file",
-            parameters=[
-                Parameter(name="path", description="File path", param_type="string")
-            ],
-            parameters_json_schema='{"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}',
-        )
-        action = tool_to_action(tool)
-
-        assert action.appliesTo is not None
-        assert action.appliesTo.context is not None
-        context = action.appliesTo.context
-        assert context.attributes is not None
-        # Should have both typed parameters and string fallback
-        assert "parameters" in context.attributes
-        assert "parameters_json" in context.attributes
-        assert context.attributes["parameters"].type == "Record"
-
-    def test_tool_with_response_schema(self):
-        """Test tool with response JSON schema."""
-        tool = Tool(
-            id="read_file",
-            name="read_file",
-            description="Read a file",
-            parameters=[],
-            response_json_schema='{"type": "object", "properties": {"content": {"type": "string"}, "size": {"type": "integer"}}}',
-        )
-        action = tool_to_action(tool)
-
-        assert action.appliesTo is not None
-        assert action.appliesTo.context is not None
-        context = action.appliesTo.context
-        assert context.attributes is not None
-        # Should have both typed response and string fallback
-        assert "response" in context.attributes
-        assert "response_json" in context.attributes
-        assert context.attributes["response"].type == "Record"
-
-    def test_tool_without_schemas(self):
-        """Test tool without JSON schemas still has string fallbacks."""
-        tool = Tool(
-            id="simple_tool",
-            name="simple_tool",
-            description="A simple tool",
-            parameters=[],
-        )
-        action = tool_to_action(tool)
-
-        assert action.appliesTo is not None
-        assert action.appliesTo.context is not None
-        context = action.appliesTo.context
-        assert context.attributes is not None
-        # Should have string fallbacks even without typed schemas
-        assert "parameters_json" in context.attributes
-        assert "response_json" in context.attributes
-        assert context.attributes["parameters_json"].type == "String"
-        assert context.attributes["response_json"].type == "String"
-
-    def test_tool_with_simple_type_response(self):
-        """Test tool with a simple (non-object) response type."""
-        tool = Tool(
-            id="get_count",
-            name="get_count",
-            description="Get a count",
-            parameters=[],
-            response_json_schema='{"type": "integer"}',
-        )
-        action = tool_to_action(tool)
-
-        assert action.appliesTo is not None
-        assert action.appliesTo.context is not None
-        context = action.appliesTo.context
-        assert context.attributes is not None
-        # Simple types should be wrapped in a Record
-        assert "response" in context.attributes
-        assert context.attributes["response"].type == "Record"
-
-
 class TestAgentToCedarSchema:
     """Tests for agent_to_cedar_schema conversion."""
 
@@ -376,25 +275,159 @@ class TestAgentToCedarSchema:
         assert "name" in tool_type.shape.attributes
         assert "description" in tool_type.shape.attributes
 
-    def test_actions_created_for_tools(self, simple_agent: Agent):
-        """Test that actions are created for each tool."""
+    def test_tool_entity_is_child_of_trajectory(self, simple_agent: Agent):
+        """Test Tool entity type has Trajectory as parent."""
+        schema = agent_to_cedar_schema(simple_agent)
+        tool_type = schema.root["TestAgent"].entityTypes["Tool"]
+        assert "Trajectory" in tool_type.memberOfTypes
+
+    def test_canonical_actions_created(self, simple_agent: Agent):
+        """Test that PreToolUse, ToolOutput, and Prompt actions are created."""
         schema = agent_to_cedar_schema(simple_agent)
         actions = schema.root["TestAgent"].actions
-        assert "tool_a" in actions
-        assert "tool_b" in actions
+        assert "PreToolUse" in actions
+        assert "ToolOutput" in actions
+        assert "Prompt" in actions
 
-    def test_action_names_sanitized(self):
-        """Test that tool names with spaces/dashes are sanitized in actions."""
+    def test_no_per_tool_actions(self, simple_agent: Agent):
+        """Test that per-tool actions are NOT created (old model removed)."""
+        schema = agent_to_cedar_schema(simple_agent)
+        actions = schema.root["TestAgent"].actions
+        assert "tool_a" not in actions
+        assert "tool_b" not in actions
+
+    def test_pre_tool_use_has_tool_resource(self, simple_agent: Agent):
+        """Test PreToolUse action has Tool as resource type."""
+        schema = agent_to_cedar_schema(simple_agent)
+        pre_tool = schema.root["TestAgent"].actions["PreToolUse"]
+        assert "Tool" in pre_tool.appliesTo.resourceTypes
+
+    def test_pre_tool_use_context_fields(self, simple_agent: Agent):
+        """Test PreToolUse context has server-compatible fields."""
+        schema = agent_to_cedar_schema(simple_agent)
+        ctx = schema.root["TestAgent"].actions["PreToolUse"].appliesTo.context
+        assert "tool" in ctx.attributes
+        assert "arguments" in ctx.attributes
+        assert ctx.attributes["tool"].type == "String"
+        assert ctx.attributes["arguments"].type == "String"
+
+    def test_pre_tool_use_has_typed_parameters(self, simple_agent: Agent):
+        """Test PreToolUse context has optional typed parameters from tools."""
+        schema = agent_to_cedar_schema(simple_agent)
+        ctx = schema.root["TestAgent"].actions["PreToolUse"].appliesTo.context
+        assert "parameters" in ctx.attributes
+        params = ctx.attributes["parameters"]
+        assert params.required is False
+        assert params.type == "Record"
+        assert "x" in params.attributes  # from tool_a
+
+    def test_pre_tool_use_omits_conflicting_parameter_type(self, caplog):
+        """Conflicting flat parameter names are dropped from typed context."""
         agent = Agent(
-            id="TestAgent",
+            id="CollisionAgent",
             provider="test",
             card=AgentCard.react(
                 ReActAgentCard(
                     tools=[
                         Tool(
-                            id="my-tool",
-                            name="my-special tool",
-                            description="A tool",
+                            name="tool_a",
+                            description="Tool A",
+                            parameters=[],
+                            parameters_json_schema='{"type": "object", "properties": {"id": {"type": "string"}, "name": {"type": "string"}}}',
+                        ),
+                        Tool(
+                            name="tool_b",
+                            description="Tool B",
+                            parameters=[],
+                            parameters_json_schema='{"type": "object", "properties": {"id": {"type": "integer"}, "count": {"type": "integer"}}}',
+                        ),
+                    ],
+                )
+            ),
+        )
+
+        schema = agent_to_cedar_schema(agent)
+
+        ctx = schema.root["CollisionAgent"].actions["PreToolUse"].appliesTo.context
+        params = ctx.attributes["parameters"]
+        assert "id" not in params.attributes
+        assert "name" in params.attributes
+        assert "count" in params.attributes
+        assert "Omitting typed Cedar parameter 'id'" in caplog.text
+
+    def test_pre_tool_use_keeps_matching_parameter_types(self):
+        """Shared fields with matching types remain available as typed params."""
+        agent = Agent(
+            id="SharedAgent",
+            provider="test",
+            card=AgentCard.react(
+                ReActAgentCard(
+                    tools=[
+                        Tool(
+                            name="tool_a",
+                            description="Tool A",
+                            parameters=[],
+                            parameters_json_schema='{"type": "object", "properties": {"customer_id": {"type": "string"}}}',
+                        ),
+                        Tool(
+                            name="tool_b",
+                            description="Tool B",
+                            parameters=[],
+                            parameters_json_schema='{"type": "object", "properties": {"customer_id": {"type": "string"}}}',
+                        ),
+                    ],
+                )
+            ),
+        )
+
+        schema = agent_to_cedar_schema(agent)
+
+        ctx = schema.root["SharedAgent"].actions["PreToolUse"].appliesTo.context
+        params = ctx.attributes["parameters"]
+        assert params.attributes["customer_id"].type == "String"
+
+    def test_tool_output_has_trajectory_resource(self, simple_agent: Agent):
+        """Test ToolOutput action has Trajectory as resource type."""
+        schema = agent_to_cedar_schema(simple_agent)
+        tool_output = schema.root["TestAgent"].actions["ToolOutput"]
+        assert "Trajectory" in tool_output.appliesTo.resourceTypes
+
+    def test_tool_output_context_fields(self, simple_agent: Agent):
+        """Test ToolOutput context has server-compatible content field."""
+        schema = agent_to_cedar_schema(simple_agent)
+        ctx = schema.root["TestAgent"].actions["ToolOutput"].appliesTo.context
+        assert "content" in ctx.attributes
+        assert ctx.attributes["content"].type == "String"
+
+    def test_schema_validates(self, simple_agent: Agent):
+        """Test that generated schema is valid Cedar schema."""
+        schema = agent_to_cedar_schema(simple_agent)
+        assert schema is not None
+
+    def test_empty_tools_list(self):
+        """Test agent with no tools has all three canonical actions."""
+        agent = Agent(
+            id="NoToolsAgent",
+            provider="test",
+        )
+        schema = agent_to_cedar_schema(agent)
+        actions = schema.root["NoToolsAgent"].actions
+        assert "Prompt" in actions
+        assert "PreToolUse" in actions
+        assert "ToolOutput" in actions
+
+    def test_no_typed_parameters_without_schemas(self):
+        """Test that without tool JSON schemas, no typed parameters are added."""
+        agent = Agent(
+            id="BasicAgent",
+            provider="test",
+            card=AgentCard.react(
+                ReActAgentCard(
+                    tools=[
+                        Tool(
+                            id="simple",
+                            name="simple",
+                            description="No schema",
                             parameters=[],
                         )
                     ],
@@ -402,26 +435,43 @@ class TestAgentToCedarSchema:
             ),
         )
         schema = agent_to_cedar_schema(agent)
-        actions = schema.root["TestAgent"].actions
-        assert "my_special_tool" in actions
+        ctx = schema.root["BasicAgent"].actions["PreToolUse"].appliesTo.context
+        assert "parameters" not in ctx.attributes
 
-    def test_schema_validates(self, simple_agent: Agent):
-        """Test that generated schema is valid Cedar schema."""
-        # Should not raise an exception
-        schema = agent_to_cedar_schema(simple_agent)
-        # If we got here without exception, validation passed
-        assert schema is not None
 
-    def test_empty_tools_list(self):
-        """Test agent with no tools still has Prompt action."""
-        agent = Agent(
-            id="NoToolsAgent",
-            provider="test",
-        )
-        schema = agent_to_cedar_schema(agent)
-        # Should have Prompt action even with no tools
-        assert "Prompt" in schema.root["NoToolsAgent"].actions
-        assert len(schema.root["NoToolsAgent"].actions) == 1
+class TestLoadBaseSchema:
+    """Tests for load_base_schema utility."""
+
+    def test_returns_string(self):
+        """Test that load_base_schema returns a string."""
+        content = load_base_schema()
+        assert isinstance(content, str)
+
+    def test_contains_entity_types(self):
+        """Test base schema contains expected entity types."""
+        content = load_base_schema()
+        assert "entity Agent" in content
+        assert "entity Tool" in content
+        assert "entity Trajectory" in content
+        assert "entity Message" in content
+
+    def test_contains_aligned_actions(self):
+        """Test base schema contains server-aligned actions."""
+        content = load_base_schema()
+        assert '"PreToolUse"' in content
+        assert '"ToolOutput"' in content
+        assert '"Prompt"' in content
+
+    def test_pre_tool_use_context_fields(self):
+        """Test base schema PreToolUse context has tool and arguments."""
+        content = load_base_schema()
+        assert "tool: String" in content
+        assert "arguments: String" in content
+
+    def test_tool_output_context_fields(self):
+        """Test base schema ToolOutput context has content."""
+        content = load_base_schema()
+        assert "content: String" in content
 
 
 class TestSchemaTypeRequired:

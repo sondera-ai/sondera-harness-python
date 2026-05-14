@@ -1,7 +1,13 @@
+// Email & Calendar Assistant — Cedar Schema
+//
+// Server-aligned action model (PreToolUse / ToolOutput / Prompt).
+// Typed parameters and response fields are merged from all tools
+// into single optional records for local policy evaluation.
+
 namespace email_calendar_assistant {
   entity Agent = {
     name: __cedar::String,
-    provider_id: __cedar::String,
+    provider: __cedar::String,
     tools: Set<Tool>
   };
 
@@ -12,7 +18,7 @@ namespace email_calendar_assistant {
 
   entity Role enum ["user", "model", "system", "tool"];
 
-  entity Tool = {
+  entity Tool in [Trajectory] = {
     description: __cedar::String,
     name: __cedar::String
   };
@@ -23,93 +29,60 @@ namespace email_calendar_assistant {
 
   action "Prompt" appliesTo {
     principal: [Agent],
-    resource: [Message],
-    context: {}
+    resource: [Message]
   };
 
-  action "create_calendar_event" appliesTo {
+  action "PreToolUse" appliesTo {
     principal: [Agent],
-    resource: [Trajectory],
+    resource: [Tool],
     context: {
+      tool: __cedar::String,
+      arguments: __cedar::String,
       parameters?: {
-        attendees: Set<__cedar::String>,
-        end_time: __cedar::String,
-        location?: __cedar::String,
-        start_time: __cedar::String,
-        title: __cedar::String
-      },
-      parameters_json?: __cedar::String,
-      response?: {
-        event_id?: __cedar::String,
-        start_time?: __cedar::String,
-        status?: __cedar::String,
-        title?: __cedar::String
-      },
-      response_json?: __cedar::String
-    }
-  };
-
-  action "get_calendar_events" appliesTo {
-    principal: [Agent],
-    resource: [Trajectory],
-    context: {
-      parameters?: {
+        // get_unread_emails, get_calendar_events
+        user_id?: __cedar::String,
+        // get_calendar_events
         date?: __cedar::String,
-        user_id: __cedar::String
-      },
-      parameters_json?: __cedar::String,
-      response?: {
-        value: Set<{
-          attendees?: Set<__cedar::String>,
-          end_time?: __cedar::String,
-          id?: __cedar::String,
-          location?: __cedar::String,
-          start_time?: __cedar::String,
-          title?: __cedar::String
-        }>
-      },
-      response_json?: __cedar::String
+        // create_calendar_event
+        title?: __cedar::String,
+        start_time?: __cedar::String,
+        end_time?: __cedar::String,
+        location?: __cedar::String,
+        attendees?: Set<__cedar::String>,
+        // send_email
+        to?: __cedar::String,
+        subject?: __cedar::String,
+        body?: __cedar::String
+      }
     }
   };
 
-  action "get_unread_emails" appliesTo {
+  action "ToolOutput" appliesTo {
     principal: [Agent],
     resource: [Trajectory],
     context: {
-      parameters?: {
-        user_id: __cedar::String
-      },
-      parameters_json?: __cedar::String,
+      content: __cedar::String,
       response?: {
-        value: Set<{
+        // get_unread_emails
+        value?: Set<{
           body?: __cedar::String,
           id?: __cedar::String,
           received_at?: __cedar::String,
           sender?: __cedar::String,
           subject?: __cedar::String
-        }>
-      },
-      response_json?: __cedar::String
-    }
-  };
-
-  action "send_email" appliesTo {
-    principal: [Agent],
-    resource: [Trajectory],
-    context: {
-      parameters?: {
-        body: __cedar::String,
-        subject: __cedar::String,
-        to: __cedar::String
-      },
-      parameters_json?: __cedar::String,
-      response?: {
-        message_id?: __cedar::String,
+        }>,
+        // create_calendar_event
+        event_id?: __cedar::String,
+        start_time?: __cedar::String,
         status?: __cedar::String,
+        title?: __cedar::String,
+        // get_calendar_events uses 'value' (same field, different shape —
+        // Cedar validates structurally; the Set element type covers both)
+        // send_email
+        message_id?: __cedar::String,
         subject?: __cedar::String,
         to?: __cedar::String
-      },
-      response_json?: __cedar::String
+      }
     }
   };
 }

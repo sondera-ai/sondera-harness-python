@@ -17,43 +17,8 @@ if TYPE_CHECKING:
     from sondera.tui.app import SonderaApp
 
 import sondera.settings as _settings
-from sondera.settings import _ENV_PATH, reload_settings
-
-
-def update_env_file(updates: dict[str, str | None]) -> None:
-    """Update specific keys in ~/.sondera/env, preserving other content.
-
-    If a value is None, the key is removed. New keys are appended.
-    """
-    _ENV_PATH.parent.mkdir(parents=True, exist_ok=True)
-
-    lines: list[str] = []
-    if _ENV_PATH.exists():
-        lines = _ENV_PATH.read_text().splitlines()
-
-    updated_keys: set[str] = set()
-    new_lines: list[str] = []
-
-    for line in lines:
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            new_lines.append(line)
-            continue
-        if "=" in stripped:
-            key = stripped.split("=", 1)[0].strip()
-            if key in updates:
-                updated_keys.add(key)
-                if updates[key] is not None:
-                    new_lines.append(f"{key}={updates[key]}")
-                continue  # Remove if None
-        new_lines.append(line)
-
-    for key, value in updates.items():
-        if key not in updated_keys and value is not None:
-            new_lines.append(f"{key}={value}")
-
-    _ENV_PATH.write_text("\n".join(new_lines) + "\n")
-
+from sondera.config import update_env_file
+from sondera.settings import reload_settings
 
 _SCREENSAVER_OPTIONS: list[tuple[str, int]] = [
     ("Never", 0),

@@ -24,16 +24,18 @@ def plan_mode_policy() -> str:
     """Cedar policy that blocks Write and Edit in plan mode."""
     return """
     @id("forbid-write-in-plan-mode")
-    forbid(principal, action == claude_code::Action::"Write", resource)
+    forbid(principal, action == claude_code::Action::"PreToolUse", resource)
     when {
+        context.tool == "Write" &&
         context has parameters &&
         context.parameters has permission_mode &&
         context.parameters.permission_mode == "plan"
     };
 
     @id("forbid-edit-in-plan-mode")
-    forbid(principal, action == claude_code::Action::"Edit", resource)
+    forbid(principal, action == claude_code::Action::"PreToolUse", resource)
     when {
+        context.tool == "Edit" &&
         context has parameters &&
         context.parameters has permission_mode &&
         context.parameters.permission_mode == "plan"
@@ -280,8 +282,9 @@ class TestToolInputPassthrough:
     def passwd_policy_hooks(self) -> ClaudeCodeHooks:
         policy = """
         @id("deny-etc-passwd")
-        forbid(principal, action == claude_code::Action::"Write", resource)
+        forbid(principal, action == claude_code::Action::"PreToolUse", resource)
         when {
+            context.tool == "Write" &&
             context has parameters &&
             context.parameters has file_path &&
             context.parameters.file_path == "/etc/passwd"
@@ -350,8 +353,9 @@ class TestPlanFileException:
         """Cedar policy that blocks Write/Edit in plan mode except for plan files."""
         return """
         @id("forbid-write-in-plan-mode")
-        forbid(principal, action == claude_code::Action::"Write", resource)
+        forbid(principal, action == claude_code::Action::"PreToolUse", resource)
         when {
+            context.tool == "Write" &&
             context has parameters &&
             context.parameters has permission_mode &&
             context.parameters.permission_mode == "plan"
@@ -362,8 +366,9 @@ class TestPlanFileException:
         };
 
         @id("forbid-edit-in-plan-mode")
-        forbid(principal, action == claude_code::Action::"Edit", resource)
+        forbid(principal, action == claude_code::Action::"PreToolUse", resource)
         when {
+            context.tool == "Edit" &&
             context has parameters &&
             context.parameters has permission_mode &&
             context.parameters.permission_mode == "plan"

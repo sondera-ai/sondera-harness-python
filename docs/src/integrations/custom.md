@@ -218,13 +218,13 @@ async def execute_with_escalation(harness: CedarPolicyHarness, tool_call: dict) 
     )
     result = await harness.adjudicate(event)
 
-    if result.decision == Decision.Allow:
+    if result.decision == Decision.ALLOW:
         return execute_tool(tool_call)
 
-    if result.decision == Decision.Deny:
+    if result.decision == Decision.DENY:
         return f"Action '{tool_call['name']}' blocked: {result.reason}"
 
-    if result.decision == Decision.Escalate:
+    if result.decision == Decision.ESCALATE:
         pm = result.metadata[0]
         route_to = pm.metadata.get("escalate_arg", "unknown")
         print(f"Action requires approval: {tool_call['name']}")
@@ -286,13 +286,13 @@ async def escalate_to_slack(harness: CedarPolicyHarness, tool_call: dict) -> str
     )
     result = await harness.adjudicate(event)
 
-    if result.decision == Decision.Allow:
+    if result.decision == Decision.ALLOW:
         return execute_tool(tool_call)
 
-    if result.decision == Decision.Deny:
+    if result.decision == Decision.DENY:
         return f"Action blocked: {result.reason}"
 
-    if result.decision == Decision.Escalate:
+    if result.decision == Decision.ESCALATE:
         pm = result.metadata[0]
         route_to = pm.metadata.get("escalate_arg", "unknown")
         webhook_url = SLACK_WEBHOOKS.get(route_to)

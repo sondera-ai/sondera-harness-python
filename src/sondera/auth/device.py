@@ -1,12 +1,11 @@
 """PKCE authorization flow for Sondera CLI authentication.
 
-Uses a localhost callback server to receive the Clerk session after
+Uses a localhost callback server to receive the session token after
 browser sign-in, then exchanges it for an API key via the server.
 """
 
 from __future__ import annotations
 
-import os
 import threading
 import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -16,12 +15,14 @@ from urllib.parse import parse_qs, urlparse
 import httpx
 
 DEFAULT_BASE_URL = "https://app.sondera.ai"
-
-_ENV_PATH = Path("~/.sondera/env").expanduser()
+MISSING_AUTH_CALLBACK_MESSAGE = (
+    "Missing session token. Return to your terminal and run `sondera auth login` "
+    "again after refreshing the sign-in page."
+)
 
 
 class _CallbackHandler(BaseHTTPRequestHandler):
-    """HTTP handler that captures the Clerk session token from the redirect."""
+    """HTTP handler that captures the session token from the browser redirect."""
 
     session_token: str | None = None
     error: str | None = None
@@ -30,7 +31,7 @@ class _CallbackHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         params = parse_qs(parsed.query)
 
-        token = params.get("__clerk_session", [None])[0]
+        token = params.get("__session_token", [None])[0]
         err = params.get("error", [None])[0]
 
         if err:
@@ -46,7 +47,8 @@ class _CallbackHandler(BaseHTTPRequestHandler):
                 "Authenticated! You can close this tab and return to your terminal.",
             )
         else:
-            self._respond(400, "Missing session token. Please try again.")
+            _CallbackHandler.error = MISSING_AUTH_CALLBACK_MESSAGE
+            self._respond(400, MISSING_AUTH_CALLBACK_MESSAGE)
 
     def _respond(self, status: int, message: str) -> None:
         self.send_response(status)
@@ -117,7 +119,7 @@ def wait_for_callback(server: HTTPServer, timeout: float = 120) -> str:
 
 
 def exchange_token(base_url: str, session_token: str) -> dict:
-    """Exchange a Clerk session token for an API key.
+    """Exchange a browser session token for an API key.
 
     POST /api/auth/cli/exchange
     Returns: {api_token, endpoint}
@@ -135,35 +137,19 @@ def exchange_token(base_url: str, session_token: str) -> dict:
 def save_credentials(token: str, endpoint: str) -> Path:
     """Save API token and endpoint to ~/.sondera/env.
 
-    Creates/updates the env file, preserving any existing variables
-    that aren't being overwritten.
+    Preserves comments, blank lines, and ordering of existing variables.
+    Uses atomic writes with 0o600 permissions via the Rust implementation.
 
     Returns the path to the env file.
     """
-    env_path = _ENV_PATH
-    env_path.parent.mkdir(parents=True, exist_ok=True)
+    from sondera.config import update_env_file
 
-    # Read existing env file if it exists
-    existing: dict[str, str] = {}
-    if env_path.exists():
-        for line in env_path.read_text().splitlines():
-            line = line.strip()
-            if line and not line.startswith("#") and "=" in line:
-                key, _, value = line.partition("=")
-                existing[key.strip()] = value.strip()
-
-    # Update with new values
-    existing["SONDERA_API_TOKEN"] = token
-    existing["SONDERA_HARNESS_ENDPOINT"] = endpoint
-
-    # Write back
-    lines = [f"{key}={value}" for key, value in sorted(existing.items())]
-    # Create the file with owner-only permissions.
-    fd = os.open(env_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as env_file:
-        env_file.write("\n".join(lines) + "\n")
-
-    return env_path
+    return update_env_file(
+        {
+            "SONDERA_API_TOKEN": token,
+            "SONDERA_HARNESS_ENDPOINT": endpoint,
+        }
+    )
 
 
 def open_browser(url: str) -> bool:

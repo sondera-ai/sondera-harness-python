@@ -15,8 +15,9 @@ permit(principal, action, resource);
 
 PLAN_MODE_POLICY = """
 @id("forbid-write-in-plan-mode")
-forbid(principal, action == claude_code::Action::"Write", resource)
+forbid(principal, action == claude_code::Action::"PreToolUse", resource)
 when {
+    context.tool == "Write" &&
     context has parameters &&
     context.parameters has permission_mode &&
     context.parameters.permission_mode == "plan"

@@ -10,11 +10,11 @@ All methods are exception-safe: errors are logged, never raised.
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any
 
 import sondera.settings as _settings
+from sondera._serde import to_json_str
 from sondera.harness import Harness, SonderaRemoteHarness
 from sondera.types import (
     Adjudicated,
@@ -53,12 +53,12 @@ class AskSession:
         await session.start()
 
         adj = await session.adjudicate_user_prompt("What agents have violations?")
-        if adj and adj.decision == Decision.Deny:
+        if adj and adj.decision == Decision.DENY:
             # policy blocked the prompt
             ...
 
         adj = await session.adjudicate_tool_request("list_agents", {})
-        if adj and adj.decision == Decision.Deny:
+        if adj and adj.decision == Decision.DENY:
             # don't execute the tool
             ...
 
@@ -117,13 +117,13 @@ class AskSession:
     async def adjudicate_user_prompt(self, text: str) -> Adjudicated | None:
         """Record and adjudicate user question."""
         return await self._adjudicate(
-            Prompt(content=text, role=PromptRole.User), "user prompt"
+            Prompt(content=text, role=PromptRole.USER), "user prompt"
         )
 
     async def adjudicate_model_response(self, text: str) -> Adjudicated | None:
         """Record and adjudicate model response."""
         return await self._adjudicate(
-            Prompt(content=text, role=PromptRole.Assistant), "model response"
+            Prompt(content=text, role=PromptRole.ASSISTANT), "model response"
         )
 
     async def adjudicate_tool_request(
@@ -138,7 +138,7 @@ class AskSession:
         self, tool_name: str, result: Any
     ) -> Adjudicated | None:
         """Record and adjudicate tool result."""
-        output = result if isinstance(result, str) else json.dumps(result)
+        output = to_json_str(result)
         return await self._adjudicate(
             ToolOutput(call_id=tool_name, output=output, success=True),
             f"tool response: {tool_name}",

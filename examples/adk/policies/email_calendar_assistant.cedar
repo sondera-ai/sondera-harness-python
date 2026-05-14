@@ -1,32 +1,74 @@
+// ============================================================
+// Email & Calendar Assistant — Cedar Policy Example
+// ============================================================
+//
+// Demonstrates an allowlist approach: each tool is explicitly
+// permitted. Unlisted tools are denied by default.
+//
+// ============================================================
+
 // Allow all user and model prompts
 @id("allow-prompts")
 permit(principal, action == email_calendar_assistant::Action::"Prompt", resource);
 
+// Allow all tool outputs
+@id("allow-tool-output")
+permit(principal, action == email_calendar_assistant::Action::"ToolOutput", resource);
+
+// ============================================================
+// PERMIT: Tool allowlist
+// ============================================================
+
 // Allow reading emails
 @id("allow-read-emails")
-permit(principal, action == email_calendar_assistant::Action::"get_unread_emails", resource);
+permit(
+  principal,
+  action == email_calendar_assistant::Action::"PreToolUse",
+  resource
+)
+when { context.tool == "get_unread_emails" };
 
 // Allow reading calendar events
 @id("allow-read-calendar")
-permit(principal, action == email_calendar_assistant::Action::"get_calendar_events", resource);
+permit(
+  principal,
+  action == email_calendar_assistant::Action::"PreToolUse",
+  resource
+)
+when { context.tool == "get_calendar_events" };
 
 // Allow creating calendar events
 @id("allow-create-event")
-permit(principal, action == email_calendar_assistant::Action::"create_calendar_event", resource);
+permit(
+  principal,
+  action == email_calendar_assistant::Action::"PreToolUse",
+  resource
+)
+when { context.tool == "create_calendar_event" };
 
-// Allow sending emails by default (restricted by forbid rules below)
+// Allow sending emails (restricted by forbid rules below)
 @id("allow-send-email")
-permit(principal, action == email_calendar_assistant::Action::"send_email", resource);
+permit(
+  principal,
+  action == email_calendar_assistant::Action::"PreToolUse",
+  resource
+)
+when { context.tool == "send_email" };
+
+// ============================================================
+// FORBID: Email restrictions
+// ============================================================
 
 // Forbid sending emails to external domains (only allow @company.com)
 @id("forbid-external-email")
 @description("Block emails to non-company domains")
 forbid(
   principal,
-  action == email_calendar_assistant::Action::"send_email",
+  action == email_calendar_assistant::Action::"PreToolUse",
   resource
 )
 when {
+  context.tool == "send_email" &&
   context has parameters &&
   !(context.parameters.to like "*@company.com")
 };
@@ -36,10 +78,11 @@ when {
 @description("Block emails with potentially sensitive content in subject")
 forbid(
   principal,
-  action == email_calendar_assistant::Action::"send_email",
+  action == email_calendar_assistant::Action::"PreToolUse",
   resource
 )
 when {
+  context.tool == "send_email" &&
   context has parameters &&
   (context.parameters.subject like "*password*" ||
    context.parameters.subject like "*credential*" ||
